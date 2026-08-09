@@ -2,7 +2,8 @@
 
 Credential-free. Start from a fresh `npm run dev` so the in-memory seed is intact.
 
-**Default URLs:** UI `http://localhost:5173` · API `http://localhost:8787` (Vite proxies API paths).
+**Live demo:** `https://cue-program-ops.headley-max.workers.dev`  
+**Local defaults:** UI `http://localhost:5173` · API `http://localhost:8787` (Vite proxies API paths).
 
 **Demo event:** AI Engineer Summit · id `evt-ai-summit-2026` · slug `ai-engineer-summit`.
 

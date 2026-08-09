@@ -14,6 +14,8 @@ Credential-free demo. In-memory seed. Real product shells for organizer, reviewe
 | **Default data** | In-process memory (restart resets) |
 | **License** | MIT |
 
+**Live demo:** https://cue-program-ops.headley-max.workers.dev
+
 ```sh
 npm install
 npm run dev          # API :8787 + Vite UI (proxied)
