@@ -150,6 +150,25 @@ export const api = {
       body: JSON.stringify(body),
     }),
   speakers: () => req<{ data: any[] }>(`/api/events/${EVENT_ID}/speakers`),
+  speakerProgress: () => req<{ data: any }>(`/api/events/${EVENT_ID}/speakers/progress`),
+  speakerDetail: (id: string) => req<{ data: any }>(`/api/events/${EVENT_ID}/speakers/${id}`),
+  addSpeaker: (body: any) => mut<{ data: any }>(`/api/events/${EVENT_ID}/speakers`, { method: "POST", body: JSON.stringify(body) }),
+  updateSpeaker: (id: string, body: any) => mut<{ data: any }>(`/api/events/${EVENT_ID}/speakers/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+  setSpeakerStatus: (id: string, status: string) => mut<{ data: any }>(`/api/events/${EVENT_ID}/speakers/${id}/status`, { method: "POST", body: JSON.stringify({ status }) }),
+  inviteSpeaker: (id: string) => mut<{ data: any }>(`/api/events/${EVENT_ID}/speakers/${id}/invite`, { method: "POST", body: "{}" }),
+  importSpeakers: (csv: string) => mut<{ data: any }>(`/api/events/${EVENT_ID}/speakers/import`, { method: "POST", body: JSON.stringify({ csv }) }),
+  assignSpeakerTasks: (body: any) => mut<{ data: any }>(`/api/events/${EVENT_ID}/speakers/tasks`, { method: "POST", body: JSON.stringify(body) }),
+  uploadHeadshot: (body: any) => mut<{ data: any }>(`/api/speaker/events/${EVENT_ID}/profile/headshot`, { method: "POST", body: JSON.stringify(body) }),
+  submitTaskForm: (id: string, answers: any) => mut<{ data: any }>(`/api/speaker/events/${EVENT_ID}/tasks/${id}/form`, { method: "POST", body: JSON.stringify({ answers }) }),
+  commsPreview: (body: any) => mut<{ data: any }>(`/api/events/${EVENT_ID}/comms/preview`, { method: "POST", body: JSON.stringify(body) }),
+  runTaskReminders: () => mut<{ data: any }>(`/api/events/${EVENT_ID}/comms/reminders/run`, { method: "POST", body: "{}" }),
+  speakersQuery: (params: Record<string, string | undefined> = {}) => {
+    const q = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => { if (v) q.set(k, v); });
+    const qs = q.toString();
+    return req<{ data: any[]; meta?: any }>(`/api/events/${EVENT_ID}/speakers${qs ? `?${qs}` : ""}`);
+  },
+
   form: (id = "form-cfp") => req<{ data: any }>(`/api/events/${EVENT_ID}/forms/${id}`),
   saveForm: (id: string, body: any) =>
     mut(`/api/events/${EVENT_ID}/forms/${id}`, { method: "PUT", body: JSON.stringify(body) }),
@@ -159,6 +178,9 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body),
     }),
+  publicSubmission: (id:string,token:string) => req<{data:any}>(`/api/public/events/ai-engineer-summit/submissions/${id}?token=${encodeURIComponent(token)}`),
+  savePublicSubmission: (id:string,body:any) => mut<{data:any}>(`/api/public/events/ai-engineer-summit/submissions/${id}`,{method:"PUT",body:JSON.stringify(body)}),
+  editSpeakerSubmission: (id:string,body:any) => mut<{data:any}>(`/api/speaker/events/${EVENT_ID}/submissions/${id}`,{method:"PUT",body:JSON.stringify(body)}),
   speakerHome: () => req<{ data: any }>(`/api/speaker/events/${EVENT_ID}/home`),
   completeTask: (id: string) =>
     mut(`/api/speaker/events/${EVENT_ID}/tasks/${id}`, {

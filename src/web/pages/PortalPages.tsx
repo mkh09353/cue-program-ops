@@ -146,7 +146,7 @@ export function PortalTalksPage() {
   if (err) return <Notice tone="danger">{err}</Notice>;
   return (
     <div>
-      <PageHeader title="My talks" description="Submission status and schedule placement." />
+      <PageHeader title="My submissions" description="Proposal status and schedule placement." actions={<Button asChild><a href="/e/ai-engineer-summit/cfp">Start another proposal</a></Button>} />
       <div className="space-y-3">
         {data.submissions.map((s: any) => (
           <Card key={s.id} className="p-4">
@@ -157,6 +157,7 @@ export function PortalTalksPage() {
             <p className="mt-1 text-sm text-stone-500">
               {s.category} · {s.format} · board {s.reviewBoard}
             </p>
+            {s.editToken ? <Button asChild size="sm" variant="outline" className="mt-3"><a href={`/e/ai-engineer-summit/cfp?submission=${s.id}&token=${s.editToken}`}>{s.status === "draft" ? "Resume draft" : "View or edit submission"}</a></Button> : null}
           </Card>
         ))}
         {!data.submissions.length ? (
@@ -218,10 +219,18 @@ export function PortalTaskDetailPage() {
   const { data, err, load } = useSpeakerHome();
   const [fileName, setFileName] = useState("");
   const [profile, setProfile] = useState<any>(null);
+  const [formAnswers, setFormAnswers] = useState<Record<string, string>>({});
+  const [headshotFile, setHeadshotFile] = useState<File | null>(null);
 
   useEffect(() => {
     if (data?.profile) setProfile({ ...data.profile });
   }, [data]);
+
+  useEffect(() => {
+    const task = data?.tasks?.find((t: any) => t.id === id);
+    if (task?.formAnswers) setFormAnswers({ ...task.formAnswers });
+    else if (task?.formSchema) setFormAnswers(Object.fromEntries(task.formSchema.map((f: any) => [f.key, ""])));
+  }, [data, id]);
 
   if (!data && !err) return <Spinner />;
   if (err) return <Notice tone="danger">{err}</Notice>;
@@ -235,11 +244,27 @@ export function PortalTaskDetailPage() {
   };
 
   const isFile = FILE_TYPES.has(task.type);
+  const formSchema =
+    task.formSchema ||
+    (task.type === "form"
+      ? [
+          { key: "shirt_size", label: "T-shirt size", type: "select", required: true, options: ["S", "M", "L", "XL"] },
+          { key: "arrival_date", label: "Arrival date", type: "text", required: true },
+          { key: "notes", label: "Notes", type: "textarea", required: false },
+        ]
+      : []);
 
   return (
     <div>
-      <PageHeader title={task.title} description={taskTypeLabel(task.type)} />
+      <PageHeader
+        title={task.title}
+        description={`${taskTypeLabel(task.type)}${task.dueAt ? ` · due ${String(task.dueAt).slice(0, 10)}` : ""}`}
+      />
       <Card className="p-5">
+        {task.description || task.instructions ? (
+          <p className="mb-4 text-sm text-stone-600">{task.description || task.instructions}</p>
+        ) : null}
+
         {task.type === "profile" && profile ? (
           <>
             <Field label="Name">
@@ -249,28 +274,24 @@ export function PortalTaskDetailPage() {
               <Input value={profile.title || ""} onChange={(e) => setProfile({ ...profile, title: e.target.value })} />
             </Field>
             <Field label="Company">
-              <Input
-                value={profile.company || ""}
-                onChange={(e) => setProfile({ ...profile, company: e.target.value })}
-              />
+              <Input value={profile.company || ""} onChange={(e) => setProfile({ ...profile, company: e.target.value })} />
             </Field>
             <Field label="Bio" hint="Save with 20+ characters to auto-complete this task.">
-              <Textarea
-                rows={5}
-                value={profile.bio || ""}
-                onChange={(e) => setProfile({ ...profile, bio: e.target.value })}
-              />
+              <Textarea rows={5} value={profile.bio || ""} onChange={(e) => setProfile({ ...profile, bio: e.target.value })} />
             </Field>
             <Field label="LinkedIn">
-              <Input
-                value={profile.linkedin || ""}
-                onChange={(e) => setProfile({ ...profile, linkedin: e.target.value })}
-              />
+              <Input value={profile.linkedin || ""} onChange={(e) => setProfile({ ...profile, linkedin: e.target.value })} />
+            </Field>
+            <Field label="X / Twitter">
+              <Input value={profile.x || ""} onChange={(e) => setProfile({ ...profile, x: e.target.value })} />
             </Field>
             <Field label="Website">
+              <Input value={profile.website || ""} onChange={(e) => setProfile({ ...profile, website: e.target.value })} />
+            </Field>
+            <Field label="Travel preference">
               <Input
-                value={profile.website || ""}
-                onChange={(e) => setProfile({ ...profile, website: e.target.value })}
+                value={profile.travelPreference || ""}
+                onChange={(e) => setProfile({ ...profile, travelPreference: e.target.value })}
               />
             </Field>
             <Button
@@ -285,12 +306,74 @@ export function PortalTaskDetailPage() {
           </>
         ) : null}
 
+        {task.type === "form" ? (
+          <>
+            <p className="mb-3 text-sm text-stone-600">Complete this logistics form. Answers are saved on your speaker record.</p>
+            {formSchema.map((f: any) => (
+              <Field key={f.key} label={`${f.label}${f.required ? " *" : ""}`}>
+                {f.type === "textarea" ? (
+                  <Textarea
+                    rows={3}
+                    value={formAnswers[f.key] || ""}
+                    onChange={(e) => setFormAnswers({ ...formAnswers, [f.key]: e.target.value })}
+                    disabled={task.status === "completed"}
+                  />
+                ) : f.type === "select" ? (
+                  <select
+                    className="h-10 w-full rounded-lg border border-stone-300 bg-white px-3 text-sm"
+                    value={formAnswers[f.key] || ""}
+                    disabled={task.status === "completed"}
+                    onChange={(e) => setFormAnswers({ ...formAnswers, [f.key]: e.target.value })}
+                  >
+                    <option value="">Select…</option>
+                    {(f.options || []).map((o: string) => (
+                      <option key={o} value={o}>
+                        {o}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <Input
+                    value={formAnswers[f.key] || ""}
+                    disabled={task.status === "completed"}
+                    onChange={(e) => setFormAnswers({ ...formAnswers, [f.key]: e.target.value })}
+                  />
+                )}
+              </Field>
+            ))}
+            {task.status !== "completed" ? (
+              <Button
+                onClick={async () => {
+                  try {
+                    await api.submitTaskForm(task.id, formAnswers);
+                    toast("Form submitted");
+                    load();
+                  } catch (e: any) {
+                    toast(e.message || "Form failed", "danger");
+                  }
+                }}
+              >
+                Submit form
+              </Button>
+            ) : (
+              <p className="text-sm text-ok">Form submitted.</p>
+            )}
+          </>
+        ) : null}
+
         {isFile ? (
           <>
-            <p className="mb-3 text-sm text-stone-600">
-              Demo upload stores a file receipt (filename) on your speaker record and marks the task complete. No binary
-              is persisted.
-            </p>
+            {task.type === "headshot" ? (
+              <p className="mb-3 text-sm text-stone-600">
+                Upload a well-lit headshot (PNG/JPEG). Image data is stored on your profile and synced to the organizer
+                roster and public gallery when published.
+              </p>
+            ) : (
+              <p className="mb-3 text-sm text-stone-600">
+                Demo file receipt stores filename metadata on your speaker record. Prefer Deliverables for versioned
+                content files.
+              </p>
+            )}
             <Field label="File name">
               <Input
                 placeholder={task.type === "headshot" ? "headshot.jpg" : "slides.pdf"}
@@ -300,9 +383,14 @@ export function PortalTaskDetailPage() {
             </Field>
             <input
               type="file"
+              accept={task.type === "headshot" ? "image/png,image/jpeg" : undefined}
               className="mb-3 block w-full text-sm"
               aria-label="Choose file"
-              onChange={(e) => setFileName(e.target.files?.[0]?.name || "")}
+              onChange={(e) => {
+                const f = e.target.files?.[0] || null;
+                setHeadshotFile(f);
+                setFileName(f?.name || "");
+              }}
             />
             <Button
               disabled={!fileName.trim() || task.status === "completed"}
@@ -311,11 +399,23 @@ export function PortalTaskDetailPage() {
                   toast("Choose or name a file first", "warn");
                   return;
                 }
-                await api.uploadFile({
-                  kind: kindMap[task.type],
-                  name: fileName.trim(),
-                  speakerId: data.speakerId,
-                });
+                if (task.type === "headshot" && headshotFile) {
+                  const dataUrl = await new Promise<string>((resolve, reject) => {
+                    const r = new FileReader();
+                    r.onload = () => resolve(String(r.result || ""));
+                    r.onerror = reject;
+                    r.readAsDataURL(headshotFile);
+                  });
+                  await api.uploadHeadshot({ name: fileName.trim(), dataUrl, mime: headshotFile.type });
+                } else if (task.type === "headshot") {
+                  await api.uploadHeadshot({ name: fileName.trim() });
+                } else {
+                  await api.uploadFile({
+                    kind: kindMap[task.type],
+                    name: fileName.trim(),
+                    speakerId: data.speakerId,
+                  });
+                }
                 toast("File recorded and task completed");
                 load();
               }}
@@ -325,7 +425,7 @@ export function PortalTaskDetailPage() {
           </>
         ) : null}
 
-        {(task.type === "confirm" || task.type === "form") && task.status !== "completed" ? (
+        {task.type === "confirm" && task.status !== "completed" ? (
           <Button
             onClick={async () => {
               await api.completeTask(task.id);
@@ -337,12 +437,10 @@ export function PortalTaskDetailPage() {
           </Button>
         ) : null}
 
-        {task.status === "completed" ? (
+        {task.status === "completed" && task.type !== "form" ? (
           <p className="mt-4 text-sm text-ok">This task is complete.</p>
-        ) : isFile ? (
-          <p className="mt-4 text-xs text-stone-500">
-            Required file tasks complete only after upload — there is no skip path in the demo.
-          </p>
+        ) : isFile && task.status !== "completed" ? (
+          <p className="mt-4 text-xs text-stone-500">Required file tasks complete only after upload.</p>
         ) : null}
       </Card>
     </div>
@@ -441,23 +539,64 @@ export function PortalProfilePage() {
   if (err) return <Notice tone="danger">{err}</Notice>;
   return (
     <div>
-      <PageHeader title="Profile" />
+      <PageHeader title="Profile" description="Bio, social links, headshot, and travel preferences sync to the organizer roster." />
       <Card className="p-5">
+        {profile.headshotUrl ? (
+          <img src={profile.headshotUrl} alt="" className="mb-4 h-24 w-24 rounded-full object-cover" />
+        ) : null}
         <Field label="Name">
           <Input value={profile.name || ""} onChange={(e) => setProfile({ ...profile, name: e.target.value })} />
         </Field>
-        <Field label="Email">
+        <Field label="Email" hint="Contact email on your speaker record">
           <Input value={profile.email || ""} onChange={(e) => setProfile({ ...profile, email: e.target.value })} />
         </Field>
-        <Field label="Bio">
-          <Textarea
-            rows={5}
-            value={profile.bio || ""}
-            onChange={(e) => setProfile({ ...profile, bio: e.target.value })}
-          />
+        <Field label="Title">
+          <Input value={profile.title || ""} onChange={(e) => setProfile({ ...profile, title: e.target.value })} />
         </Field>
         <Field label="Company">
           <Input value={profile.company || ""} onChange={(e) => setProfile({ ...profile, company: e.target.value })} />
+        </Field>
+        <Field label="Bio">
+          <Textarea rows={5} value={profile.bio || ""} onChange={(e) => setProfile({ ...profile, bio: e.target.value })} />
+        </Field>
+        <Field label="LinkedIn">
+          <Input value={profile.linkedin || ""} onChange={(e) => setProfile({ ...profile, linkedin: e.target.value })} />
+        </Field>
+        <Field label="X / Twitter">
+          <Input value={profile.x || ""} onChange={(e) => setProfile({ ...profile, x: e.target.value })} />
+        </Field>
+        <Field label="Website">
+          <Input value={profile.website || ""} onChange={(e) => setProfile({ ...profile, website: e.target.value })} />
+        </Field>
+        <Field label="Travel preference">
+          <Input
+            value={profile.travelPreference || ""}
+            onChange={(e) => setProfile({ ...profile, travelPreference: e.target.value })}
+            placeholder="e.g. Direct flights, aisle seat"
+          />
+        </Field>
+        <Field label="Dietary">
+          <Input value={profile.dietary || ""} onChange={(e) => setProfile({ ...profile, dietary: e.target.value })} />
+        </Field>
+        <Field label="Headshot" hint="Well-lit, neutral background. PNG or JPEG.">
+          <input
+            type="file"
+            accept="image/png,image/jpeg"
+            className="block w-full text-sm"
+            onChange={async (e) => {
+              const f = e.target.files?.[0];
+              if (!f) return;
+              const dataUrl = await new Promise<string>((resolve, reject) => {
+                const r = new FileReader();
+                r.onload = () => resolve(String(r.result || ""));
+                r.onerror = reject;
+                r.readAsDataURL(f);
+              });
+              await api.uploadHeadshot({ name: f.name, dataUrl, mime: f.type });
+              toast("Headshot uploaded");
+              load();
+            }}
+          />
         </Field>
         <Button
           onClick={async () => {

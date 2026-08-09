@@ -213,6 +213,12 @@ export function ReviewStudioPage() {
               ) : null}
             </div>
           ) : null}
+          <div className="mt-4 rounded-xl border border-stone-200 p-3">
+            <h3 className="text-xs font-bold uppercase tracking-wide text-stone-500">Submission answers</h3>
+            <dl className="mt-2 grid gap-2 text-sm sm:grid-cols-2">
+              {Object.entries(data.answers || {}).filter(([key]) => !["title","abstract","category","format","workshopPlan","duration"].includes(key)).map(([key,value]) => <div key={key}><dt className="text-xs font-semibold text-stone-500">{key.replaceAll("_"," ")}</dt><dd className="whitespace-pre-wrap">{String(value ?? "—")}</dd></div>)}
+            </dl>
+          </div>
           <div className="mt-4 text-xs text-stone-500">
             Round on submission: <b className="uppercase">{data.round}</b>
           </div>

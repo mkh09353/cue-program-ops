@@ -351,6 +351,12 @@ export function FormsPage() {
                 onChange={(e) => setForm({ ...form, maxPerUser: Number(e.target.value) })}
               />
             </Field>
+            <Field label="Opens at">
+              <Input type="datetime-local" value={form.openAt?.slice(0, 16) || ""} onChange={(e) => setForm({ ...form, openAt: new Date(e.target.value).toISOString() })} />
+            </Field>
+            <Field label="Closes at">
+              <Input type="datetime-local" value={form.closeAt?.slice(0, 16) || ""} onChange={(e) => setForm({ ...form, closeAt: new Date(e.target.value).toISOString() })} />
+            </Field>
           </div>
         </Card>
 
@@ -361,11 +367,13 @@ export function FormsPage() {
               const hasCondition = !!f.visibleWhen;
               return (
                 <div key={f.key} className="rounded-xl border border-stone-200 p-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <b className="text-sm">{f.label}</b>
-                    <Badge tone="muted">{f.type}</Badge>
+                  <div className="grid gap-2 sm:grid-cols-[1fr_150px]">
+                    <Field label="Field label"><Input value={f.label} onChange={(e) => updateField(idx, { label: e.target.value })} /></Field>
+                    <Field label="Type"><Select value={f.type} onChange={(e) => updateField(idx, { type: e.target.value })}>{[["text","Short text"],["textarea","Long text"],["select","Dropdown"],["checkbox","Checkbox"],["file","File upload"]].map(([value,label])=><option key={value} value={value}>{label}</option>)}</Select></Field>
                   </div>
                   <p className="mt-1 text-xs text-stone-500">key: {f.key}</p>
+                  <Field label="Section"><Input value={f.section || ""} placeholder="Proposal" onChange={(e) => updateField(idx, { section: e.target.value })} /></Field>
+                  {f.type === "select" ? <Field label="Options" hint="One per line"><Textarea rows={3} value={(f.options || []).join("\n")} onChange={(e) => updateField(idx, { options: e.target.value.split("\n").map((x) => x.trim()).filter(Boolean) })} /></Field> : null}
 
                   <label className="mt-2 flex items-center gap-2 text-xs font-semibold">
                     <input
@@ -454,10 +462,12 @@ export function FormsPage() {
                     />
                     Required when visible
                   </label>
+                  {!['title','abstract','category','format'].includes(f.key) ? <Button size="sm" variant="ghost" className="mt-2" onClick={() => setForm({ ...form, fields: form.fields.filter((_:any,i:number)=>i!==idx) })}>Remove field</Button> : null}
                 </div>
               );
             })}
           </div>
+          <Button size="sm" variant="secondary" className="mt-3" onClick={() => { const key=`custom_${Date.now()}`; setForm({ ...form, fields:[...form.fields,{ key,label:"New field",type:"text",required:false,section:"Proposal" }] }); }}>Add field</Button>
 
           <h3 className="mb-2 mt-5 text-sm font-bold uppercase tracking-wide text-stone-500">
             Category → board routing

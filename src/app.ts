@@ -10,6 +10,8 @@ import {
   boardForCategory,
   completeTaskForSpeaker,
   commandSnapshot,
+  cfpRouteForCategory,
+  cfpWindow,
   ensureOnboarding,
   ics,
   icsForSession,
@@ -34,6 +36,7 @@ import { createReviewRoutes } from "./reviewRoutes.js";
 import { createContentRoutes } from "./contentRoutes.js";
 import { createPublicSite } from "./publicSite.js";
 import { createCrmRoutes } from "./crmRoutes.js";
+import { createSpeakerRoutes } from "./speakerRoutes.js";
 import { blindSubmission } from "./review.js";
 
 export interface AppDeps {
@@ -111,6 +114,7 @@ export function createApp(deps: AppDeps = {}) {
     catch (error) { row.status="failed"; console.error("CUE mail delivery failed", error instanceof Error ? error.message : "unknown error"); }
   };
   app.use("/api/events/:eventId/*", async (c, next) => c.req.param("eventId") === EVENT_ID ? next() : fail(c, "event not found", 404));
+  app.route("/", createSpeakerRoutes({ store, persist, persona: personaOf, mailer, repo }));
   app.route("/api/events", createReviewRoutes({ store, persist, persona: personaOf, mailer }));
   app.route("/", createContentRoutes({ store, persist, persona: personaOf, mailer, repo }));
   app.route("/", createPublicSite({ repo }));
@@ -193,9 +197,16 @@ export function createApp(deps: AppDeps = {}) {
     if (b.welcomeMd != null) store.form.welcomeMd = String(b.welcomeMd);
     if (b.successMd != null) store.form.successMd = String(b.successMd);
     if (b.status === "open" || b.status === "closed") store.form.status = b.status;
+    if (b.openAt) store.form.openAt = String(b.openAt);
     if (b.closeAt) store.form.closeAt = String(b.closeAt);
     if (typeof b.maxPerUser === "number") store.form.maxPerUser = b.maxPerUser;
-    if (Array.isArray(b.fields)) store.form.fields = b.fields as typeof store.form.fields;
+    if (Array.isArray(b.fields)) {
+      const allowed = new Set(["text", "textarea", "select", "checkbox", "file", "speaker_block"]);
+      const keys = new Set<string>();
+      const fields = b.fields.map((raw: any) => ({ ...raw, key: String(raw.key || "").trim(), label: String(raw.label || "").trim(), type: String(raw.type || "text"), required: Boolean(raw.required), options: Array.isArray(raw.options) ? raw.options.map(String).filter(Boolean) : undefined, section: raw.section ? String(raw.section) : undefined })).filter((field: any) => field.key && field.label && allowed.has(field.type) && !keys.has(field.key) && keys.add(field.key));
+      if (!fields.some((field: any) => field.key === "title")) return fail(c, "title field is required");
+      store.form.fields = fields as typeof store.form.fields;
+    }
     if (Array.isArray(b.routes)) store.form.routes = b.routes as typeof store.form.routes;
     await persist();
     return c.json({ data: store.form });
@@ -210,23 +221,29 @@ export function createApp(deps: AppDeps = {}) {
         event: store.event,
         form: store.form,
         categories: store.form.fields.find((f) => f.key === "category")?.options || [],
+        window: cfpWindow(),
       },
     });
   });
 
   app.post("/api/public/events/:slug/submissions", async (c) => {
     if (c.req.param("slug") !== EVENT_SLUG && c.req.param("slug") !== "ai-engineer-sandbox-event") return fail(c, "event not found", 404);
-    if (store.form.status === "closed" || Date.parse(store.form.closeAt) <= Date.now()) return fail(c, "CFP is closed");
+    if (!cfpWindow().open) return fail(c, cfpWindow().reason);
     const b = (await c.req.json().catch(() => null)) as Record<string, unknown> | null;
     if (!b) return fail(c, "JSON body required");
     const answers = (b.answers || {}) as Record<string, unknown>;
     const category = String(answers.category || "");
     const format = String(answers.format || "Talk");
-    const check = validateCfpSubmission(answers, String(b.email || ""));
-    if (!check.ok) return fail(c, check.error);
-    const route = check.route;
+    const requestedStatus = b.status === "draft" ? "draft" : "submitted";
+    const normalizedEmail = String(b.email || "").trim().toLowerCase();
+    if (!normalizedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) return fail(c, "valid email is required");
+    if (!String(answers.title || "").trim()) return fail(c, "Session title is required");
+    const check = requestedStatus === "submitted" ? validateCfpSubmission(answers, normalizedEmail) : null;
+    if (check && !check.ok) return fail(c, check.error);
+    const route = requestedStatus === "submitted" ? cfpRouteForCategory(category) : { boardId: "draft", boardLabel: "Draft" };
     const id = `sub-${crypto.randomUUID().slice(0, 8)}`;
-    const speakerId = `spk-${id}`;
+    const existingProfile = store.profiles.find((profile) => profile.email.toLowerCase() === normalizedEmail);
+    const speakerId = existingProfile?.speakerId || `spk-${crypto.randomUUID().slice(0, 8)}`;
     const name = String(b.name || "Guest speaker");
     const email = String(b.email || "");
     if (!name.trim() || !email.trim()) return fail(c, "name and email are required");
@@ -235,20 +252,23 @@ export function createApp(deps: AppDeps = {}) {
       eventId: EVENT_ID,
       speakerId,
       name,
-      email: check.normalizedEmail,
+      email: normalizedEmail,
       title: String(answers.title),
       abstract: String(answers.abstract),
       category,
       format,
       answers,
-      status: "submitted",
+      status: requestedStatus,
       reviewBoard: route.boardId,
       round: "r1",
       createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      editToken: crypto.randomUUID(),
     };
     store.submissions.unshift(submission);
-    store.profiles.push({ speakerId, name, email, bio: "" });
-    store.reviews.push({
+    if (!existingProfile) store.profiles.push({ speakerId, name, email: normalizedEmail, bio: String(answers.speaker_bio || "") });
+    if (!store.personas.some((persona) => persona.id === speakerId)) store.personas.push({ id: speakerId, role: "speaker", name, email: normalizedEmail, speakerId });
+    if (requestedStatus === "submitted") store.reviews.push({
       id: `rev-${id}-r1`,
       submissionId: id,
       reviewerId: "rev-ada",
@@ -257,12 +277,42 @@ export function createApp(deps: AppDeps = {}) {
       notes: "",
       status: "assigned",
     });
-    const comm=sendTemplate("cfp_received", speakerId, submission.title, "cfp_received");
-    await deliver(comm); await persist();
+    if (requestedStatus === "submitted") { const comm=sendTemplate("cfp_received", speakerId, submission.title, "cfp_received"); await deliver(comm); }
+    await persist();
     return c.json(
-      { data: { id, status: "submitted", reviewBoard: route.boardId, boardLabel: route.boardLabel, speakerId } },
+      { data: { id, status: requestedStatus, reviewBoard: route.boardId, boardLabel: route.boardLabel, speakerId, editToken: submission.editToken, editUrl: `/e/${EVENT_SLUG}/cfp?submission=${id}&token=${submission.editToken}` } },
       201,
     );
+  });
+
+  app.get("/api/public/events/:slug/submissions/:id", (c) => {
+    const submission = store.submissions.find((row) => row.id === c.req.param("id"));
+    if (!submission || c.req.query("token") !== submission.editToken) return fail(c, "submission not found", 404);
+    return c.json({ data: { ...submission, editable: cfpWindow().open } });
+  });
+
+  app.put("/api/public/events/:slug/submissions/:id", async (c) => {
+    if (!cfpWindow().open) return fail(c, "Submission editing is closed", 403);
+    const submission = store.submissions.find((row) => row.id === c.req.param("id"));
+    const b = await c.req.json().catch(() => null) as any;
+    if (!submission || !b || b.editToken !== submission.editToken) return fail(c, "submission not found", 404);
+    const answers = { ...submission.answers, ...(b.answers || {}) };
+    const nextStatus = b.status === "draft" ? "draft" : "submitted";
+    if (!String(answers.title || "").trim()) return fail(c, "Session title is required");
+    if (nextStatus === "submitted") { const check = validateCfpSubmission(answers, submission.email); if (!check.ok) return fail(c, check.error); submission.reviewBoard = cfpRouteForCategory(String(answers.category)).boardId; }
+    Object.assign(submission, { title: String(answers.title), abstract: String(answers.abstract || ""), category: String(answers.category || ""), format: String(answers.format || ""), answers, status: nextStatus, updatedAt: new Date().toISOString() });
+    if (nextStatus === "submitted" && !store.reviews.some((review) => review.submissionId === submission.id)) store.reviews.push({ id:`rev-${submission.id}-r1`,submissionId:submission.id,reviewerId:"rev-ada",round:"r1",scores:{ relevance:0,novelty:0,clarity:0,depth:0 },notes:"",status:"assigned" });
+    await persist(); return c.json({ data: { ...submission, editable: true, editUrl: `/e/${EVENT_SLUG}/cfp?submission=${submission.id}&token=${submission.editToken}` } });
+  });
+
+  app.put("/api/speaker/events/:eventId/submissions/:id", async (c) => {
+    if (!cfpWindow().open) return fail(c, "Submission editing is closed", 403);
+    const speakerId = speakerIdOf(c); const submission = store.submissions.find((row) => row.id === c.req.param("id"));
+    if (!speakerId || !submission || submission.speakerId !== speakerId) return fail(c, "submission not found", 404);
+    const b = await c.req.json().catch(() => null) as any; if (!b) return fail(c, "JSON body required");
+    const answers = { ...submission.answers, ...(b.answers || {}) }; const check = validateCfpSubmission(answers, submission.email); if (!check.ok) return fail(c, check.error);
+    Object.assign(submission, { title:String(answers.title),abstract:String(answers.abstract),category:String(answers.category),format:String(answers.format),answers,reviewBoard:cfpRouteForCategory(String(answers.category)).boardId,updatedAt:new Date().toISOString() });
+    await persist(); return c.json({ data: submission });
   });
 
   // —— Submissions / review ——

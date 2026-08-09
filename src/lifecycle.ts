@@ -14,19 +14,21 @@ export type SubmissionStatus =
 export interface FormField {
   key: string;
   label: string;
-  type: "text" | "textarea" | "select" | "speaker_block";
+  type: "text" | "textarea" | "select" | "checkbox" | "file" | "speaker_block";
   required: boolean;
   options?: string[];
   /** Conditional visibility — e.g. Workshop plan only when category=Workshop */
   visibleWhen?: { key: string; equals: string };
   /** Category → review board routing uses category field values */
   helpText?: string;
+  section?: string;
 }
 
 export interface CfpForm {
   id: string;
   title: string;
   status: "open" | "closed";
+  openAt?: string;
   closeAt: string;
   maxPerUser: number;
   welcomeMd: string;
@@ -51,6 +53,8 @@ export interface Submission {
   reviewBoard: string;
   round: "r1" | "r2" | "final";
   createdAt: string;
+  updatedAt?: string;
+  editToken?: string;
 }
 
 export interface Review {
@@ -258,21 +262,22 @@ export const store: LifecycleStore = {
     id: "form-cfp",
     title: "AI Engineer Summit CFP",
     status: "open",
-    closeAt: "2026-09-15T06:59:00.000Z",
+    openAt: "2026-01-01T00:00:00.000Z",
+    closeAt: "2027-04-30T23:59:00.000Z",
     maxPerUser: 3,
     welcomeMd:
       "Call for Speakers\n\nOur event welcomes builders shipping real AI systems. Sessions are selected from these submissions.\n\n**Tracks:** Engineering · Product · Workshop · Agents\n\nTip: choose **Workshop** to add a workshop plan field.",
     successMd:
       "You will receive a confirmation shortly. Next, open your speaker portal to track status and complete onboarding if accepted.",
     fields: [
-      { key: "title", label: "Talk title", type: "text", required: true },
-      { key: "abstract", label: "Abstract", type: "textarea", required: true },
+      { key: "title", label: "Session title", type: "text", required: true, section: "Proposal" },
+      { key: "abstract", label: "Abstract", type: "textarea", required: true, section: "Proposal" },
       {
         key: "category",
         label: "Track",
         type: "select",
         required: true,
-        options: ["Engineering", "Product", "Workshop", "Agents"],
+        options: ["AI Engineering", "Platform & Infra", "Developer Experience", "Engineering", "Product", "Workshop", "Agents"],
         helpText: "Routes your talk to the matching review board.",
       },
       {
@@ -280,14 +285,14 @@ export const store: LifecycleStore = {
         label: "Format",
         type: "select",
         required: true,
-        options: ["Talk", "Panel", "Workshop"],
+        options: ["Keynote (45 min)", "Talk (30 min)", "Lightning Talk (10 min)", "Workshop (120 min)", "Panel (45 min)", "Talk", "Panel", "Workshop"],
       },
       {
         key: "workshopPlan",
         label: "Workshop plan",
         type: "textarea",
         required: true,
-        visibleWhen: { key: "format", equals: "Workshop" },
+        visibleWhen: { key: "format", equals: "Workshop (120 min)" },
         helpText: "Shown only when Format = Workshop.",
       },
       {
@@ -295,7 +300,7 @@ export const store: LifecycleStore = {
         label: "Workshop duration (minutes)",
         type: "text",
         required: true,
-        visibleWhen: { key: "format", equals: "Workshop" },
+        visibleWhen: { key: "format", equals: "Workshop (120 min)" },
       },
       {
         key: "experience",
@@ -304,8 +309,13 @@ export const store: LifecycleStore = {
         required: true,
         options: ["new", "intermediate", "advanced"],
       },
+      { key: "speaker_bio", label: "Speaker bio", type: "textarea", required: false, section: "Speaker" },
+      { key: "notes_for_reviewers", label: "Notes for reviewers", type: "textarea", required: false, section: "Review" },
     ],
     routes: [
+      { category: "AI Engineering", boardId: "ai-engineering", boardLabel: "AI Engineering board" },
+      { category: "Platform & Infra", boardId: "platform-infra", boardLabel: "Platform & Infra board" },
+      { category: "Developer Experience", boardId: "developer-experience", boardLabel: "Developer Experience board" },
       { category: "Engineering", boardId: "engineering", boardLabel: "Engineering board" },
       { category: "Product", boardId: "product", boardLabel: "Product board" },
       { category: "Workshop", boardId: "workshop", boardLabel: "Workshop board" },
@@ -808,8 +818,9 @@ export function validateCfpSubmission(answers: Record<string, unknown>, email: s
   const normalizedEmail = email.trim().toLowerCase();
   if (!normalizedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) return { ok: false as const, error: "valid email is required" };
   const category = String(answers.category || "");
-  const route = store.form.routes.find((r) => r.category === category);
-  if (!route) return { ok: false as const, error: "invalid category" };
+  const categoryField = store.form.fields.find((field) => field.key === "category");
+  if (!category || (categoryField?.options?.length && !categoryField.options.includes(category))) return { ok: false as const, error: "invalid category" };
+  const route = store.form.routes.find((r) => r.category === category) || boardForCategory(category);
   for (const field of store.form.fields) {
     const visible = !field.visibleWhen || answers[field.visibleWhen.key] === field.visibleWhen.equals;
     if (visible && field.required && (answers[field.key] == null || String(answers[field.key]).trim() === "")) return { ok: false as const, error: `${field.label} is required` };
@@ -817,6 +828,23 @@ export function validateCfpSubmission(answers: Record<string, unknown>, email: s
   const count = store.submissions.filter((s) => s.email.trim().toLowerCase() === normalizedEmail).length;
   if (count >= store.form.maxPerUser) return { ok: false as const, error: `submission limit reached (${store.form.maxPerUser})` };
   return { ok: true as const, normalizedEmail, route };
+}
+
+export function cfpWindow(at = new Date()) {
+  const opens = store.form.openAt ? Date.parse(store.form.openAt) : Number.NEGATIVE_INFINITY;
+  const closes = Date.parse(store.form.closeAt);
+  const open = store.form.status === "open" && at.getTime() >= opens && at.getTime() < closes;
+  return { open, opensAt: store.form.openAt, closesAt: store.form.closeAt, reason: store.form.status === "closed" || at.getTime() >= closes ? "Submissions closed" : "Submissions have not opened yet" };
+}
+
+export function cfpRouteForCategory(category: string) {
+  const existing = store.form.routes.find((route) => route.category === category);
+  if (existing) return existing;
+  const boardId = category.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "general";
+  const route = { category, boardId, boardLabel: `${category} board` };
+  store.form.routes.push(route);
+  if (!store.boards.some((board) => board.id === boardId)) store.boards.push({ id: boardId, label: route.boardLabel });
+  return route;
 }
 
 /** Keeps review history immutable by creating/finding a record per submission/reviewer/round. */

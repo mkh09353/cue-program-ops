@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api, setPersona, setPersonaCatalog } from "../lib/api";
 import { formatStatus } from "../lib/utils";
 import {
@@ -79,12 +79,18 @@ export function PublicCfpPage() {
   const [step, setStep] = useState(0);
   const [result, setResult] = useState<any>(null);
   const [err, setErr] = useState("");
+  const [saved, setSaved] = useState("");
+  const [search] = useSearchParams();
   const nav = useNavigate();
 
   useEffect(() => {
     api
       .publicCfp()
-      .then((r) => setData(r.data))
+      .then(async (r) => {
+        setData(r.data);
+        const id=search.get("submission"),token=search.get("token");
+        if(id&&token){const saved=await api.publicSubmission(id,token);setName(saved.data.name);setEmail(saved.data.email);setAnswers(saved.data.answers||{});setResult({id,speakerId:saved.data.speakerId,editToken:token,status:saved.data.status,editing:true,editable:saved.data.editable});setStep(1)}
+      })
       .catch((e) => setErr(e.message));
   }, []);
 
@@ -98,7 +104,7 @@ export function PublicCfpPage() {
   if (!data && !err) return <Spinner />;
   if (err) return <Notice tone="danger">{err}</Notice>;
 
-  if (result) {
+  if (result && !result.editing) {
     return (
       <Card className="p-6">
         <Badge tone="ok">Submitted</Badge>
@@ -110,6 +116,8 @@ export function PublicCfpPage() {
           Routed to <b>{result.boardLabel || result.reviewBoard}</b> review board
           {answers.format === "Workshop" ? " · Workshop conditional fields were collected." : ""}.
         </p>
+        <p className="mt-3 text-sm"><b>Reference:</b> {result.id}</p>
+        <a className="mt-2 block text-sm font-semibold text-iris underline" href={result.editUrl}>View or edit this submission</a>
         <div className="mt-4 flex flex-wrap gap-2">
           <Button
             onClick={() => {
@@ -148,7 +156,7 @@ export function PublicCfpPage() {
     e.preventDefault();
     setErr("");
     try {
-      const r = await api.submitCfp({ name, email, answers });
+      const r = result?.editing ? await api.savePublicSubmission(result.id,{editToken:result.editToken,answers,status:"submitted"}) : await api.submitCfp({ name, email, answers });
       setResult(r.data);
       toast("Proposal submitted");
     } catch (ex: any) {
@@ -157,18 +165,27 @@ export function PublicCfpPage() {
     }
   };
 
+  const saveDraft = async () => {
+    try {
+      const r=result?.editing ? await api.savePublicSubmission(result.id,{editToken:result.editToken,answers,status:"draft"}) : await api.submitCfp({name,email,answers,status:"draft"});
+      setResult({...r.data,editing:true,editable:true});setSaved(`Draft saved · reference ${r.data.id}`);toast("Draft saved — use this page link to resume");
+      history.replaceState(null,"",r.data.editUrl||`?submission=${r.data.id}&token=${r.data.editToken}`);
+    } catch(ex:any){setErr(ex.message)}
+  };
+
   return (
     <div>
       <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
         Accepting until {new Date(data.form.closeAt).toLocaleString()} · max {data.form.maxPerUser} per user ·{" "}
         {formatStatus(data.form.status)}
       </div>
-      <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">{data.form.title}</h1>
+      <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">{data.event.name} · {data.form.title}</h1>
       <div className="mt-3">
         <Markdown text={data.form.welcomeMd || ""} />
       </div>
 
-      <div className="my-6 flex flex-wrap gap-2 text-xs font-bold uppercase tracking-wide" aria-label="Steps">
+      {!data.window?.open ? <Card className="my-6 border-amber-300 p-8 text-center"><Badge tone="warn">Closed</Badge><h2 className="mt-3 text-2xl font-bold">Submissions closed</h2><p className="mt-2 text-stone-600">{data.window?.reason}. The deadline was {new Date(data.form.closeAt).toLocaleString()}.</p></Card> : null}
+      {data.window?.open ? <><div className="my-6 flex flex-wrap gap-2 text-xs font-bold uppercase tracking-wide" aria-label="Steps">
         {["You", "Talk", "Review"].map((label, i) => (
           <span
             key={label}
@@ -180,6 +197,8 @@ export function PublicCfpPage() {
       </div>
 
       {err ? <Notice tone="danger">{err}</Notice> : null}
+      {saved ? <Notice tone="ok">{saved}. Bookmark the current edit link to resume.</Notice> : null}
+      {result?.editing && !result.editable ? <Notice tone="warn">Editing closed. This submission is read-only after the CFP deadline.</Notice> : null}
 
       <Card className="p-5">
         <form onSubmit={onSubmit}>
@@ -199,8 +218,8 @@ export function PublicCfpPage() {
 
           {step === 1 ? (
             <>
-              {visibleFields.map((f: any) => (
-                <Field key={f.key} label={f.label} hint={f.helpText}>
+              {visibleFields.map((f: any,idx:number) => (<div key={f.key}>{f.section && visibleFields[idx-1]?.section!==f.section?<h2 className="mb-3 mt-5 border-b pb-2 text-lg font-bold">{f.section}</h2>:null}
+                <Field label={`${f.label}${f.required ? " *" : ""}`} hint={f.helpText}>
                   {f.type === "textarea" ? (
                     <Textarea
                       required={f.required}
@@ -220,16 +239,16 @@ export function PublicCfpPage() {
                         </option>
                       ))}
                     </Select>
-                  ) : (
+                  ) : f.type === "checkbox" ? <input type="checkbox" checked={answers[f.key]==="true"} onChange={(e)=>setAnswers(a=>({...a,[f.key]:String(e.target.checked)}))} /> : f.type === "file" ? <Input type="file" onChange={(e)=>setAnswers(a=>({...a,[f.key]:e.target.files?.[0]?.name||""}))} /> : (
                     <Input
                       required={f.required}
                       value={answers[f.key] || ""}
                       onChange={(e) => setAnswers((a) => ({ ...a, [f.key]: e.target.value }))}
                     />
                   )}
-                </Field>
+                </Field></div>
               ))}
-              {answers.format === "Workshop" ? (
+              {answers.format?.startsWith("Workshop") ? (
                 <Notice tone="info">Workshop plan + duration are visible because Format = Workshop.</Notice>
               ) : null}
               <div className="flex gap-2">
@@ -239,6 +258,7 @@ export function PublicCfpPage() {
                 <Button type="button" onClick={() => setStep(2)}>
                   Review
                 </Button>
+                <Button type="button" variant="secondary" disabled={!name||!email||!answers.title||result?.editable===false} onClick={saveDraft}>Save as draft</Button>
               </div>
             </>
           ) : null}
@@ -269,12 +289,13 @@ export function PublicCfpPage() {
                 <Button type="button" variant="outline" onClick={() => setStep(1)}>
                   Back
                 </Button>
-                <Button type="submit">Submit proposal</Button>
+                <Button type="submit" disabled={result?.editable===false}>Submit proposal</Button>
               </div>
             </>
           ) : null}
         </form>
       </Card>
+      </> : null}
     </div>
   );
 }
