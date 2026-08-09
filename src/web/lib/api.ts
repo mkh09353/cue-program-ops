@@ -152,6 +152,7 @@ export const api = {
   reviewRecusals: () => req<{ data: any[] }>(`/api/events/${EVENT_ID}/review-recusals`),
   reinstateAssignment: (id: string) => mut<{ data: any }>(`/api/events/${EVENT_ID}/review-assignments/${id}/reinstate`, { method: "POST", body: "{}" }),
   reviewProgress: () => req<{data:any[]}>(`/api/events/${EVENT_ID}/review-progress`),
+  automation: () => req<{data:any}>(`/api/events/${EVENT_ID}/automation`),
   reviewReminders: (reviewerIds: string[]) => mut<{data:any[]}>(`/api/events/${EVENT_ID}/review-reminders`, {method:"POST",body:JSON.stringify({reviewerIds})}),
   reviewResults: () => req<{data:any[]}>(`/api/events/${EVENT_ID}/review-results`),
   reviewResultsCsv: () => `/api/events/${EVENT_ID}/review-results.csv`,
@@ -217,7 +218,7 @@ export const api = {
   editContentSession: (id:string,body:any) => mut(`/api/events/${EVENT_ID}/content/sessions/${id}`,{method:"PATCH",body:JSON.stringify(body)}),
   editContentSpeaker: (id:string,body:any) => mut(`/api/events/${EVENT_ID}/content/speakers/${id}`,{method:"PATCH",body:JSON.stringify(body)}),
   restoreContentHistory: (id:string) => mut(`/api/events/${EVENT_ID}/content/history/${id}/restore`,{method:"POST",body:"{}"}),
-  contentExport: () => mut<{data:any}>(`/api/events/${EVENT_ID}/content/export`,{method:"POST",body:JSON.stringify({grouping:"session"})}),
+  contentExportUrl: () => `/api/events/${EVENT_ID}/content/export`,
   resource: (slug: string) =>
     req<{ data: any }>(`/api/speaker/events/${EVENT_ID}/resources/${slug}`),
   templates: () => req<{ data: any[] }>(`/api/events/${EVENT_ID}/comms/templates`),
@@ -243,6 +244,9 @@ export const api = {
   publishAgenda: () => mut<{data:any}>(`/api/events/${EVENT_ID}/agenda/publish`,{method:"POST",body:"{}"}),
   saveSettings: (body: any) =>
     mut(`/api/events/${EVENT_ID}/settings`, { method: "PUT", body: JSON.stringify(body) }),
+  embedConfigs:()=>req<{data:any[]}>(`/api/events/${EVENT_ID}/embed-configs`),
+  createEmbedConfig:(body:any)=>mut<{data:any}>(`/api/events/${EVENT_ID}/embed-configs`,{method:"POST",body:JSON.stringify(body)}),
+  deleteEmbedConfig:(id:string)=>mut(`/api/events/${EVENT_ID}/embed-configs/${id}`,{method:"DELETE"}),
   syncPreview: () =>
     mut(`/sync/preview`, { method: "POST", body: JSON.stringify({ eventId: EVENT_ID }) }),
   syncRun: () => mut(`/sync/run`, { method: "POST", body: JSON.stringify({ eventId: EVENT_ID }) }),

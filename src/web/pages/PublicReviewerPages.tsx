@@ -469,31 +469,50 @@ export function ReviewerQueuePage({ done = false }: { done?: boolean }) {
   const [rows, setRows] = useState<any[]>([]);
   const [err, setErr] = useState("");
   const [loaded, setLoaded] = useState(false);
+  // Gate the list on this key so /r → /r/done never paints the previous filter's rows.
+  const listKey = `${isDone ? "done" : "queue"}:${location.pathname}`;
   useEffect(() => {
+    let cancelled = false;
     setLoaded(false);
+    setRows([]);
     setErr("");
     api
       .reviewerQueue()
       .then((r) => {
+        if (cancelled) return;
         setRows(r.data.filter((x: any) => (isDone ? x.status === "completed" : x.status === "assigned")));
         setLoaded(true);
       })
       .catch((e) => {
+        if (cancelled) return;
         setErr(e.message);
         setLoaded(true);
       });
+    return () => {
+      cancelled = true;
+    };
   }, [isDone, location.pathname]);
 
-  if (!loaded) return <Spinner />;
+  if (!loaded) {
+    return (
+      <div>
+        <PageHeader
+          title={isDone ? "Completed reviews" : "My queue"}
+          description={isDone ? "Loading completed evaluations…" : "Loading your queue…"}
+        />
+        <Spinner />
+      </div>
+    );
+  }
   if (err) return <Notice tone="danger">{err}</Notice>;
 
   return (
-    <div>
+    <div key={listKey}>
       <PageHeader
         title={isDone ? "Completed reviews" : "My queue"}
         description="Score from the queue. AI drafts never decide."
       />
-      <div className="space-y-2">
+      <div className="space-y-2" data-queue-mode={isDone ? "completed" : "assigned"}>
         {rows.map((r) => (
           <Link
             key={r.id}

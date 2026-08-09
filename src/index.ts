@@ -1,4 +1,5 @@
 import type { CueEnv } from "./durable.js";
+import { runScheduledAutomation } from "./automation.js";
 export { CueState } from "./durable.js";
 export interface Env extends CueEnv {
   ACCELEVENTS_LIVE?: string;
@@ -25,5 +26,8 @@ export default {
     if (!apiPath(pathname)) return env.ASSETS.fetch(request);
     const state = env.CUE_STATE.get(env.CUE_STATE.idFromName("primary"));
     return state.fetch(request);
+  },
+  async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext) {
+    runScheduledAutomation(env,(promise)=>ctx.waitUntil(promise));
   },
 };

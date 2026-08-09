@@ -366,6 +366,8 @@ export function SpeakerDetailPage() {
   const [row, setRow] = useState<any>(null);
   const [err, setErr] = useState("");
   const [edit, setEdit] = useState<any>(null);
+  const [inviteMsg, setInviteMsg] = useState("");
+  const [headshotBusy, setHeadshotBusy] = useState(false);
 
   const load = () =>
     api
@@ -403,7 +405,22 @@ export function SpeakerDetailPage() {
         description={`${row.email} · onboarding ${row.readiness?.pct ?? 0}%`}
         actions={
           <div className="flex gap-2">
-            <Button variant="secondary" onClick={() => api.inviteSpeaker(row.speakerId).then(() => toast("Invite logged"))}>
+            <Button
+              variant="secondary"
+              onClick={async () => {
+                try {
+                  const r = await api.inviteSpeaker(row.speakerId);
+                  const at = new Date().toLocaleString();
+                  const msg = `Invited · logged at ${at}`;
+                  setInviteMsg(msg);
+                  toast(`Portal invite logged for ${row.name}`);
+                  load();
+                  void r;
+                } catch (e: any) {
+                  toast(e.message || "Invite failed", "danger");
+                }
+              }}
+            >
               Send portal invite
             </Button>
             <Button asChild variant="outline">
@@ -412,6 +429,11 @@ export function SpeakerDetailPage() {
           </div>
         }
       />
+      {inviteMsg ? (
+        <Notice tone="ok" onClose={() => setInviteMsg("")}>
+          {inviteMsg}
+        </Notice>
+      ) : null}
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card className="p-4">
@@ -438,6 +460,59 @@ export function SpeakerDetailPage() {
                     </option>
                   ))}
                 </select>
+              </Field>
+              <Field label="Headshot">
+                <div className="space-y-2">
+                  {(row.headshotUrl || row.profile?.headshotUrl) ? (
+                    <img
+                      src={row.headshotUrl || row.profile?.headshotUrl}
+                      alt=""
+                      className="h-20 w-20 rounded-full object-cover border border-line"
+                    />
+                  ) : null}
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    aria-label="Upload headshot"
+                    className="block w-full text-sm"
+                    disabled={headshotBusy}
+                    onChange={async (e) => {
+                      const f = e.target.files?.[0];
+                      if (!f) return;
+                      if (f.size > 2 * 1024 * 1024) {
+                        toast("Headshot must be under 2 MB", "danger");
+                        return;
+                      }
+                      setHeadshotBusy(true);
+                      try {
+                        const dataUrl = await new Promise<string>((resolve, reject) => {
+                          const r = new FileReader();
+                          r.onload = () => resolve(String(r.result || ""));
+                          r.onerror = reject;
+                          r.readAsDataURL(f);
+                        });
+                        // Organizer path: content speaker edit accepts headshotUrl (no app.ts change).
+                        await api.editContentSpeaker(row.speakerId, {
+                          title: edit.title,
+                          company: edit.company,
+                          bio: edit.bio,
+                          headshotUrl: dataUrl,
+                        });
+                        // Also patch speaker profile fields if updateSpeaker accepts headshotUrl.
+                        await api.updateSpeaker(row.speakerId, { ...edit, headshotUrl: dataUrl, headshotName: f.name }).catch(() => null);
+                        toast("Headshot uploaded");
+                        load();
+                      } catch (err: any) {
+                        toast(err.message || "Headshot upload failed", "danger");
+                      } finally {
+                        setHeadshotBusy(false);
+                      }
+                    }}
+                  />
+                  <p className="text-xs text-mid">
+                    {headshotBusy ? "Uploading…" : "PNG/JPEG/WebP · max 2 MB · replaces current headshot"}
+                  </p>
+                </div>
               </Field>
               <Button
                 onClick={async () => {

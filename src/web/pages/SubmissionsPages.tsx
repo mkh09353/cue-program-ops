@@ -111,7 +111,12 @@ export function SubmissionsListPage() {
                     </Link>
                     <div className="text-xs text-mid">{s.format}</div>
                   </td>
-                  <td className="px-4 py-3">{s.name}</td>
+                  <td className="px-4 py-3">
+                    {s.name}
+                    {s.additionalSpeakers?.length
+                      ? s.additionalSpeakers.map((p: any) => ` + ${p.name}`).join("")
+                      : ""}
+                  </td>
                   <td className="px-4 py-3">{s.category}</td>
                   <td className="px-4 py-3">{s.reviewBoard}</td>
                   <td className="px-4 py-3 uppercase">{s.round}</td>

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api } from "../lib/api";
+import { api, getPersona } from "../lib/api";
 import {
   Badge,
   Button,
@@ -29,6 +29,8 @@ function useData(load: () => Promise<any>) {
 function updateCriterion(criteria: any[], i: number, patch: Record<string, unknown>) {
   return criteria.map((x: any, n: number) => (n === i ? { ...x, ...patch } : x));
 }
+export const eventDateTimeLocal=(iso:string)=>new Intl.DateTimeFormat("sv-SE",{timeZone:"America/Los_Angeles",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).format(new Date(iso)).replace(" ","T");
+export const eventLocalToIso=(value:string)=>{const [date,time]=value.split("T"),[y,m,d]=date!.split("-").map(Number),[h,min]=time!.split(":").map(Number);const guess=Date.UTC(y!,m!-1,d!,h!,min!),shown=new Intl.DateTimeFormat("en-US",{timeZone:"America/Los_Angeles",timeZoneName:"shortOffset"}).formatToParts(new Date(guess)).find(x=>x.type==="timeZoneName")?.value||"GMT-8",match=shown.match(/GMT([+-])(\d+)(?::(\d+))?/),offset=(match?(match[1]==="-"?-1:1)*(Number(match[2])*60+Number(match[3]||0)):-480);return new Date(guess-offset*60000).toISOString()};
 
 function RoundEditor({ round, personas, saved }: { round: any; personas: any[]; saved: () => void }) {
   const [draft, setDraft] = useState(() => structuredClone(round));
@@ -53,15 +55,15 @@ function RoundEditor({ round, personas, saved }: { round: any; personas: any[]; 
         <Field label="Opens">
           <Input
             type="datetime-local"
-            value={draft.opensAt?.slice(0, 16)}
-            onChange={(e) => setDraft({ ...draft, opensAt: new Date(e.target.value).toISOString() })}
+            value={eventDateTimeLocal(draft.opensAt)}
+            onChange={(e) => setDraft({ ...draft, opensAt: eventLocalToIso(e.target.value) })}
           />
         </Field>
         <Field label="Closes">
           <Input
             type="datetime-local"
-            value={draft.closesAt?.slice(0, 16)}
-            onChange={(e) => setDraft({ ...draft, closesAt: new Date(e.target.value).toISOString() })}
+            value={eventDateTimeLocal(draft.closesAt)}
+            onChange={(e) => setDraft({ ...draft, closesAt: eventLocalToIso(e.target.value) })}
           />
         </Field>
       </div>
@@ -290,15 +292,37 @@ export function AssignmentsPage() {
   const [cap, setCap] = useState(5);
   const [selected, setSelected] = useState<string[]>([]);
   const [message, setMessage] = useState("");
+  const [assignBusy, setAssignBusy] = useState(false);
 
   const run = async (method: string) => {
     const ids = method === "specific" ? selected : subs.map((s) => s.id);
-    const r = await api.assignReviews({ roundId, reviewerId, submissionIds: ids, method, cap });
-    const msg = `${r.data.length} assignment${r.data.length === 1 ? "" : "s"} created`;
-    setMessage(msg);
-    toast(msg);
-    reloadRounds();
-    reloadRecusals();
+    if (!ids.length) {
+      setMessage("Select at least one submission to assign.");
+      toast("Select submissions first", "warn");
+      return;
+    }
+    setAssignBusy(true);
+    try {
+      const r = await api.assignReviews({ roundId, reviewerId, submissionIds: ids, method, cap });
+      const count = r.data?.length ?? 0;
+      const reviewerName =
+        boot.find((p) => p.id === reviewerId)?.name || reviewerId;
+      const msg =
+        count === 0
+          ? `No new assignments (cap or duplicates) for ${reviewerName}`
+          : `${count} assigned to ${reviewerName}`;
+      setMessage(msg);
+      toast(msg);
+      if (method === "specific" && count > 0) setSelected([]);
+      reloadRounds();
+      reloadRecusals();
+    } catch (e: any) {
+      const err = e?.message || "Assign failed";
+      setMessage(err);
+      toast(err, "danger");
+    } finally {
+      setAssignBusy(false);
+    }
   };
 
   return (
@@ -329,14 +353,20 @@ export function AssignmentsPage() {
           <Input type="number" min={1} value={cap} onChange={(e) => setCap(Number(e.target.value))} />
         </Field>
         <div className="flex flex-wrap gap-2 md:col-span-3">
-          <Button disabled={!selected.length} onClick={() => run("specific")}>
-            Assign selected ({selected.length})
+          <Button disabled={!selected.length || assignBusy} onClick={() => void run("specific")}>
+            {assignBusy ? "Assigning…" : `Assign selected (${selected.length})`}
           </Button>
-          <Button variant="outline" onClick={() => run("auto")}>
+          <Button variant="outline" disabled={assignBusy} onClick={() => void run("auto")}>
             Auto-distribute
           </Button>
         </div>
-        {message ? <p className="text-sm font-semibold md:col-span-3">{message}</p> : null}
+        {message ? (
+          <div className="md:col-span-3" role="status" aria-live="polite">
+            <Notice tone={message.toLowerCase().includes("fail") || message.toLowerCase().includes("select") ? "warn" : "ok"}>
+              {message}
+            </Notice>
+          </div>
+        ) : null}
       </Card>
 
       <div className="mt-4 overflow-x-auto rounded-[24px] border bg-paper">
@@ -412,6 +442,8 @@ export function AssignmentsPage() {
 
 export function ReviewProgressPage() {
   const { data, reload } = useData(api.reviewProgress);
+  const { data: automationRows } = useData(async()=>{const r=await api.automation();return {data:[r.data]}});
+  const automation=automationRows[0];
   const [message, setMessage] = useState("");
   const outstanding = data.filter((r) => r.outstanding).map((r) => r.reviewerId);
   return (
@@ -434,6 +466,7 @@ export function ReviewProgressPage() {
           </Button>
         }
       />
+      <Card className="mb-4 p-4"><b>Automation</b><p className="text-sm text-mid">{automation?.enabled?"Enabled":"Disabled"} · hourly ({automation?.schedule||"0 * * * *"})</p><p className="text-sm">Last run: {automation?.lastRunAt?new Date(automation.lastRunAt).toLocaleString():"Not run yet"} · speakers {automation?.speakerSent||0} · reviewers {automation?.reviewerSent||0} · {automation?.status||"never"}</p></Card>
       {message ? <Notice tone="ok">{message}</Notice> : null}
       {data.map((r) => (
         <Card className="mt-2 flex justify-between p-4" key={`${r.roundId}-${r.reviewerId}`}>
@@ -449,13 +482,54 @@ export function ReviewProgressPage() {
 
 export function ResultsPage() {
   const { data } = useData(api.reviewResults);
+  const [exportMsg, setExportMsg] = useState("");
+  const [exporting, setExporting] = useState(false);
+
+  const downloadCsv = async () => {
+    setExporting(true);
+    setExportMsg("");
+    try {
+      const p = getPersona();
+      const res = await fetch(api.reviewResultsCsv(), {
+        headers: {
+          "x-demo-persona": p.id,
+          "x-demo-role": p.role,
+        },
+      });
+      if (!res.ok) throw new Error(`Export failed (${res.status})`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "review-results.csv";
+      a.rel = "noopener";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      setExportMsg("CSV download started — check your downloads folder.");
+      toast("CSV download started");
+    } catch (e: any) {
+      const err = e?.message || "Export failed";
+      setExportMsg(err);
+      toast(err, "danger");
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
     <div>
       <PageHeader
         title="Results"
         description="Human review aggregates and disposition."
-        actions={<Button onClick={() => window.location.assign(api.reviewResultsCsv())}>Export CSV</Button>}
+        actions={
+          <Button onClick={() => void downloadCsv()} disabled={exporting}>
+            {exporting ? "Exporting…" : "Export CSV"}
+          </Button>
+        }
       />
+      {exportMsg ? <Notice tone="ok">{exportMsg}</Notice> : null}
       <div className="overflow-x-auto rounded-[24px] border bg-paper">
         <table className="w-full text-left text-sm">
           <thead>

@@ -703,7 +703,10 @@ export function createPublicSite(deps: PublicSiteDeps) {
   app.get("/e/:slug/public/sessions", async (c) => {
     const loaded = await withProgram(c.req.param("slug"));
     if (!loaded) return c.html(notFoundHtml(), 404);
-    return c.html(renderSessionsPage(loaded.program, baseFor(loaded.slug)));
+    const configId=c.req.query("config"),config=configId?(store.embedConfigs||[]).find(x=>x.id===configId&&x.widget==="sessions"):undefined;
+    if(configId&&!config)return c.html(notFoundHtml("Embed configuration not found"),404);
+    const program=config?{...loaded.program,sessions:filterPublicSessions(loaded.program,config.filters).sessions}:loaded.program;
+    return c.html(renderSessionsPage(program, baseFor(loaded.slug)));
   });
 
   app.get("/e/:slug/public/sessions/:id", async (c) => {

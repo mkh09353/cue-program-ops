@@ -21,6 +21,7 @@ export function PublishPage() {
   const [sync, setSync] = useState<any>(null);
   const [runs, setRuns] = useState<any[]>([]);
   const [widget, setWidget] = useState<"sessions" | "speakers" | "agenda" | "itinerary" | "gallery">("sessions");
+  const [configs,setConfigs]=useState<any[]>([]),[configName,setConfigName]=useState(""),[trackFilter,setTrackFilter]=useState("");
   const origin = typeof window !== "undefined" ? window.location.origin : "";
 
   const widgets = [
@@ -42,6 +43,7 @@ export function PublishPage() {
 
   useEffect(() => {
     loadRuns();
+    api.embedConfigs().then(r=>setConfigs(r.data)).catch(()=>{});
     return subscribeData(loadRuns);
   }, []);
 
@@ -61,6 +63,7 @@ export function PublishPage() {
         <p className="text-sm text-mid">
           Pick a surface, copy an iframe snippet, or share JSON / iCal feeds. All widgets read the same canonical projection — no republish step.
         </p>
+        <div className="mt-4 rounded-[18px] border border-line p-4"><b>Saved embed configurations</b><div className="mt-2 grid gap-2 md:grid-cols-[1fr_1fr_auto]"><Input placeholder="Configuration name" value={configName} onChange={e=>setConfigName(e.target.value)}/><Input placeholder="Track filter (optional)" value={trackFilter} onChange={e=>setTrackFilter(e.target.value)}/><Button onClick={async()=>{const r=await api.createEmbedConfig({name:configName,widget,filters:{track:trackFilter},theme:{}});setConfigs([...configs,r.data]);setConfigName("");toast("Embed configuration saved")}}>Save config</Button></div>{configs.map(c=>{const url=`${origin}/e/${EVENT_SLUG}/public/${c.widget}?config=${c.id}`,snippet=`<iframe src="${url}" title="${c.name}" style="width:100%;min-height:640px;border:0"></iframe>`;return <div key={c.id} className="mt-3 rounded-[18px] bg-soft p-3 text-sm"><div className="flex justify-between"><b>{c.name}</b><Button size="sm" variant="outline" onClick={async()=>{await api.deleteEmbedConfig(c.id);setConfigs(configs.filter(x=>x.id!==c.id))}}>Delete</Button></div><code className="mt-1 block break-all text-xs">{snippet}</code></div>})}</div>
         <div className="mt-4 flex flex-wrap gap-2" role="tablist" aria-label="Widget picker">
           {widgets.map((w) => (
             <Button

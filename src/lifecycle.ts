@@ -194,6 +194,8 @@ export interface Resource {
 }
 
 export interface ReminderPlan { speakerId: string; taskId: string; templateKey: "task_reminder"; dueAt: string; overdue: boolean }
+export interface EmbedConfig { id:string; name:string; widget:"sessions"|"speakers"|"agenda"|"itinerary"|"gallery"; filters:{track?:string;day?:string}; theme:{accent?:string}; createdAt:string }
+export interface AutomationState { enabled:boolean; schedule:string; lastRunAt?:string; speakerSent:number; reviewerSent:number; status:"never"|"completed"|"failed" }
 
 export interface SessionDraft {
   id: string;
@@ -242,6 +244,8 @@ export interface LifecycleStore {
   tracks: { id: string; name: string }[];
   boards: { id: string; label: string }[];
   personas: { id: string; role: Role; name: string; email: string; speakerId?: string; boardIds?: string[] }[];
+  embedConfigs: EmbedConfig[];
+  automation: AutomationState;
 }
 
 const now = () => new Date().toISOString();
@@ -249,6 +253,8 @@ const now = () => new Date().toISOString();
 export const RUBRIC_CRITERIA = ["relevance", "novelty", "clarity", "depth"] as const;
 
 export const store: LifecycleStore = {
+  embedConfigs: [],
+  automation: {enabled:true,schedule:"0 * * * *",speakerSent:0,reviewerSent:0,status:"never"},
   event: {
     id: EVENT_ID,
     name: "AI Engineer Summit",

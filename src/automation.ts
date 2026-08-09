@@ -1,0 +1,2 @@
+export type AutomationEnv={CUE_STATE:DurableObjectNamespace};
+export function runScheduledAutomation(env:AutomationEnv,waitUntil:(promise:Promise<unknown>)=>void){const state=env.CUE_STATE.get(env.CUE_STATE.idFromName("primary"));const work=state.fetch(new Request("https://cue.internal/api/internal/automation/run",{method:"POST",headers:{"x-cue-automation":"scheduled"}})).then(async r=>{if(!r.ok)throw new Error(`CUE automation failed: ${r.status} ${await r.text()}`)});waitUntil(work);return work}

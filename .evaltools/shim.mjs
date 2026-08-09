@@ -95,7 +95,7 @@ const server = http.createServer(async (req, res) => {
       }
       const oaReq = toOpenAI(body);
       let lastErr = "";
-      for (let attempt = 0; attempt < 4; attempt++) {
+      for (let attempt = 0; attempt < 7; attempt++) {
         const r = await fetch(ZEN_URL, {
           method: "POST",
           headers: {
@@ -109,7 +109,7 @@ const server = http.createServer(async (req, res) => {
         const text = await r.text();
         if (r.status === 429 || r.status >= 500) {
           lastErr = `upstream ${r.status}: ${text.slice(0, 300)}`;
-          await new Promise((s) => setTimeout(s, 2000 * (attempt + 1)));
+          await new Promise((s) => setTimeout(s, Math.min(60000, 4000 * 2 ** attempt)));
           continue;
         }
         if (!r.ok) {
