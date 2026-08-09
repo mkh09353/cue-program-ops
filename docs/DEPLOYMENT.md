@@ -64,7 +64,7 @@ Worker `Env` (`src/index.ts`): `ACCELEVENTS_*`, `AIRTABLE_TOKEN`, `AIRTABLE_BASE
 2. **Same origin reverse proxy**: put Worker (or Node) behind a path router that serves SPA + API.  
 3. **Local-only demo**: `npm run dev` is enough for judges.
 
-The Worker deployment serves the built Vite SPA and API from one origin. Wrangler's asset configuration falls back to `dist/index.html` for client-side routes while sending `/api/*`, `/public/*`, `/embed/*`, `/health`, `/demo`, and `/sync/*` through the Hono Worker first.
+The Worker deployment serves the built Vite SPA and API from one origin. Wrangler binds `dist` as `ASSETS`; the Worker entry sends `/api/*`, `/public/*`, `/embed/*`, `/health`, `/demo`, and `/sync/*` to Hono and sends all other routes to the SPA asset binding, whose fallback is `dist/index.html`.
 
 ### D1 (optional, sync history seam)
 
