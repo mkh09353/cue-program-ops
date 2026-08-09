@@ -11,6 +11,8 @@ import { CommsPage, SpeakerDetailPage, SpeakersPage } from "./pages/SpeakersComm
 import { FormsPage, PublishPage, SettingsPage } from "./pages/PublishFormsSettings";
 import {
   PortalHomePage,
+  PortalDeliverablesPage,
+  PortalDeliverableDetailPage,
   PortalProfilePage,
   PortalResourceDetailPage,
   PortalResourcesPage,
@@ -27,6 +29,14 @@ import {
 } from "./pages/PublicReviewerPages";
 import { restorePersonaFromSession } from "./lib/api";
 import { AssignmentsPage, EvaluationPlanPage, ResultsPage, ReviewProgressPage } from "./pages/ReviewManagementPages";
+import { ContentPage } from "./pages/ContentPages";
+import {
+  CrmContactPage,
+  CrmDirectoryPage,
+  CrmImportPage,
+  CrmPipelinePage,
+  CrmSegmentsPage,
+} from "./pages/CrmPages";
 
 restorePersonaFromSession();
 
@@ -49,6 +59,12 @@ function App() {
           <Route path="schedule" element={<SchedulePage />} />
           <Route path="speakers" element={<SpeakersPage />} />
           <Route path="speakers/:id" element={<SpeakerDetailPage />} />
+          <Route path="crm" element={<CrmDirectoryPage />} />
+          <Route path="crm/pipeline" element={<CrmPipelinePage />} />
+          <Route path="crm/segments" element={<CrmSegmentsPage />} />
+          <Route path="crm/import" element={<CrmImportPage />} />
+          <Route path="crm/contacts/:id" element={<CrmContactPage />} />
+          <Route path="content" element={<ContentPage />} />
           <Route path="comms" element={<CommsPage />} />
           <Route path="publish" element={<PublishPage />} />
           <Route path="forms" element={<FormsPage />} />
@@ -68,6 +84,8 @@ function App() {
           <Route path="talks" element={<PortalTalksPage />} />
           <Route path="tasks" element={<PortalTasksPage />} />
           <Route path="tasks/:id" element={<PortalTaskDetailPage />} />
+          <Route path="deliverables" element={<PortalDeliverablesPage />} />
+          <Route path="deliverables/:id" element={<PortalDeliverableDetailPage />} />
           <Route path="resources" element={<PortalResourcesPage />} />
           <Route path="resources/:slug" element={<PortalResourceDetailPage />} />
           <Route path="profile" element={<PortalProfilePage />} />

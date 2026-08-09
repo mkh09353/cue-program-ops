@@ -196,6 +196,21 @@ export function PortalTasksPage() {
   );
 }
 
+export function PortalDeliverablesPage() {
+  const [rows,setRows]=useState<any[]>([]),[err,setErr]=useState("");
+  useEffect(()=>{api.deliverables().then(r=>setRows(r.data)).catch(e=>setErr(e.message))},[]);
+  if(err)return <Notice tone="danger">{err}</Notice>;
+  return <div><PageHeader title="Deliverables" description="Your assigned session files, deadlines, and approval state."/><div className="space-y-2">{rows.map(t=><Link key={t.id} to={`/p/deliverables/${t.id}`} className="flex justify-between rounded-2xl border bg-white p-4"><div><b>{t.name}</b><p className="text-xs text-stone-500">{t.session?.title} · Due {t.dueAt.slice(0,10)} · {t.uploadCount} version(s)</p></div><StatusBadge status={t.overdue?"overdue":t.status}/></Link>)}</div></div>;
+}
+
+export function PortalDeliverableDetailPage() {
+  const {id}=useParams();const[data,setData]=useState<any>(null),[err,setErr]=useState(""),[comment,setComment]=useState("");
+  const load=()=>api.deliverable(id!).then(r=>setData(r.data)).catch(e=>setErr(e.message));useEffect(()=>{void load()},[id]);
+  const upload=async(file:File)=>{const dataBase64=await new Promise<string>((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(String(r.result).split(",")[1]||"");r.onerror=reject;r.readAsDataURL(file)});await api.uploadDeliverable(id!,{name:file.name,mime:file.type,size:file.size,dataBase64,kind:file.type.startsWith("image/")?"headshot":file.type==="application/pdf"?"slides":"document"});toast("Upload saved as a new version");load()};
+  if(!data&&!err)return <Spinner/>;if(err)return <Notice tone="danger">{err}</Notice>;const file=data.file;
+  return <div><PageHeader title={data.name} description={`${data.session?.title||"Speaker deliverable"} · Due ${data.dueAt.slice(0,10)}`}/><Card className="p-5"><StatusBadge status={data.overdue?"overdue":data.status}/><p className="mt-3 text-sm">{data.instructions}</p><div className="mt-4 rounded-xl border border-dashed p-4"><b>Upload file</b><p className="mb-2 text-xs text-stone-500">Accepted: {data.acceptedTypes.join(", ")} · Maximum 2 MB. Re-uploading creates a new version.</p><Input type="file" accept={data.acceptedTypes.join(",")} onChange={e=>{const f=e.target.files?.[0];if(f)void upload(f)}}/></div>{file?<div className="mt-5"><h2 className="font-bold">{file.versions.find((v:any)=>v.current)?.name}</h2><p className="text-sm text-stone-500">Approval: {file.status} · {file.versions.length} versions</p>{[...file.versions].reverse().map((v:any)=><div key={v.id} className="mt-2 flex justify-between rounded bg-stone-50 p-2 text-sm"><span>v{v.version} · {new Date(v.uploadedAt).toLocaleString()}</span><span>{v.current?<Badge tone="ok">Current</Badge>:null} <a className="text-iris underline" href={`/api/content/files/${file.id}/versions/${v.id}`}>View</a></span></div>)}<h3 className="mt-4 text-xs font-bold uppercase text-stone-500">Comments</h3>{file.comments.map((c:any)=><p key={c.id} className="mt-2 rounded bg-stone-50 p-2 text-sm"><b>{c.authorName}</b> · {new Date(c.createdAt).toLocaleString()}<br/>{c.body}</p>)}<div className="mt-2 flex gap-2"><Input value={comment} onChange={e=>setComment(e.target.value)} placeholder="Add a comment"/><Button onClick={async()=>{await api.addFileComment(file.id,comment);setComment("");load()}}>Comment</Button></div></div>:null}</Card></div>;
+}
+
 const FILE_TYPES = new Set(["headshot", "slides", "supporting_doc"]);
 
 export function PortalTaskDetailPage() {

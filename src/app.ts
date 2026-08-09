@@ -31,7 +31,9 @@ import { canonicalScheduleMetrics, publicSpeakers } from "./projection.js";
 import { MemorySnapshotPersistence, type CompetitionSnapshot, type SnapshotPersistence } from "./persistence.js";
 import { MockMailer, type Mailer } from "./mailer.js";
 import { createReviewRoutes } from "./reviewRoutes.js";
+import { createContentRoutes } from "./contentRoutes.js";
 import { createPublicSite } from "./publicSite.js";
+import { createCrmRoutes } from "./crmRoutes.js";
 import { blindSubmission } from "./review.js";
 
 export interface AppDeps {
@@ -110,7 +112,9 @@ export function createApp(deps: AppDeps = {}) {
   };
   app.use("/api/events/:eventId/*", async (c, next) => c.req.param("eventId") === EVENT_ID ? next() : fail(c, "event not found", 404));
   app.route("/api/events", createReviewRoutes({ store, persist, persona: personaOf, mailer }));
+  app.route("/", createContentRoutes({ store, persist, persona: personaOf, mailer, repo }));
   app.route("/", createPublicSite({ repo }));
+  app.route("/", createCrmRoutes({ store, persist, persona: personaOf, mailer }));
 
   app.get("/health", (c) =>
     c.json({ ok: true, mode: client instanceof MockAcceleventsClient ? "mock" : "configured", product: "CUE" }),
@@ -859,5 +863,8 @@ export async function restoreSnapshot(deps: { repo: Repository; persistence: Sna
     const restored = snapshot.lifecycle[key];
     if (restored !== undefined) (store as any)[key]=structuredClone(restored);
   }
+  // Optional CRM extension may not be present on older snapshots or on the typed store keys.
+  const life = snapshot.lifecycle as typeof snapshot.lifecycle & { crm?: unknown };
+  if (life.crm !== undefined) (store as any).crm = structuredClone(life.crm);
   return true;
 }

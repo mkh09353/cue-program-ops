@@ -3,6 +3,7 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import {
   CalendarDays,
   Command,
+  ContactRound,
   FileText,
   Home,
   LayoutGrid,
@@ -129,6 +130,8 @@ const orgNav = [
   { to: "/app/results", label: "Results", icon: FileText },
   { to: "/app/schedule", label: "Schedule", icon: CalendarDays },
   { to: "/app/speakers", label: "Speakers", icon: Users },
+  { to: "/app/crm", label: "Speaker CRM", icon: ContactRound },
+  { to: "/app/content", label: "Content", icon: FileText },
   { to: "/app/comms", label: "Comms", icon: Megaphone },
   { to: "/app/publish", label: "Publish", icon: LayoutGrid },
   { to: "/app/forms", label: "Forms", icon: Sparkles },
@@ -136,8 +139,9 @@ const orgNav = [
 ];
 
 export function OrganizerShell() {
-  useRoleSync("organizer");
+  const currentPersona = usePersona();
   const [open, setOpen] = useState(false);
+  if (currentPersona.role !== "organizer") return <div className="grid min-h-screen place-items-center bg-canvas p-6"><div className="max-w-md rounded-2xl border bg-white p-6 text-center"><h1 className="text-xl font-bold">Organizer access required</h1><p className="mt-2 text-sm text-stone-500">Speaker and reviewer personas cannot open organizer content or administration views.</p><Button asChild className="mt-4"><a href={roleHome(currentPersona.role)}>Return to your portal</a></Button></div></div>;
   const nav = (
     <nav className="flex flex-col gap-1 p-3" aria-label="Organizer">
       {orgNav.map((item) => (
@@ -260,6 +264,7 @@ export function PortalShell() {
     { to: "/p", label: "Home", icon: Home, end: true },
     { to: "/p/talks", label: "Talks" },
     { to: "/p/tasks", label: "Tasks" },
+    { to: "/p/deliverables", label: "Deliverables" },
     { to: "/p/resources", label: "Resources" },
     { to: "/p/profile", label: "Profile" },
   ];
@@ -293,7 +298,7 @@ export function PortalShell() {
         <Outlet />
       </main>
       <nav
-        className="fixed bottom-0 left-0 right-0 z-10 grid grid-cols-5 border-t border-stone-200 bg-white pb-[env(safe-area-inset-bottom)] sm:hidden"
+        className="fixed bottom-0 left-0 right-0 z-10 grid grid-cols-6 border-t border-stone-200 bg-white pb-[env(safe-area-inset-bottom)] sm:hidden"
         aria-label="Speaker mobile"
       >
         {links.map((l) => (

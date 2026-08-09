@@ -135,6 +135,26 @@ export interface FileRecord {
   createdAt: string;
 }
 
+export type ContentApprovalStatus = "draft" | "submitted" | "approved" | "changes_requested";
+export interface DeliverableTask {
+  id: string; name: string; instructions: string; dueAt: string; speakerId: string; sessionId?: string;
+  fileRequired: boolean; acceptedTypes: string[]; status: "incomplete" | "complete"; createdAt: string;
+}
+export interface ContentFileVersion {
+  id: string; version: number; name: string; mime: string; size: number; dataBase64: string;
+  uploadedBy: string; uploadedAt: string; current: boolean;
+}
+export interface ContentFileComment { id: string; authorId: string; authorName: string; body: string; createdAt: string }
+export interface ContentFile {
+  id: string; speakerId: string; sessionId?: string; taskId: string; kind: "headshot" | "slides" | "document";
+  status: ContentApprovalStatus; approvalComment?: string; versions: ContentFileVersion[]; comments: ContentFileComment[];
+}
+export interface ContentEditHistory {
+  id: string; entityType: "session" | "speaker"; entityId: string; editorId: string; editorName: string;
+  createdAt: string; before: Record<string, unknown>; after: Record<string, unknown>;
+}
+export interface SessionContentState { sessionId: string; status: ContentApprovalStatus; approvalComment?: string }
+
 export interface CommTemplate {
   id: string;
   key: string;
@@ -199,6 +219,10 @@ export interface LifecycleStore {
   profiles: SpeakerProfile[];
   tasks: SpeakerTask[];
   files: FileRecord[];
+  deliverableTasks: DeliverableTask[];
+  contentFiles: ContentFile[];
+  contentHistory: ContentEditHistory[];
+  sessionContent: SessionContentState[];
   templates: CommTemplate[];
   communications: Communication[];
   resources: Resource[];
@@ -576,6 +600,24 @@ export const store: LifecycleStore = {
       visibility: "public",
       createdAt: "2026-07-21T00:00:00.000Z",
     },
+  ],
+  deliverableTasks: [
+    { id:"deliverable-slides-ada", name:"Upload Session Presentation", instructions:"Final slide deck as a PDF, 16:9 aspect ratio.", dueAt:"2027-05-01T23:59:59.000Z", speakerId:"spk-ada", sessionId:"ses-analytical", fileRequired:true, acceptedTypes:["application/pdf"], status:"complete", createdAt:"2027-03-01T10:00:00.000Z" },
+    { id:"deliverable-headshot-ada", name:"Upload Final Headshot (print quality)", instructions:"Upload a high-resolution PNG or JPEG headshot.", dueAt:"2027-04-14T23:59:59.000Z", speakerId:"spk-ada", sessionId:"ses-analytical", fileRequired:true, acceptedTypes:["image/png","image/jpeg"], status:"incomplete", createdAt:"2027-03-01T10:00:00.000Z" },
+    { id:"deliverable-slides-sam", name:"Upload Session Presentation", instructions:"Final slide deck as a PDF, 16:9 aspect ratio.", dueAt:"2027-05-01T23:59:59.000Z", speakerId:"spk-sam", sessionId:"ses-sam", fileRequired:true, acceptedTypes:["application/pdf"], status:"incomplete", createdAt:"2027-03-01T10:00:00.000Z" },
+    { id:"deliverable-headshot-sam", name:"Upload Final Headshot (print quality)", instructions:"Upload a high-resolution PNG or JPEG headshot.", dueAt:"2027-04-14T23:59:59.000Z", speakerId:"spk-sam", sessionId:"ses-sam", fileRequired:true, acceptedTypes:["image/png","image/jpeg"], status:"incomplete", createdAt:"2027-03-01T10:00:00.000Z" },
+  ],
+  contentFiles: [
+    { id:"content-slides-ada", speakerId:"spk-ada", sessionId:"ses-analytical", taskId:"deliverable-slides-ada", kind:"slides", status:"submitted", versions:[
+      { id:"content-slides-ada-v1", version:1, name:"slides.pdf", mime:"application/pdf", size:18, dataBase64:"JVBERi0xLjQgZGVtbyB2MQ==", uploadedBy:"spk-ada", uploadedAt:"2027-04-01T10:00:00.000Z", current:false },
+      { id:"content-slides-ada-v2", version:2, name:"slides.pdf", mime:"application/pdf", size:18, dataBase64:"JVBERi0xLjQgZGVtbyB2Mg==", uploadedBy:"spk-ada", uploadedAt:"2027-04-04T10:00:00.000Z", current:true },
+    ], comments:[{ id:"comment-ada-draft", authorId:"spk-ada", authorName:"Ada Lovelace", body:"Draft deck - final version coming Friday.", createdAt:"2027-04-01T10:05:00.000Z" }] },
+  ],
+  contentHistory: [],
+  sessionContent: [
+    { sessionId:"ses-analytical", status:"approved" },
+    { sessionId:"ses-margaret", status:"draft" },
+    { sessionId:"ses-sam", status:"submitted" },
   ],
   templates: [
     {

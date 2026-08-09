@@ -87,6 +87,7 @@ function headers(extra?: HeadersInit): HeadersInit {
   const h: Record<string, string> = {
     "content-type": "application/json",
     "x-demo-role": persona.role,
+    "x-demo-persona": persona.id,
   };
   if (persona.speakerId) h["x-demo-speaker"] = persona.speakerId;
   return { ...h, ...(extra as Record<string, string>) };
@@ -168,6 +169,18 @@ export const api = {
     mut(`/api/speaker/events/${EVENT_ID}/profile`, { method: "PUT", body: JSON.stringify(body) }),
   uploadFile: (body: any) =>
     mut(`/api/speaker/events/${EVENT_ID}/files`, { method: "POST", body: JSON.stringify(body) }),
+  deliverables: () => req<{data:any[]}>(`/api/speaker/events/${EVENT_ID}/deliverables`),
+  deliverable: (id:string) => req<{data:any}>(`/api/speaker/events/${EVENT_ID}/deliverables/${id}`),
+  uploadDeliverable: (id:string,body:any) => mut(`/api/speaker/events/${EVENT_ID}/deliverables/${id}/upload`,{method:"POST",body:JSON.stringify(body)}),
+  addFileComment: (id:string,body:string) => mut(`/api/content/files/${id}/comments`,{method:"POST",body:JSON.stringify({body})}),
+  content: () => req<{data:any}>(`/api/events/${EVENT_ID}/content`),
+  createDeliverableTask: (body:any) => mut(`/api/events/${EVENT_ID}/content/tasks`,{method:"POST",body:JSON.stringify(body)}),
+  approveContentFile: (id:string,body:any) => mut(`/api/events/${EVENT_ID}/content/files/${id}/approval`,{method:"PATCH",body:JSON.stringify(body)}),
+  contentReminders: (overdueOnly=false) => mut<{data:any[]}>(`/api/events/${EVENT_ID}/content/reminders`,{method:"POST",body:JSON.stringify({overdueOnly})}),
+  editContentSession: (id:string,body:any) => mut(`/api/events/${EVENT_ID}/content/sessions/${id}`,{method:"PATCH",body:JSON.stringify(body)}),
+  editContentSpeaker: (id:string,body:any) => mut(`/api/events/${EVENT_ID}/content/speakers/${id}`,{method:"PATCH",body:JSON.stringify(body)}),
+  restoreContentHistory: (id:string) => mut(`/api/events/${EVENT_ID}/content/history/${id}/restore`,{method:"POST",body:"{}"}),
+  contentExport: () => mut<{data:any}>(`/api/events/${EVENT_ID}/content/export`,{method:"POST",body:JSON.stringify({grouping:"session"})}),
   resource: (slug: string) =>
     req<{ data: any }>(`/api/speaker/events/${EVENT_ID}/resources/${slug}`),
   templates: () => req<{ data: any[] }>(`/api/events/${EVENT_ID}/comms/templates`),
@@ -190,6 +203,31 @@ export const api = {
     mut(`/sync/preview`, { method: "POST", body: JSON.stringify({ eventId: EVENT_ID }) }),
   syncRun: () => mut(`/sync/run`, { method: "POST", body: JSON.stringify({ eventId: EVENT_ID }) }),
   syncRuns: () => req<any[]>(`/sync/runs?eventId=${EVENT_ID}`),
+  crmDashboard: () => req<{ data: any }>(`/api/crm/dashboard`),
+  crmStages: () => req<{ data: any[] }>(`/api/crm/stages`),
+  crmContacts: (params: Record<string, string | undefined> = {}) => {
+    const q = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => { if (v) q.set(k, v); });
+    const qs = q.toString();
+    return req<{ data: any[]; meta?: any }>(`/api/crm/contacts${qs ? `?${qs}` : ""}`);
+  },
+  crmContact: (id: string) => req<{ data: any }>(`/api/crm/contacts/${id}`),
+  crmCreateContact: (body: any) => mut<{ data: any }>(`/api/crm/contacts`, { method: "POST", body: JSON.stringify(body) }),
+  crmUpdateContact: (id: string, body: any) => mut<{ data: any }>(`/api/crm/contacts/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+  crmDeleteContact: (id: string) => mut(`/api/crm/contacts/${id}`, { method: "DELETE" }),
+  crmAddNote: (id: string, body: string) => mut<{ data: any }>(`/api/crm/contacts/${id}/notes`, { method: "POST", body: JSON.stringify({ body }) }),
+  crmMoveStage: (id: string, stage: string, note?: string) => mut<{ data: any }>(`/api/crm/contacts/${id}/stage`, { method: "POST", body: JSON.stringify({ stage, note }) }),
+  crmAddToEvent: (id: string, body: any = {}) => mut<{ data: any }>(`/api/crm/contacts/${id}/add-to-event`, { method: "POST", body: JSON.stringify(body) }),
+  crmMerge: (primaryId: string, secondaryId: string) => mut<{ data: any }>(`/api/crm/contacts/merge`, { method: "POST", body: JSON.stringify({ primaryId, secondaryId }) }),
+  crmValidateImport: (csv: string) => mut<{ data: any[] }>(`/api/crm/import/validate`, { method: "POST", body: JSON.stringify({ csv }) }),
+  crmImport: (csv: string, mergeDuplicates = false) => mut<{ data: any }>(`/api/crm/import`, { method: "POST", body: JSON.stringify({ csv, mergeDuplicates }) }),
+  crmSegments: () => req<{ data: any[] }>(`/api/crm/segments`),
+  crmSaveSegment: (body: any) => mut<{ data: any }>(`/api/crm/segments`, { method: "POST", body: JSON.stringify(body) }),
+  crmDeleteSegment: (id: string) => mut(`/api/crm/segments/${id}`, { method: "DELETE" }),
+  crmPipeline: () => req<{ data: any }>(`/api/crm/pipeline`),
+  crmSyncSpeakers: () => mut<{ data: any }>(`/api/crm/sync-event-speakers`, { method: "POST", body: "{}" }),
+  crmCommunicate: (body: any) => mut<{ data: any }>(`/api/crm/communicate`, { method: "POST", body: JSON.stringify(body) }),
+  crmCampaigns: () => req<{ data: any[] }>(`/api/crm/campaigns`),
   syncRunDetail: (id: string) => req(`/sync/runs/${id}`),
 };
 
