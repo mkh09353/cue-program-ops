@@ -1,0 +1,189 @@
+import {
+  DEFAULT_PERSONAS,
+  EVENT_ID,
+  type Persona,
+  type Role,
+} from "./utils";
+
+let persona: Persona = DEFAULT_PERSONAS[0];
+let personaCatalog: Persona[] = [...DEFAULT_PERSONAS];
+const listeners = new Set<() => void>();
+const dataListeners = new Set<() => void>();
+
+export function getPersona() {
+  return persona;
+}
+
+export function getPersonaCatalog() {
+  return personaCatalog;
+}
+
+export function setPersonaCatalog(list: Persona[]) {
+  if (list?.length) personaCatalog = list;
+}
+
+export function setPersona(p: Persona) {
+  persona = p;
+  try {
+    sessionStorage.setItem("cue-persona-id", p.id);
+  } catch {
+    /* ignore */
+  }
+  listeners.forEach((l) => l());
+}
+
+export function subscribePersona(fn: () => void): () => void {
+  listeners.add(fn);
+  return () => {
+    listeners.delete(fn);
+  };
+}
+
+/** Notify pages that server state changed (after mutations). */
+export function bumpData() {
+  dataListeners.forEach((l) => l());
+}
+
+export function subscribeData(fn: () => void): () => void {
+  dataListeners.add(fn);
+  return () => {
+    dataListeners.delete(fn);
+  };
+}
+
+/** Ensure persona matches the shell the judge is in. */
+export function ensurePersonaForRole(role: Role, preferredSpeakerId?: string) {
+  if (persona.role === role) {
+    if (role === "speaker" && preferredSpeakerId && persona.speakerId !== preferredSpeakerId) {
+      const match = personaCatalog.find((p) => p.speakerId === preferredSpeakerId);
+      if (match) setPersona(match);
+    }
+    return getPersona();
+  }
+  let next: Persona | undefined;
+  if (role === "speaker") {
+    next =
+      personaCatalog.find((p) => p.speakerId === preferredSpeakerId) ||
+      personaCatalog.find((p) => p.id === "spk-sam") ||
+      personaCatalog.find((p) => p.role === "speaker");
+  } else {
+    next = personaCatalog.find((p) => p.role === role);
+  }
+  if (next) setPersona(next);
+  return getPersona();
+}
+
+export function restorePersonaFromSession() {
+  try {
+    const id = sessionStorage.getItem("cue-persona-id");
+    const found = personaCatalog.find((p) => p.id === id);
+    if (found) persona = found;
+  } catch {
+    /* ignore */
+  }
+}
+
+function headers(extra?: HeadersInit): HeadersInit {
+  const h: Record<string, string> = {
+    "content-type": "application/json",
+    "x-demo-role": persona.role,
+  };
+  if (persona.speakerId) h["x-demo-speaker"] = persona.speakerId;
+  return { ...h, ...(extra as Record<string, string>) };
+}
+
+async function req<T = any>(path: string, init?: RequestInit): Promise<T> {
+  const r = await fetch(path, {
+    ...init,
+    headers: headers(init?.headers),
+  });
+  const text = await r.text();
+  let data: any = null;
+  if (text) {
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = text;
+    }
+  }
+  if (!r.ok) {
+    const msg = data?.error?.message || data?.error || r.statusText;
+    throw new Error(typeof msg === "string" ? msg : "Request failed");
+  }
+  return data as T;
+}
+
+async function mut<T = any>(path: string, init?: RequestInit): Promise<T> {
+  const data = await req<T>(path, init);
+  bumpData();
+  return data;
+}
+
+export const api = {
+  bootstrap: () => req<{ data: any }>(`/api/events/${EVENT_ID}/bootstrap`),
+  command: () => req<{ data: any }>(`/api/events/${EVENT_ID}/command`),
+  submissions: (filter?: string) =>
+    req<{ data: any[] }>(
+      `/api/events/${EVENT_ID}/submissions${filter ? `?filter=${filter}` : ""}`,
+    ),
+  submission: (id: string) => req<{ data: any }>(`/api/events/${EVENT_ID}/submissions/${id}`),
+  reviews: () => req<{ data: any[] }>(`/api/events/${EVENT_ID}/reviews`),
+  saveReview: (id: string, body: any) =>
+    mut(`/api/events/${EVENT_ID}/reviews/${id}`, { method: "POST", body: JSON.stringify(body) }),
+  aiAssist: (id: string) =>
+    mut(`/api/events/${EVENT_ID}/reviews/${id}/ai-assist`, { method: "POST", body: "{}" }),
+  decide: (id: string, body: any) =>
+    mut(`/api/events/${EVENT_ID}/submissions/${id}/decision`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  speakers: () => req<{ data: any[] }>(`/api/events/${EVENT_ID}/speakers`),
+  form: (id = "form-cfp") => req<{ data: any }>(`/api/events/${EVENT_ID}/forms/${id}`),
+  saveForm: (id: string, body: any) =>
+    mut(`/api/events/${EVENT_ID}/forms/${id}`, { method: "PUT", body: JSON.stringify(body) }),
+  publicCfp: () => req<{ data: any }>(`/api/public/events/ai-engineer-summit/cfp`),
+  submitCfp: (body: any) =>
+    mut(`/api/public/events/ai-engineer-summit/submissions`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  speakerHome: () => req<{ data: any }>(`/api/speaker/events/${EVENT_ID}/home`),
+  completeTask: (id: string) =>
+    mut(`/api/speaker/events/${EVENT_ID}/tasks/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ status: "completed" }),
+    }),
+  saveProfile: (body: any) =>
+    mut(`/api/speaker/events/${EVENT_ID}/profile`, { method: "PUT", body: JSON.stringify(body) }),
+  uploadFile: (body: any) =>
+    mut(`/api/speaker/events/${EVENT_ID}/files`, { method: "POST", body: JSON.stringify(body) }),
+  resource: (slug: string) =>
+    req<{ data: any }>(`/api/speaker/events/${EVENT_ID}/resources/${slug}`),
+  templates: () => req<{ data: any[] }>(`/api/events/${EVENT_ID}/comms/templates`),
+  saveTemplate: (id: string, body: any) =>
+    mut(`/api/events/${EVENT_ID}/comms/templates/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
+  commsLog: () => req<{ data: any[] }>(`/api/events/${EVENT_ID}/comms/log`),
+  sendComms: (body: any) =>
+    mut(`/api/events/${EVENT_ID}/comms/send`, { method: "POST", body: JSON.stringify(body) }),
+  schedule: () => req<any>(`/api/events/${EVENT_ID}/schedule`),
+  validateSlot: (slot: any) =>
+    req(`/api/events/${EVENT_ID}/schedule/validate`, { method: "POST", body: JSON.stringify(slot) }),
+  moveSlot: (body: any) =>
+    mut(`/api/events/${EVENT_ID}/schedule/move`, { method: "POST", body: JSON.stringify(body) }),
+  saveSettings: (body: any) =>
+    mut(`/api/events/${EVENT_ID}/settings`, { method: "PUT", body: JSON.stringify(body) }),
+  syncPreview: () =>
+    mut(`/sync/preview`, { method: "POST", body: JSON.stringify({ eventId: EVENT_ID }) }),
+  syncRun: () => mut(`/sync/run`, { method: "POST", body: JSON.stringify({ eventId: EVENT_ID }) }),
+  syncRuns: () => req<any[]>(`/sync/runs?eventId=${EVENT_ID}`),
+  syncRunDetail: (id: string) => req(`/sync/runs/${id}`),
+};
+
+export function roleHome(role: Role) {
+  if (role === "organizer") return "/app";
+  if (role === "reviewer") return "/r";
+  return "/p";
+}

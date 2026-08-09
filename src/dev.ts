@@ -1,0 +1,10 @@
+import { serve } from "@hono/node-server";
+import { createApp, configuredClient, restoreSnapshot } from "./app.js";
+import { configuredPersistence } from "./persistence.js";
+import { configuredMailer } from "./mailer.js";
+import { MemoryRepository } from "./repository.js";
+const port = Number(process.env.PORT || 8787);
+const repo=new MemoryRepository(), persistence=configuredPersistence(process.env);
+await restoreSnapshot({repo,persistence}).catch(error=>console.error("CUE snapshot restore failed",error instanceof Error?error.message:"unknown error"));
+serve({fetch:createApp({repo,client:configuredClient(process.env),persistence,mailer:configuredMailer(process.env)}).fetch,port});
+console.log(`Listening on http://localhost:${port} (credential-free memory/mock defaults; optional Airtable and mail providers require env configuration)`);

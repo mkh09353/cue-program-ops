@@ -1,0 +1,14 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { mapSpeaker } from "../src/mapping.js";
+import { MockAcceleventsClient } from "../src/accelevents.js";
+import { MemoryRepository, demoData } from "../src/repository.js";
+import { SyncService } from "../src/sync.js";
+
+const setup=()=>{const repo=new MemoryRepository();const client=new MockAcceleventsClient();return {repo,client,service:new SyncService(repo,client)}};
+test("mapping hashes are stable despite object construction",async()=>{const a=await mapSpeaker(demoData.speakers[0]);const b=await mapSpeaker({...demoData.speakers[0]});assert.equal(a.payloadHash,b.payloadHash);assert.equal(a.idempotencyKey,b.idempotencyKey)});
+test("dry run plans but has no remote mutations",async()=>{const {service,client}=setup();const result=await service.execute(demoData.event.id,"dry_run");assert.equal(client.records.size,0);assert.equal(result.run.counts.create,2);assert.ok(result.items.every(x=>x.status==="succeeded"))});
+test("first live creates and second skips",async()=>{const {service,client}=setup();const one=await service.execute(demoData.event.id,"live");assert.equal(one.run.counts.create,2);assert.equal(client.creates,2);const two=await service.execute(demoData.event.id,"live");assert.equal(two.run.counts.skip,2);assert.equal(client.creates,2)});
+test("changed payload updates a known remote record",async()=>{const {service,client,repo}=setup();await service.execute(demoData.event.id,"live");const d=await repo.getData(demoData.event.id);d!.speakers[0].bio="An updated biography.";repo.data.set(d!.event.id,d!);const result=await service.execute(demoData.event.id,"live");assert.equal(result.run.counts.update,1);assert.equal(client.updates,1)});
+test("failed create records sanitized retryable error and retry creates once",async()=>{const {service,client,repo}=setup();client.failNextCreate=true;const failed=await service.execute(demoData.event.id,"live");assert.equal(failed.run.counts.error,1);const error=failed.items.find(x=>x.status==="failed")!;assert.equal(error.error?.retryable,true);assert.ok(!error.error?.message.includes("Bearer"));const retry=await service.execute(demoData.event.id,"live",failed.run.id);assert.equal(retry.run.counts.create,1);assert.equal(client.creates,2);assert.equal(client.records.size,2);const links=await repo.getLink("speaker","spk-ada",demoData.event.id);assert.ok(links);const next=await service.execute(demoData.event.id,"live");assert.equal(next.run.counts.skip,2)});
+test("run history retains run and item detail",async()=>{const {service,repo}=setup();const result=await service.execute(demoData.event.id,"dry_run");const history=await repo.listRuns(demoData.event.id);assert.equal(history.length,1);assert.equal((await repo.listItems(result.run.id)).length,2);assert.equal((await repo.getRun(result.run.id))?.mappingVersion,"accelevents-v1-placeholder")});

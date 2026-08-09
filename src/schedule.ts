@@ -1,0 +1,34 @@
+export type ConflictSeverity = "hard" | "warning";
+export type ConflictCode = "INVALID_RANGE" | "ROOM_OVERLAP" | "SPEAKER_OVERLAP" | "TRACK_CONCURRENCY" | "CAPACITY" | "UNSCHEDULED_ACCEPTED" | "MISSING_PUBLIC_CONTENT";
+export interface ScheduleRoom { id:string; name:string; capacity?:number; color?:string }
+export interface ScheduleTrack { id:string; name:string; color:string; maxConcurrent?:number }
+export interface ScheduleSpeaker { id:string; name:string; email?:string; bio:string; company?:string; headshotUrl?:string; isPublic?:boolean; acceptedSubmissionId?:string }
+export interface ScheduleSession { id:string; acceptedSubmissionId?:string; title:string; abstract:string; speakerIds:string[]; trackIds:string[]; durationMinutes:number; capacity?:number; status:"accepted"|"draft"|"published"; publishStatus:"draft"|"published"; slug:string }
+export interface AgendaSlot { id:string; sessionId:string; roomId:string; startsAt:string; endsAt:string }
+export interface ScheduleData { event?:{startsAt:string;endsAt:string;timezone:string}; version:number; rooms:ScheduleRoom[]; tracks:ScheduleTrack[]; speakers:ScheduleSpeaker[]; sessions:ScheduleSession[]; slots:AgendaSlot[] }
+export interface ScheduleConflict { id:string; severity:ConflictSeverity; code:ConflictCode; message:string; relatedIds:string[] }
+export interface SuggestedSlot { roomId:string; startsAt:string; endsAt:string; label:string }
+export interface Validation { conflicts:ScheduleConflict[]; alternatives:SuggestedSlot[] }
+const ms=(v:string)=>Date.parse(v);
+/** Half-open [start,end) intersection; equal endpoints deliberately do not overlap. */
+export const overlaps=(a:{startsAt:string;endsAt:string},b:{startsAt:string;endsAt:string})=>ms(a.startsAt)<ms(b.endsAt)&&ms(b.startsAt)<ms(a.endsAt);
+const conflict=(severity:ConflictSeverity,code:ConflictCode,relatedIds:string[],message:string):ScheduleConflict=>({id:`${code}:${[...relatedIds].sort().join(":")}`,severity,code,relatedIds:[...relatedIds].sort(),message});
+export function validateSlot(data:ScheduleData, candidate:AgendaSlot):Validation {
+ const s=data.sessions.find(x=>x.id===candidate.sessionId); const room=data.rooms.find(x=>x.id===candidate.roomId); const cs:ScheduleConflict[]=[];
+ if(!s || !room || !Number.isFinite(ms(candidate.startsAt)) || !Number.isFinite(ms(candidate.endsAt)) || ms(candidate.endsAt)<=ms(candidate.startsAt)) cs.push(conflict("hard","INVALID_RANGE",[candidate.sessionId,candidate.roomId],"Choose a valid room and an end time after the start time."));
+ if(s&&room) {
+  for(const other of data.slots.filter(x=>x.sessionId!==candidate.sessionId && overlaps(x,candidate)).sort((a,b)=>a.sessionId.localeCompare(b.sessionId))) {
+   if(other.roomId===candidate.roomId) cs.push(conflict("hard","ROOM_OVERLAP",[candidate.sessionId,other.sessionId,candidate.roomId],`${room.name} is already occupied during this time.`));
+   const os=data.sessions.find(x=>x.id===other.sessionId); const shared=[...new Set(s.speakerIds.filter(id=>os?.speakerIds.includes(id)))].sort();
+   if(shared.length) cs.push(conflict("hard","SPEAKER_OVERLAP",[candidate.sessionId,other.sessionId,...shared],`${shared.map(id=>data.speakers.find(x=>x.id===id)?.name??id).join(", ")} is already speaking during this time.`));
+  }
+  if(s.capacity && room.capacity && s.capacity>room.capacity) cs.push(conflict("warning","CAPACITY",[s.id,room.id],`${s.capacity} expected attendees exceeds ${room.name}'s ${room.capacity} capacity.`));
+  for(const tid of [...s.trackIds].sort()) { const t=data.tracks.find(x=>x.id===tid); if(t?.maxConcurrent) { const n=data.slots.filter(x=>{const os=data.sessions.find(q=>q.id===x.sessionId);return x.sessionId!==s.id&&overlaps(x,candidate)&&!!os?.trackIds.includes(tid)}).length+1; if(n>t.maxConcurrent)cs.push(conflict("hard","TRACK_CONCURRENCY",[s.id,tid],`${t.name} allows only ${t.maxConcurrent} concurrent session${t.maxConcurrent===1?"":"s"}.`)); } }
+ }
+ const alternatives:SuggestedSlot[]=[];
+ if(s && room) { const eventStart=data.event?.startsAt||candidate.startsAt; const eventEnd=data.event?.endsAt||new Date(ms(eventStart)+8*3600000).toISOString(); const first=Math.ceil(ms(eventStart)/3600000)*3600000; for(const r of [...data.rooms].sort((a,b)=>a.name.localeCompare(b.name))) for(let at=first;at<ms(eventEnd);at+=3600000) { const start=new Date(at).toISOString(); const end=new Date(at+s.durationMinutes*60000).toISOString(); if(ms(end)>ms(eventEnd))break; const trial={...candidate,roomId:r.id,startsAt:start,endsAt:end}; if(!validateCore(data,trial).some(x=>x.severity==="hard")) alternatives.push({roomId:r.id,startsAt:start,endsAt:end,label:`${r.name} · ${start.slice(0,16)}Z`}); if(alternatives.length>=3)break; } }
+ return {conflicts:cs.sort((a,b)=>a.severity.localeCompare(b.severity)||a.code.localeCompare(b.code)||a.id.localeCompare(b.id)),alternatives};
+}
+function validateCore(data:ScheduleData,candidate:AgendaSlot){ const s=data.sessions.find(x=>x.id===candidate.sessionId); const room=data.rooms.find(x=>x.id===candidate.roomId); const cs:ScheduleConflict[]=[]; if(!s||!room||ms(candidate.endsAt)<=ms(candidate.startsAt))return [conflict("hard","INVALID_RANGE",[candidate.sessionId],"Invalid")]; for(const o of data.slots.filter(x=>x.sessionId!==candidate.sessionId&&overlaps(x,candidate))){if(o.roomId===candidate.roomId)cs.push(conflict("hard","ROOM_OVERLAP",[o.sessionId,candidate.sessionId],"Room"));const os=data.sessions.find(x=>x.id===o.sessionId);if(s.speakerIds.some(id=>os?.speakerIds.includes(id)))cs.push(conflict("hard","SPEAKER_OVERLAP",[o.sessionId,candidate.sessionId],"Speaker"));}return cs }
+export function scheduleWarnings(data:ScheduleData):ScheduleConflict[]{return data.sessions.filter(s=>s.status==="accepted"&&!data.slots.some(x=>x.sessionId===s.id)).map(s=>conflict("warning","UNSCHEDULED_ACCEPTED",[s.id],`${s.title} is accepted but unscheduled.`)).sort((a,b)=>a.id.localeCompare(b.id))}
+export function publicSchedule(data:ScheduleData){const eligible=new Set(data.sessions.filter(s=>s.status==="accepted"||s.status==="published").flatMap(s=>s.speakerIds));const publicSpeakers=new Map(data.speakers.filter(x=>x.isPublic!==false&&eligible.has(x.id)).map(x=>[x.id,x]));return data.slots.map(slot=>{const s=data.sessions.find(x=>x.id===slot.sessionId)!;const room=data.rooms.find(x=>x.id===slot.roomId)!;return {id:s.id,title:s.title,abstract:s.abstract,startsAt:slot.startsAt,endsAt:slot.endsAt,room:room.name,tracks:s.trackIds.map(id=>data.tracks.find(t=>t.id===id)?.name).filter(Boolean),speakers:s.speakerIds.map(id=>publicSpeakers.get(id)).filter(Boolean).map(x=>({id:x!.id,name:x!.name,bio:x!.bio,company:x!.company,headshotUrl:x!.headshotUrl}))}}).filter(x=>data.sessions.find(s=>s.id===x.id)?.publishStatus==="published").sort((a,b)=>a.startsAt.localeCompare(b.startsAt)||a.title.localeCompare(b.title));}

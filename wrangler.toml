@@ -1,0 +1,9 @@
+name = "cue-program-ops"
+main = "src/index.ts"
+compatibility_date = "2026-08-09"
+
+# Production persistence seam: bind D1 here after implementing the D1Repository methods.
+# [[d1_databases]]
+# binding = "DB"
+# database_name = "cue-program-ops"
+# database_id = "replace-me"
