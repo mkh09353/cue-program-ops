@@ -16,6 +16,8 @@ Credential-free demo. In-memory seed. Real product shells for organizer, reviewe
 
 **Live demo:** https://cue-program-ops.headley-max.workers.dev
 
+**Screenshots:** [desktop overview](docs/screenshots/00-overview-contact-sheet.jpg) · [mobile overview](docs/screenshots/00-mobile-contact-sheet.jpg) · [full screenshot index](docs/screenshots/README.md)
+
 ```sh
 npm install
 npm run dev          # API :8787 + Vite UI (proxied)
