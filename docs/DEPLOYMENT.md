@@ -23,7 +23,7 @@ Vite proxies `/api`, `/public`, `/embed`, `/health`, `/demo` and `/sync` to the 
 |---|---|
 | Config | `wrangler.toml` |
 | Worker | `cue-program-ops` |
-| Entry | `src/index.ts` |
+| Entry | `src/index.ts` → single named `CueState` Durable Object for API traffic |
 | Static binding | `ASSETS` → `dist/` |
 | SPA fallback | `dist/index.html` |
 
@@ -33,7 +33,9 @@ npx wrangler login
 npx wrangler deploy
 ```
 
-The Worker sends API/public/sync paths to Hono and other paths to the Vite SPA asset binding. Startup explicitly calls `restoreSnapshot`; restoration failure is logged rather than hidden.
+The Worker sends API/public/sync paths to the Durable Object named `primary`; other paths go directly to the Vite SPA asset binding. That one object owns the in-memory Hono runtime, choosing one consistent live state over horizontal API scale for the competition demo. Requests no longer land on independent stateless Worker isolates with divergent repositories.
+
+`CueState` deliberately makes **zero Durable Object storage calls**. Its in-memory state survives ordinary front-worker isolate churn because every API request reaches the same named object, but it can reset when that object is evicted or the deployment restarts. If Airtable is configured, startup attempts to restore its event snapshot and mutations best-effort write through to Airtable; without Airtable there is no eviction/redeploy durability. Local `npm run dev` and Node tests still construct `createApp` directly and do not require Durable Objects.
 
 ## Environment variables
 
@@ -51,6 +53,7 @@ No new provider variables were introduced by review management, content, CRM, CF
 | `ACCELEVENTS_EVENT_ID` | No | Mock unless full gate is satisfied | Placeholder remote event identifier |
 | `ACCELEVENTS_TOKEN` | No | Mock unless full gate is satisfied | Placeholder bearer credential |
 | `ASSETS` | Worker binding | Set by Wrangler | Fetcher binding for built SPA files; not a user secret |
+| `CUE_STATE` | Worker Durable Object binding | Set by Wrangler | Routes all API traffic to the single in-memory `CueState` instance named `primary`; no DO storage used |
 
 Reference template: [`.env.example`](../.env.example). Do not commit populated credentials.
 
@@ -81,7 +84,7 @@ Selected only when `AIRTABLE_TOKEN` and `AIRTABLE_BASE_ID` are both set.
 | Implementation | `AirtableSnapshotPersistence` over `AirtableTransport` |
 | Table | `CUE Snapshots` |
 | Fields | `External ID`, `Event ID`, `Snapshot`, `Updated At` |
-| Unit | One versioned `CompetitionSnapshot` JSON record per event |
+| Unit | One versioned `CompetitionSnapshot` JSON record per event; optional durability for the in-memory Durable Object |
 | Includes | Lifecycle state (CFP, review, speakers, content, CRM, AI Agenda, comms), canonical schedule and sync history |
 | Startup | `restoreSnapshot()` imports the latest matching snapshot |
 | Mutation behavior | Best-effort save; error is logged and does not roll back valid in-memory mutation |
