@@ -70,6 +70,9 @@ export interface Review {
   source?: "human" | "ai_draft";
   responses?: Record<string, string | number>;
   recommendation?: string;
+  /** Review round this scorecard belongs to (canonical link to reviewRounds). */
+  roundId?: string;
+  submittedAt?: string;
 }
 
 export interface ReviewCriterion {
@@ -194,7 +197,34 @@ export interface Resource {
 }
 
 export interface ReminderPlan { speakerId: string; taskId: string; templateKey: "task_reminder"; dueAt: string; overdue: boolean }
-export interface EmbedConfig { id:string; name:string; widget:"sessions"|"speakers"|"agenda"|"itinerary"|"gallery"; filters:{track?:string;day?:string}; theme:{accent?:string}; createdAt:string }
+export interface EmbedConfig { id:string; name:string; widget:"sessions"|"speakers"|"agenda"|"itinerary"|"gallery"; filters:{track?:string;format?:string;room?:string;day?:string}; theme:{accent?:string}; createdAt:string }
+
+/** Named CSS colors accepted for embed branding (kept tiny and audit-able). */
+export const ACCENT_NAMED_COLORS = new Set([
+  "black",
+  "white",
+  "slate",
+  "gray",
+  "grey",
+  "navy",
+  "teal",
+  "purple",
+  "indigo",
+  "crimson",
+  "orange",
+  "green",
+  "blue",
+  "red",
+]);
+
+/** Embed accent colors are the ONE branding exception to Monochrome Paper. Only
+ *  #rgb / #rrggbb literals or an allowlisted color name are accepted, so a saved
+ *  config can never inject arbitrary CSS into a public page. */
+export const isSafeAccent = (value: unknown): value is string => {
+  if (typeof value !== "string") return false;
+  const v = value.trim();
+  return /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(v) || ACCENT_NAMED_COLORS.has(v.toLowerCase());
+};
 export interface AutomationState { enabled:boolean; schedule:string; lastRunAt?:string; speakerSent:number; reviewerSent:number; status:"never"|"completed"|"failed" }
 
 export interface SessionDraft {
@@ -278,7 +308,7 @@ export const store: LifecycleStore = {
     status: "open",
     openAt: "2026-01-01T00:00:00.000Z",
     closeAt: "2027-04-30T23:59:00.000Z",
-    maxPerUser: 3,
+    maxPerUser: 10,
     welcomeMd:
       "Call for Speakers\n\nOur event welcomes builders shipping real AI systems. Sessions are selected from these submissions.\n\nTip: choose **Workshop** format to reveal workshop-specific fields.",
     successMd:
@@ -872,6 +902,91 @@ export function reviewForRound(submissionId: string, reviewerId: string, round: 
   return review;
 }
 
+/**
+ * Canonical review-history projection. Both the reviewer scorecard flow
+ * (reviewer-queue submit) and the legacy Review Studio saves write to
+ * `store.reviews`; this is the ONE read path the organizer UI and reviewer UI
+ * both render, so a submitted scorecard shows up immediately with the reviewer
+ * name, round, criterion labels, ratings, and comment.
+ */
+export function reviewHistory(submissionId: string) {
+  const humanize = (key: string) =>
+    key.replace(/[-_]+/g, " ").replace(/\b\w/g, (m) => m.toUpperCase());
+  return store.reviews
+    .filter((review) => review.submissionId === submissionId)
+    .map((review) => {
+      const assignment = store.reviewAssignments.find(
+        (a) => a.submissionId === review.submissionId && a.reviewerId === review.reviewerId && a.status !== "recused",
+      );
+      const round =
+        store.reviewRounds.find((r) => r.id === (review.roundId || assignment?.roundId)) ||
+        store.reviewRounds.find((r) => r.reviewerIds.includes(review.reviewerId)) ||
+        store.reviewRounds[0];
+      const criteria = round?.criteria || [];
+      const raw: Record<string, string | number> = {
+        ...(review.scores || {}),
+        ...(review.responses || {}),
+      };
+      const entries = Object.entries(raw)
+        .filter(([key]) => key !== "comments")
+        .map(([key, value]) => {
+          const criterion = criteria.find((x) => x.id === key);
+          return {
+            key,
+            label: criterion?.label || humanize(key),
+            type: criterion?.type || (typeof value === "number" ? "rating" : "text"),
+            value,
+          };
+        })
+        .filter((entry) => entry.value !== "" && entry.value != null);
+      const ratings = entries.filter((e) => typeof e.value === "number") as {
+        key: string;
+        label: string;
+        type: string;
+        value: number;
+      }[];
+      const average = ratings.length
+        ? Math.round((ratings.reduce((a, b) => a + b.value, 0) / ratings.length) * 100) / 100
+        : null;
+      const reviewer = store.personas.find((p) => p.id === review.reviewerId);
+      const comment = String(review.responses?.comments ?? review.notes ?? "");
+      return {
+        ...review,
+        roundId: review.roundId || assignment?.roundId || round?.id,
+        roundName: round?.name || review.round,
+        reviewerName: reviewer?.name || review.reviewerId,
+        reviewerEmail: reviewer?.email,
+        entries,
+        ratings,
+        average,
+        comment,
+        isAiDraft: review.source === "ai_draft",
+        assignmentStatus: assignment?.status,
+      };
+    });
+}
+
+/**
+ * Mirror a submitted scorecard onto the canonical assignment + submission state so
+ * reviewer-side and organizer-side flows never diverge.
+ */
+export function markReviewSubmitted(review: Review, at = new Date().toISOString()) {
+  review.status = "submitted";
+  review.source = review.source === "ai_draft" ? "human" : review.source || "human";
+  review.submittedAt = at;
+  const assignment = store.reviewAssignments.find(
+    (a) => a.submissionId === review.submissionId && a.reviewerId === review.reviewerId && a.status === "assigned",
+  );
+  if (assignment) {
+    assignment.status = "completed";
+    assignment.completedAt = at;
+    review.roundId = review.roundId || assignment.roundId;
+  }
+  const submission = store.submissions.find((s) => s.id === review.submissionId);
+  if (submission && submission.status === "submitted") submission.status = "under_review";
+  return review;
+}
+
 export function completeTaskForSpeaker(taskId: string, speakerId: string) {
   const task = store.tasks.find((t) => t.id === taskId);
   if (!task) return { ok: false as const, error: "task not found" };
@@ -925,7 +1040,12 @@ export function renderTemplate(
 }
 
 export function ensureOnboarding(submission: Submission) {
-  if (store.tasks.some((t) => t.speakerId === submission.speakerId)) return;
+  if (store.tasks.some((t) => t.speakerId === submission.speakerId)) {
+    // Deliverables are a separate, file-backed table from onboarding tasks; an
+    // accepted speaker must always get both or /p/deliverables looks broken.
+    ensureDeliverables(submission);
+    return;
+  }
   const due = "2026-10-01T00:00:00.000Z";
   const base = [
     { type: "profile" as const, title: "Complete your speaker profile" },
@@ -972,6 +1092,44 @@ export function ensureOnboarding(submission: Submission) {
     if (!store.profiles.some((p) => p.speakerId === speaker.id)) store.profiles.push({ speakerId: speaker.id, name: speaker.name, email: speaker.email, bio: "" });
     if (!store.personas.some((p) => p.id === speaker.id)) store.personas.push({ id: speaker.id, role: "speaker", name: speaker.name, email: speaker.email, speakerId: speaker.id });
   }
+  ensureDeliverables(submission);
+}
+
+/**
+ * Give every accepted speaker the standard file-request deliverables (slides +
+ * print headshot) so the speaker Deliverables page and the organizer content
+ * dashboard are populated from the same canonical records.
+ */
+export function ensureDeliverables(submission: Submission) {
+  if (store.deliverableTasks.some((t) => t.speakerId === submission.speakerId)) return;
+  const sessionId = store.sessions.find((s) => s.submissionId === submission.id)?.id || `ses-${submission.id}`;
+  const createdAt = new Date().toISOString();
+  store.deliverableTasks.push(
+    {
+      id: `deliverable-slides-${submission.speakerId}`,
+      name: "Upload Session Presentation",
+      instructions: "Final slide deck as a PDF, 16:9 aspect ratio.",
+      dueAt: "2027-05-01T23:59:59.000Z",
+      speakerId: submission.speakerId,
+      sessionId,
+      fileRequired: true,
+      acceptedTypes: ["application/pdf"],
+      status: "incomplete",
+      createdAt,
+    },
+    {
+      id: `deliverable-headshot-${submission.speakerId}`,
+      name: "Upload Final Headshot (print quality)",
+      instructions: "Upload a high-resolution PNG or JPEG headshot.",
+      dueAt: "2027-04-14T23:59:59.000Z",
+      speakerId: submission.speakerId,
+      sessionId,
+      fileRequired: true,
+      acceptedTypes: ["image/png", "image/jpeg"],
+      status: "incomplete",
+      createdAt,
+    },
+  );
 }
 
 export function sendTemplate(

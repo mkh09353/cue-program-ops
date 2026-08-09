@@ -17,6 +17,8 @@ export type PublicSpeakerView = {
   company?: string;
   title?: string;
   headshotUrl?: string;
+  /** False when headshotUrl is the generated initials avatar rather than an upload. */
+  hasUploadedHeadshot?: boolean;
   initials: string;
   sessionIds: string[];
 };
@@ -49,6 +51,12 @@ export type PublicProgram = {
     website: string;
   };
   sessions: PublicSessionView[];
+  /**
+   * Published sessions that do not have a schedule slot yet. They belong in the
+   * public SESSIONS CATALOG (as "Time TBA") but never in the agenda grid,
+   * itinerary, or ICS — those stay strictly slot-driven.
+   */
+  unscheduledSessions: PublicSessionView[];
   speakers: PublicSpeakerView[];
   days: string[];
   rooms: { id: string; name: string; color?: string }[];
@@ -66,6 +74,16 @@ const splitName = (name: string) => {
   if (parts.length === 1) return { firstName: parts[0], lastName: parts[0] };
   return { firstName: parts.slice(0, -1).join(" "), lastName: parts[parts.length - 1]! };
 };
+
+/**
+ * Deterministic monochrome initials avatar (inline SVG data URL) so no public card
+ * ever renders a broken/missing image for a speaker without an uploaded headshot.
+ */
+export function initialsAvatarDataUrl(name: string) {
+  const initials = initialsOf(name) || "?";
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 192 192"><rect width="192" height="192" fill="#12141A"/><text x="96" y="124" font-family="Helvetica,Arial,sans-serif" font-size="76" font-weight="700" fill="#F7F4EF" text-anchor="middle">${initials}</text></svg>`;
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+}
 
 export const initialsOf = (name: string) =>
   String(name || "")
@@ -126,7 +144,9 @@ function speakerView(sp: ScheduleSpeaker, sessionIds: string[] = []): PublicSpea
     bio: sp.bio || "",
     company: sp.company,
     title: (sp as ScheduleSpeaker & { title?: string }).title,
-    headshotUrl: sp.headshotUrl,
+    // Never expose an empty image: fall back to a generated initials avatar.
+    headshotUrl: sp.headshotUrl || initialsAvatarDataUrl(sp.name),
+    hasUploadedHeadshot: Boolean(sp.headshotUrl),
     initials: initialsOf(sp.name),
     sessionIds,
   };
@@ -181,8 +201,40 @@ export function buildPublicProgram(
     });
   }
 
+  // Published sessions without a slot: visible in the catalog as "Time TBA".
+  const slottedIds = new Set((schedule.slots || []).map((s) => s.sessionId));
+  const unscheduledSessions: PublicSessionView[] = (schedule.sessions || [])
+    .filter((session) => !slottedIds.has(session.id) && isPublishedSession(session))
+    .map((session) => {
+      const trackList = (session.trackIds || [])
+        .map((id) => tracks.get(id))
+        .filter(Boolean)
+        .map((t) => ({ id: t!.id, name: t!.name, color: t!.color }));
+      return {
+        id: session.id,
+        slug: session.slug || session.id,
+        title: session.title,
+        abstract: session.abstract || "",
+        format:
+          (session as ScheduleSession & { format?: string }).format ||
+          (session.durationMinutes && session.durationMinutes >= 60 ? "Workshop" : "Talk"),
+        startsAt: "",
+        endsAt: "",
+        dayKey: "",
+        room: "TBA",
+        roomId: "",
+        tracks: trackList,
+        trackNames: trackList.map((t) => t.name),
+        speakers: (session.speakerIds || [])
+          .map((id) => speakersById.get(id))
+          .filter((sp): sp is ScheduleSpeaker => !!sp && sp.isPublic !== false)
+          .map((sp) => speakerView(sp)),
+      };
+    })
+    .sort((a, b) => a.title.localeCompare(b.title));
+
   const speakerSessionMap = new Map<string, string[]>();
-  for (const sess of sessions) {
+  for (const sess of [...sessions, ...unscheduledSessions]) {
     for (const sp of sess.speakers) {
       const list = speakerSessionMap.get(sp.id) || [];
       list.push(sess.id);
@@ -190,12 +242,13 @@ export function buildPublicProgram(
     }
   }
 
+  // Directory order is surname A→Z (the public page states this explicitly).
   const speakers = [...speakerSessionMap.keys()]
     .map((id) => {
       const raw = speakersById.get(id)!;
       return speakerView(raw, speakerSessionMap.get(id) || []);
     })
-    .sort((a, b) => a.lastName.localeCompare(b.lastName) || a.firstName.localeCompare(b.firstName) || a.name.localeCompare(b.name));
+    .sort(bySurname);
 
   const sessionDays = [...new Set(sessions.map((s) => s.dayKey))];
   const startsAt = schedule.event?.startsAt || store.event.startsAt;
@@ -219,6 +272,7 @@ export function buildPublicProgram(
       website: meta?.website || store.event.website || "",
     },
     sessions,
+    unscheduledSessions,
     speakers,
     days,
     rooms: (schedule.rooms || []).map((r) => ({ id: r.id, name: r.name, color: r.color })),
@@ -226,6 +280,15 @@ export function buildPublicProgram(
     formats,
     facets: { tracks: trackNames, formats, rooms: roomNames },
   };
+}
+
+/** Canonical directory ordering: surname, then first name, then full name. */
+export function bySurname(a: PublicSpeakerView, b: PublicSpeakerView) {
+  return (
+    a.lastName.localeCompare(b.lastName) ||
+    a.firstName.localeCompare(b.firstName) ||
+    a.name.localeCompare(b.name)
+  );
 }
 
 export type SessionQuery = {

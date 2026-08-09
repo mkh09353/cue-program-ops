@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, subscribeData } from "../lib/api";
-import { EVENT_ID, EVENT_SLUG, formatStatus } from "../lib/utils";
+import { EVENT_ID, EVENT_SLUG, adoptSaveResult, formatStatus } from "../lib/utils";
 import {
   Badge,
   Button,
@@ -22,6 +22,8 @@ export function PublishPage() {
   const [runs, setRuns] = useState<any[]>([]);
   const [widget, setWidget] = useState<"sessions" | "speakers" | "agenda" | "itinerary" | "gallery">("sessions");
   const [configs,setConfigs]=useState<any[]>([]),[configName,setConfigName]=useState(""),[trackFilter,setTrackFilter]=useState("");
+  const [formatFilter,setFormatFilter]=useState(""),[dayFilter,setDayFilter]=useState(""),[accent,setAccent]=useState("#12141A"),[configErr,setConfigErr]=useState("");
+  const [facets,setFacets]=useState<{tracks:string[];formats:string[];rooms:string[];days:string[]}>({tracks:[],formats:[],rooms:[],days:[]});
   const origin = typeof window !== "undefined" ? window.location.origin : "";
 
   const widgets = [
@@ -36,6 +38,14 @@ export function PublishPage() {
   const jsonFeed = `${origin}/e/${EVENT_SLUG}/public/feed.json`;
   const sessionsJson = `${origin}/e/${EVENT_SLUG}/public/sessions.json`;
   const icsFeed = `${origin}/e/${EVENT_SLUG}/public/ics`;
+  // One XML output URL per widget, alongside JSON and iCal.
+  const xmlByWidget: Record<string,string> = {
+    sessions: `${origin}/e/${EVENT_SLUG}/public/sessions.xml`,
+    speakers: `${origin}/e/${EVENT_SLUG}/public/speakers.xml`,
+    agenda: `${origin}/e/${EVENT_SLUG}/public/agenda.xml`,
+    itinerary: `${origin}/e/${EVENT_SLUG}/public/itinerary.xml`,
+    gallery: `${origin}/e/${EVENT_SLUG}/public/gallery.xml`,
+  };
   const legacyGallery = `/public/events/${EVENT_ID}/gallery`;
   const legacyItinerary = `/public/events/${EVENT_ID}/itinerary`;
 
@@ -44,6 +54,11 @@ export function PublishPage() {
   useEffect(() => {
     loadRuns();
     api.embedConfigs().then(r=>setConfigs(r.data)).catch(()=>{});
+    // Facet values come from the same canonical published program the widgets render.
+    fetch(`/e/${EVENT_SLUG}/public/feed.json`)
+      .then(r=>r.json())
+      .then(d=>setFacets({tracks:d.facets?.tracks||[],formats:d.facets?.formats||[],rooms:d.facets?.rooms||[],days:d.days||[]}))
+      .catch(()=>{});
     return subscribeData(loadRuns);
   }, []);
 
@@ -63,7 +78,78 @@ export function PublishPage() {
         <p className="text-sm text-mid">
           Pick a surface, copy an iframe snippet, or share JSON / iCal feeds. All widgets read the same canonical projection — no republish step.
         </p>
-        <div className="mt-4 rounded-[18px] border border-line p-4"><b>Saved embed configurations</b><div className="mt-2 grid gap-2 md:grid-cols-[1fr_1fr_auto]"><Input placeholder="Configuration name" value={configName} onChange={e=>setConfigName(e.target.value)}/><Input placeholder="Track filter (optional)" value={trackFilter} onChange={e=>setTrackFilter(e.target.value)}/><Button onClick={async()=>{const r=await api.createEmbedConfig({name:configName,widget,filters:{track:trackFilter},theme:{}});setConfigs([...configs,r.data]);setConfigName("");toast("Embed configuration saved")}}>Save config</Button></div>{configs.map(c=>{const url=`${origin}/e/${EVENT_SLUG}/public/${c.widget}?config=${c.id}`,snippet=`<iframe src="${url}" title="${c.name}" style="width:100%;min-height:640px;border:0"></iframe>`;return <div key={c.id} className="mt-3 rounded-[18px] bg-soft p-3 text-sm"><div className="flex justify-between"><b>{c.name}</b><Button size="sm" variant="outline" onClick={async()=>{await api.deleteEmbedConfig(c.id);setConfigs(configs.filter(x=>x.id!==c.id))}}>Delete</Button></div><code className="mt-1 block break-all text-xs">{snippet}</code></div>})}</div>
+        <div className="mt-4 rounded-[18px] border border-line p-4">
+          <b>Saved embed configurations</b>
+          <p className="mt-1 text-xs text-mid">
+            Save a reusable embed for the <b>{widget}</b> widget: brand color, plus any combination of track, format and day filters.
+            Each saved config gets its own iframe URL and matching JSON / XML / iCal feed URLs.
+          </p>
+          <div className="mt-3 grid gap-2 md:grid-cols-3">
+            <Field label="Configuration name">
+              <Input aria-label="Embed configuration name" placeholder="Product track, day 1" value={configName} onChange={e=>setConfigName(e.target.value)}/>
+            </Field>
+            <Field label="Track filter">
+              <Select aria-label="Embed track filter" value={trackFilter} onChange={e=>setTrackFilter(e.target.value)}>
+                <option value="">All tracks</option>
+                {facets.tracks.map(t=><option key={t} value={t}>{t}</option>)}
+              </Select>
+            </Field>
+            <Field label="Format filter">
+              <Select aria-label="Embed format filter" value={formatFilter} onChange={e=>setFormatFilter(e.target.value)}>
+                <option value="">All formats</option>
+                {facets.formats.map(t=><option key={t} value={t}>{t}</option>)}
+              </Select>
+            </Field>
+            <Field label="Day filter">
+              <Select aria-label="Embed day filter" value={dayFilter} onChange={e=>setDayFilter(e.target.value)}>
+                <option value="">All days</option>
+                {facets.days.map(t=><option key={t} value={t}>{t}</option>)}
+              </Select>
+            </Field>
+            <Field label="Branding color" hint="Accent for headers, badges and links on this embed only.">
+              <div className="flex items-center gap-2">
+                <input type="color" aria-label="Embed branding color" className="h-10 w-12 cursor-pointer rounded-[12px] border border-line bg-white" value={accent} onChange={e=>setAccent(e.target.value)}/>
+                <Input aria-label="Embed branding color hex" value={accent} onChange={e=>setAccent(e.target.value)}/>
+              </div>
+            </Field>
+            <div className="flex items-end">
+              <Button onClick={async()=>{
+                setConfigErr("");
+                try{
+                  const r=await api.createEmbedConfig({name:configName.trim()||`${widget} embed`,widget,filters:{track:trackFilter||undefined,format:formatFilter||undefined,day:dayFilter||undefined},theme:{accent}});
+                  setConfigs([...configs,r.data]);setConfigName("");
+                  toast("Embed configuration saved");
+                }catch(e:any){setConfigErr(e?.message||"Save failed");toast(e?.message||"Save failed","danger")}
+              }}>Save config</Button>
+            </div>
+          </div>
+          {configErr?<Notice tone="danger" onClose={()=>setConfigErr("")}>{configErr}</Notice>:null}
+          {configs.map(c=>{
+            const url=`${origin}/e/${EVENT_SLUG}/public/${c.widget}?config=${c.id}`;
+            const snippet=`<iframe src="${url}" title="${c.name}" style="width:100%;min-height:640px;border:0"></iframe>`;
+            const filterBits=[c.filters?.track&&`track: ${c.filters.track}`,c.filters?.format&&`format: ${c.filters.format}`,c.filters?.day&&`day: ${c.filters.day}`].filter(Boolean);
+            return <div key={c.id} className="mt-3 rounded-[18px] bg-soft p-3 text-sm">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <b>{c.name}</b>
+                  <Badge tone="muted">{c.widget}</Badge>
+                  {c.theme?.accent?<span className="inline-flex items-center gap-1 text-xs text-mid"><span className="inline-block h-3 w-3 rounded-full border border-line" style={{background:c.theme.accent}}/>{c.theme.accent}</span>:null}
+                </div>
+                <div className="flex gap-2">
+                  <Button asChild size="sm" variant="ghost"><a href={url} target="_blank" rel="noreferrer">Open</a></Button>
+                  <Button size="sm" variant="outline" onClick={async()=>{await api.deleteEmbedConfig(c.id);setConfigs(configs.filter(x=>x.id!==c.id))}}>Delete</Button>
+                </div>
+              </div>
+              <p className="mt-1 text-xs text-mid">{filterBits.length?filterBits.join(" · "):"No filters — full published program"}</p>
+              <code className="mt-1 block break-all text-xs">{snippet}</code>
+              <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                <a className="underline" href={`${origin}/e/${EVENT_SLUG}/public/feed.json?config=${c.id}`} target="_blank" rel="noreferrer">JSON</a>
+                <a className="underline" href={`${origin}/e/${EVENT_SLUG}/public/${c.widget==="speakers"||c.widget==="gallery"?"speakers":"sessions"}.xml?config=${c.id}`} target="_blank" rel="noreferrer">XML</a>
+                <a className="underline" href={`${origin}/e/${EVENT_SLUG}/public/ics`} target="_blank" rel="noreferrer">iCal</a>
+              </div>
+            </div>;
+          })}
+        </div>
         <div className="mt-4 flex flex-wrap gap-2" role="tablist" aria-label="Widget picker">
           {widgets.map((w) => (
             <Button
@@ -120,6 +206,32 @@ export function PublishPage() {
                 <Button asChild size="sm" variant="ghost">
                   <a href={sessionsJson} target="_blank" rel="noreferrer">
                     sessions.json
+                  </a>
+                </Button>
+              </div>
+            </div>
+            <div className="rounded-[18px] border border-line bg-soft p-3">
+              <div className="text-[11px] font-bold uppercase tracking-wide text-mid">XML feed ({active.label})</div>
+              <code className="mt-1 block break-all text-xs">{xmlByWidget[widget]}</code>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => {
+                    navigator.clipboard.writeText(xmlByWidget[widget]);
+                    toast("XML feed URL copied");
+                  }}
+                >
+                  Copy XML
+                </Button>
+                <Button asChild size="sm" variant="ghost">
+                  <a href={xmlByWidget[widget]} target="_blank" rel="noreferrer">
+                    Open XML
+                  </a>
+                </Button>
+                <Button asChild size="sm" variant="ghost">
+                  <a href={`${origin}/e/${EVENT_SLUG}/public/feed.xml`} target="_blank" rel="noreferrer">
+                    Full program XML
                   </a>
                 </Button>
               </div>
@@ -280,7 +392,18 @@ export function FormsPage() {
 
   useEffect(()=>{
     if(!form||!savedSnap||snapshotOf(form)===savedSnap||saving)return;
-    const timer=window.setTimeout(async()=>{try{const r=await api.saveForm(form.id,form);setForm(r.data);setSavedSnap(snapshotOf(r.data));setLastAutoSave(new Date().toLocaleTimeString())}catch(e:any){setErr(e?.message||"Auto-save failed")}},700);
+    const timer=window.setTimeout(async()=>{
+      // Snapshot what we are sending: edits made WHILE the request is in flight
+      // (e.g. ticking "required" right after adding a field) must not be clobbered
+      // by the server response.
+      const sent=snapshotOf(form);
+      try{
+        const r=await api.saveForm(form.id,form);
+        setSavedSnap(snapshotOf(r.data));
+        setForm((cur:any)=>adoptSaveResult(cur,sent,r.data,snapshotOf));
+        setLastAutoSave(new Date().toLocaleTimeString());
+      }catch(e:any){setErr(e?.message||"Auto-save failed")}
+    },700);
     return()=>window.clearTimeout(timer);
   },[form,savedSnap,saving]);
 
@@ -323,9 +446,11 @@ export function FormsPage() {
         if (!routes.some((x: any) => x.category === r.category)) routes.push(r);
       }
       const payload = { ...form, routes };
+      const sent = snapshotOf(form);
       const r = await api.saveForm(form.id, payload);
-      setForm(r.data);
       setSavedSnap(snapshotOf(r.data));
+      // Keep any edit made while the save was in flight (see autosave note).
+      setForm((cur: any) => adoptSaveResult(cur, sent, r.data, snapshotOf));
       setLastAutoSave(new Date().toLocaleTimeString());
       if (!opts?.silent) {
         toast(
@@ -439,16 +564,6 @@ export function FormsPage() {
         }
       />
 
-      {err ? <Notice tone="danger">{err}</Notice> : null}
-      {dirty ? (
-        <Notice tone="warn">
-          Unsaved changes — public CFP still shows the last saved schema. Click <b>Save form</b> or{" "}
-          <b>Save &amp; publish CFP</b>.
-        </Notice>
-      ) : (
-        <Notice tone="ok">All changes saved{lastAutoSave?` at ${lastAutoSave}`:""}. Public CFP matches this builder.</Notice>
-      )}
-
       {/* Prominent CFP window — agent looked in Settings and missed buried Opens/Closes fields */}
       <Card className="mb-4 border-line p-5" id="cfp-window" data-testid="cfp-window">
         <div className="flex flex-wrap items-start justify-between gap-3">
@@ -523,6 +638,16 @@ export function FormsPage() {
           </Button>
         </div>
       </Card>
+
+      {err ? <Notice tone="danger">{err}</Notice> : null}
+      {dirty ? (
+        <Notice tone="warn">
+          Unsaved changes — public CFP still shows the last saved schema. Click <b>Save form</b> or{" "}
+          <b>Save &amp; publish CFP</b>.
+        </Notice>
+      ) : (
+        <Notice tone="ok">All changes saved{lastAutoSave?` at ${lastAutoSave}`:""}. Public CFP matches this builder.</Notice>
+      )}
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card className="p-5">
@@ -857,6 +982,150 @@ export function FormsPage() {
   );
 }
 
+/**
+ * Compact CFP window controls for Settings. Same canonical state (form-cfp) and
+ * same save endpoint as the CFP form builder card on /app/forms — agents look for
+ * close dates in Settings, so both places must work.
+ */
+function CfpWindowSettingsCard() {
+  const [form, setForm] = useState<any>(null);
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
+  const [savedAt, setSavedAt] = useState("");
+
+  const load = () =>
+    api
+      .form()
+      .then((r) => setForm(r.data))
+      .catch((e) => setErr(e.message));
+
+  useEffect(() => {
+    load();
+    return subscribeData(load);
+  }, []);
+
+  const toLocalInput = (iso?: string) => {
+    if (!iso) return "";
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "";
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+
+  const persist = async (patch: any, message: string) => {
+    setSaving(true);
+    setErr("");
+    try {
+      const r = await api.saveForm(form.id, { ...form, ...patch });
+      setForm(r.data);
+      setSavedAt(new Date().toLocaleTimeString());
+      toast(message);
+    } catch (e: any) {
+      setErr(e?.message || "Save failed");
+      toast(e?.message || "Save failed", "danger");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!form) return null;
+
+  return (
+    <Card className="p-5 lg:col-span-2" id="cfp-window" data-testid="cfp-window-settings">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-sm font-bold uppercase tracking-wide text-mid">CFP window</h2>
+          <p className="mt-1 text-sm text-mid">
+            Open and close dates for the public call for proposals. Saving here takes effect immediately on the public
+            form (same setting as the CFP form builder).
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={saving}
+            onClick={() =>
+              persist(
+                {
+                  status: "open",
+                  openAt: form.openAt || new Date(Date.now() - 86400_000).toISOString(),
+                  closeAt:
+                    form.closeAt && Date.parse(form.closeAt) > Date.now()
+                      ? form.closeAt
+                      : new Date(Date.now() + 86400_000 * 30).toISOString(),
+                },
+                "CFP opened",
+              )
+            }
+          >
+            Open CFP now
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={saving}
+            onClick={() =>
+              persist(
+                { status: "closed", closeAt: new Date(Date.now() - 60_000).toISOString() },
+                "CFP closed — public form shows Closed immediately",
+              )
+            }
+          >
+            Close CFP now
+          </Button>
+        </div>
+      </div>
+      {err ? <Notice tone="danger">{err}</Notice> : null}
+      <div className="mt-4 grid gap-3 sm:grid-cols-3">
+        <Field label="Status">
+          <Select
+            aria-label="CFP status"
+            value={form.status}
+            onChange={(e) => setForm({ ...form, status: e.target.value })}
+          >
+            <option value="open">Open</option>
+            <option value="closed">Closed</option>
+          </Select>
+        </Field>
+        <Field label="CFP open date">
+          <Input
+            type="datetime-local"
+            aria-label="CFP open date"
+            value={toLocalInput(form.openAt)}
+            onChange={(e) =>
+              setForm({ ...form, openAt: e.target.value ? new Date(e.target.value).toISOString() : form.openAt })
+            }
+          />
+        </Field>
+        <Field label="CFP close date">
+          <Input
+            type="datetime-local"
+            aria-label="CFP close date"
+            value={toLocalInput(form.closeAt)}
+            onChange={(e) =>
+              setForm({ ...form, closeAt: e.target.value ? new Date(e.target.value).toISOString() : form.closeAt })
+            }
+          />
+        </Field>
+      </div>
+      <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
+        <Badge tone={form.status === "open" ? "ok" : "warn"}>{form.status === "open" ? "Open" : "Closed"}</Badge>
+        <span className="text-mid">
+          Accepting until {form.closeAt ? new Date(form.closeAt).toLocaleString() : "—"}
+          {savedAt ? ` · saved ${savedAt}` : ""}
+        </span>
+        <Button size="sm" className="ml-auto" disabled={saving} onClick={() => persist({}, "CFP window saved")}>
+          {saving ? "Saving…" : "Save CFP window"}
+        </Button>
+        <Button asChild size="sm" variant="outline">
+          <a href="/app/forms#cfp-window">Full CFP builder</a>
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
 export function SettingsPage() {
   const [event, setEvent] = useState<any>(null);
   const [rooms, setRooms] = useState<any[]>([]);
@@ -889,8 +1158,12 @@ export function SettingsPage() {
 
   return (
     <div>
-      <PageHeader title="Settings" description="Event basics used across CFP, portal, and embeds." />
+      <PageHeader
+        title="Settings"
+        description="Event basics, CFP open/close window, program structure, and review team."
+      />
       <div className="grid gap-4 lg:grid-cols-2">
+        <CfpWindowSettingsCard />
         <Card className="p-5">
           <Field label="Name">
             <Input value={event.name} onChange={(e) => setEvent({ ...event, name: e.target.value })} />

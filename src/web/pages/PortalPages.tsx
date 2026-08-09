@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { api, subscribeData } from "../lib/api";
+import { api, getPersona, subscribeData } from "../lib/api";
 import { calendarLinks, fmtTime, isProfessionalEmbed, taskTypeLabel } from "../lib/utils";
 import {
   Badge,
@@ -215,21 +215,130 @@ export function PortalTasksPage() {
 }
 
 export function PortalDeliverablesPage() {
-  const [rows,setRows]=useState<any[]>([]),[err,setErr]=useState("");
-  useEffect(()=>{api.deliverables().then(r=>setRows(r.data)).catch(e=>setErr(e.message))},[]);
-  if(err)return <Notice tone="danger">{err}</Notice>;
-  return <div><PageHeader title="Deliverables" description="Your assigned session files, deadlines, and approval state."/><div className="space-y-2">{rows.map(t=><Link key={t.id} to={`/p/deliverables/${t.id}`} className="flex justify-between rounded-[24px] border bg-white p-4"><div><b>{t.name}</b><p className="text-xs text-mid">{t.session?.title} · Due {t.dueAt.slice(0,10)} · {t.uploadCount} version(s)</p></div><StatusBadge status={t.overdue?"overdue":t.status}/></Link>)}</div></div>;
+  const [rows, setRows] = useState<any[] | null>(null);
+  const [err, setErr] = useState("");
+  const persona = getPersona();
+  const load = () =>
+    api
+      .deliverables()
+      .then((r) => setRows(r.data))
+      .catch((e) => setErr(e.message));
+  // Keyed on the persona id so an explicit persona switch refetches this page.
+  useEffect(() => {
+    setRows(null);
+    setErr("");
+    void load();
+    return subscribeData(load);
+  }, [persona.id]);
+  if (err) return <Notice tone="danger">{err}</Notice>;
+  if (!rows) return <Spinner />;
+  return (
+    <div>
+      <PageHeader
+        title="Deliverables"
+        description={`Session files, deadlines, versions, and approval state for ${persona.name}.`}
+      />
+      <div className="space-y-2">
+        {rows.map((t) => (
+          <Link
+            key={t.id}
+            to={`/p/deliverables/${t.id}`}
+            className="flex justify-between rounded-[24px] border border-line bg-white p-4 hover:border-ink/20"
+          >
+            <div>
+              <b>{t.name}</b>
+              <p className="text-xs text-mid">
+                {t.session?.title || "General"} · Due {t.dueAt.slice(0, 10)} · {t.uploadCount} version(s) ·{" "}
+                {(t.acceptedTypes || []).join(", ") || "any file type"} · max 2 MB
+              </p>
+            </div>
+            <StatusBadge status={t.overdue ? "overdue" : t.status} />
+          </Link>
+        ))}
+      </div>
+      {!rows.length ? (
+        <EmptyState
+          title={`No deliverables assigned to ${persona.name} yet`}
+          description="File requests (slides, print headshots, supporting documents) appear here as soon as an organizer assigns them to you in Content → Deliverables. Onboarding steps live under Tasks."
+          action={
+            <Button asChild variant="secondary">
+              <Link to="/p/tasks">Go to my tasks</Link>
+            </Button>
+          }
+        />
+      ) : null}
+      <p className="mt-4 text-xs text-mid">
+        Viewing as <b>{persona.name}</b> ({persona.email}). Deliverables are scoped to the signed-in speaker — use the
+        persona selector in the header to view another speaker's portal.
+      </p>
+    </div>
+  );
 }
 
 export function PortalDeliverableDetailPage() {
   const {id}=useParams();const[data,setData]=useState<any>(null),[err,setErr]=useState(""),[comment,setComment]=useState("");
-  const load=()=>api.deliverable(id!).then(r=>setData(r.data)).catch(e=>setErr(e.message));useEffect(()=>{void load()},[id]);
+  const persona=getPersona();
+  const load=()=>api.deliverable(id!).then(r=>setData(r.data)).catch(e=>setErr(e.message));useEffect(()=>{setData(null);setErr("");void load()},[id,persona.id]);
   const upload=async(file:File)=>{const dataBase64=await new Promise<string>((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(String(r.result).split(",")[1]||"");r.onerror=reject;r.readAsDataURL(file)});await api.uploadDeliverable(id!,{name:file.name,mime:file.type,size:file.size,dataBase64,kind:file.type.startsWith("image/")?"headshot":file.type==="application/pdf"?"slides":"document"});toast("Upload saved as a new version");load()};
-  if(!data&&!err)return <Spinner/>;if(err)return <Notice tone="danger">{err}</Notice>;const file=data.file;
+  if(!data&&!err)return <Spinner/>;
+  if(err)return <PersonaScopeNotice what="deliverable" error={err} backTo="/p/deliverables" backLabel="All my deliverables"/>;
+  const file=data.file;
   return <div><PageHeader title={data.name} description={`${data.session?.title||"Speaker deliverable"} · Due ${data.dueAt.slice(0,10)}`}/><Card className="p-5"><StatusBadge status={data.overdue?"overdue":data.status}/><p className="mt-3 text-sm">{data.instructions}</p><div className="mt-4 rounded-[18px] border border-dashed p-4"><b>Upload file</b><p className="mb-2 text-xs text-mid">Accepted: {data.acceptedTypes.join(", ")} · Maximum 2 MB. Re-uploading creates a new version.</p><Input type="file" accept={data.acceptedTypes.join(",")} onChange={e=>{const f=e.target.files?.[0];if(f)void upload(f)}}/></div>{file?<div className="mt-5"><h2 className="font-bold">{file.versions.find((v:any)=>v.current)?.name}</h2><p className="text-sm text-mid">Approval: {file.status} · {file.versions.length} versions</p>{[...file.versions].reverse().map((v:any)=><div key={v.id} className="mt-2 flex justify-between rounded bg-soft p-2 text-sm"><span>v{v.version} · {new Date(v.uploadedAt).toLocaleString()}</span><span>{v.current?<Badge tone="ok">Current</Badge>:null} <a className="text-ink underline" href={`/api/content/files/${file.id}/versions/${v.id}`}>View</a></span></div>)}<h3 className="mt-4 text-xs font-bold uppercase text-mid">Comments</h3>{file.comments.map((c:any)=><p key={c.id} className="mt-2 rounded bg-soft p-2 text-sm"><b>{c.authorName}</b> · {new Date(c.createdAt).toLocaleString()}<br/>{c.body}</p>)}<div className="mt-2 flex gap-2"><Input value={comment} onChange={e=>setComment(e.target.value)} placeholder="Add a comment"/><Button onClick={async()=>{await api.addFileComment(file.id,comment);setComment("");load()}}>Comment</Button></div></div>:null}</Card></div>;
 }
 
 const FILE_TYPES = new Set(["headshot", "slides", "supporting_doc"]);
+
+/** Accepted types + size limits shown next to every portal file input (server enforces the same). */
+const UPLOAD_HINTS: Record<string, { types: string; accept: string; extra?: string }> = {
+  headshot: {
+    types: "PNG or JPEG image",
+    accept: "image/png,image/jpeg",
+    extra: "square crop, 1000px+ recommended for print",
+  },
+  slides: { types: "PDF", accept: "application/pdf", extra: "16:9 aspect ratio" },
+  supporting_doc: { types: "PDF or plain text", accept: "application/pdf,text/plain" },
+};
+
+/**
+ * Portal records are scoped to the signed-in speaker. When a URL belongs to another
+ * speaker we must not leak their data — but we also must not dead-end the user with
+ * a bare "not found", so explain the persona scope and offer the way out.
+ */
+function PersonaScopeNotice({
+  what,
+  error,
+  backTo,
+  backLabel,
+}: {
+  what: string;
+  error: string;
+  backTo: string;
+  backLabel: string;
+}) {
+  const persona = getPersona();
+  return (
+    <Card className="p-5">
+      <Notice tone="warn">{error}</Notice>
+      <p className="mt-3 text-sm text-mid">
+        You are viewing the speaker portal as <b className="text-ink">{persona.name}</b> ({persona.email}). This {what}{" "}
+        either does not exist or belongs to a different speaker — portal data is always scoped to the speaker you are
+        signed in as.
+      </p>
+      <p className="mt-2 text-sm text-mid">
+        If this {what} belongs to someone else, switch persona with the <b className="text-ink">Demo as</b> selector in
+        the header, then open the link again.
+      </p>
+      <div className="mt-4 flex flex-wrap gap-2">
+        <Button asChild>
+          <Link to={backTo}>{backLabel}</Link>
+        </Button>
+        <Button asChild variant="outline">
+          <Link to="/p">Portal home</Link>
+        </Button>
+      </div>
+    </Card>
+  );
+}
 
 export function PortalTaskDetailPage() {
   const { id } = useParams();
@@ -252,7 +361,15 @@ export function PortalTaskDetailPage() {
   if (!data && !err) return <Spinner />;
   if (err) return <Notice tone="danger">{err}</Notice>;
   const task = data.tasks.find((t: any) => t.id === id);
-  if (!task) return <Notice tone="danger">Task not found</Notice>;
+  if (!task)
+    return (
+      <PersonaScopeNotice
+        what="task"
+        error="Task not found for the speaker you are viewing as."
+        backTo="/p/tasks"
+        backLabel="All my tasks"
+      />
+    );
 
   const kindMap: Record<string, "headshot" | "slides" | "supporting_document"> = {
     headshot: "headshot",
@@ -398,17 +515,29 @@ export function PortalTaskDetailPage() {
                 onChange={(e) => setFileName(e.target.value)}
               />
             </Field>
+            <div className="mb-2 rounded-[18px] border border-dashed border-line bg-soft p-3 text-xs text-mid">
+              <b className="text-ink">Upload requirements</b>
+              <br />
+              Accepted file types: <b className="text-ink">{UPLOAD_HINTS[task.type]?.types || "PDF, PNG, JPEG"}</b> ·
+              Maximum size: <b className="text-ink">2 MB</b>
+              {UPLOAD_HINTS[task.type]?.extra ? <> · {UPLOAD_HINTS[task.type].extra}</> : null}
+            </div>
             <input
               type="file"
-              accept={task.type === "headshot" ? "image/png,image/jpeg" : undefined}
-              className="mb-3 block w-full text-sm"
+              accept={UPLOAD_HINTS[task.type]?.accept}
+              className="mb-1 block w-full text-sm"
               aria-label="Choose file"
+              aria-describedby="upload-constraints"
               onChange={(e) => {
                 const f = e.target.files?.[0] || null;
                 setHeadshotFile(f);
                 setFileName(f?.name || "");
               }}
             />
+            <p id="upload-constraints" className="mb-3 text-xs text-mid">
+              Accepted: {UPLOAD_HINTS[task.type]?.types || "PDF, PNG, JPEG"} · Maximum 2 MB. Larger or unsupported files
+              are rejected by the server.
+            </p>
             <Button
               disabled={!fileName.trim() || task.status === "completed"}
               onClick={async () => {

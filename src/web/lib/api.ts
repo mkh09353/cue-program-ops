@@ -27,15 +27,58 @@ export function setPersonaCatalog(list: Persona[]) {
   }
 }
 
-export function setPersona(p: Persona) {
-  persona = p;
+const PERSONA_KEY = "cue-persona-id";
+
+function readStoredPersonaId(): string | null {
   try {
-    sessionStorage.setItem("cue-persona-id", p.id);
-    localStorage.setItem("cue-persona-id", p.id);
+    return sessionStorage.getItem(PERSONA_KEY) || localStorage.getItem(PERSONA_KEY) || null;
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredPersonaId(id: string) {
+  try {
+    sessionStorage.setItem(PERSONA_KEY, id);
+    localStorage.setItem(PERSONA_KEY, id);
   } catch {
     /* ignore */
   }
-  listeners.forEach((l) => l());
+}
+
+/**
+ * The persona the user explicitly picked. Kept in memory as well as storage so a
+ * provisional role fallback (used when the server catalog has not loaded yet) can
+ * never overwrite a real selection.
+ */
+let explicitPersonaId: string | null = readStoredPersonaId();
+
+export function getExplicitPersonaId() {
+  return explicitPersonaId;
+}
+
+function applyPersona(p: Persona) {
+  const changed = persona.id !== p.id;
+  persona = p;
+  if (changed) {
+    listeners.forEach((l) => l());
+    // Persona identity is part of every request; page data must be refetched.
+    bumpData();
+  }
+  return changed;
+}
+
+/**
+ * Select a persona. `explicit` selections (persona picker, landing page) persist
+ * and always win over role fallbacks; provisional selections do not persist.
+ */
+export function setPersona(p: Persona, opts: { explicit?: boolean } = {}) {
+  const explicit = opts.explicit !== false;
+  if (explicit) {
+    explicitPersonaId = p.id;
+    writeStoredPersonaId(p.id);
+  }
+  applyPersona(p);
 }
 
 export function subscribePersona(fn: () => void): () => void {
@@ -63,6 +106,7 @@ export function subscribeData(fn: () => void): () => void {
  * organizer persona — shells must deny access instead of silent switching.
  */
 export function ensurePersonaForRole(role: Role, preferredSpeakerId?: string) {
+  restorePersonaFromSession();
   if (persona.role === role) {
     if (role === "speaker" && preferredSpeakerId && persona.speakerId !== preferredSpeakerId) {
       const match = personaCatalog.find((p) => p.speakerId === preferredSpeakerId);
@@ -89,28 +133,35 @@ export function switchToRole(role: Role, preferredSpeakerId?: string) {
   return getPersona();
 }
 
+/**
+ * Adopt the explicitly selected persona as soon as it is resolvable in the catalog.
+ * Returns true when an explicit selection is now active.
+ */
 export function restorePersonaFromSession() {
-  try {
-    const id = sessionStorage.getItem("cue-persona-id") || localStorage.getItem("cue-persona-id");
-    const found = personaCatalog.find((p) => p.id === id);
-    if (found) persona = found;
-  } catch {
-    /* ignore */
-  }
+  const id = explicitPersonaId || readStoredPersonaId();
+  if (!id) return false;
+  explicitPersonaId = id;
+  const found = personaCatalog.find((p) => p.id === id);
+  if (!found) return false;
+  applyPersona(found);
+  return true;
 }
 
 /** Portal shells use a synchronous best-effort restore and must always unblock. */
 export function resolvePortalPersona(role: Role) {
   restorePersonaFromSession();
-  // Entering an explicit role portal is the fallback boundary: unlike organizer
-  // route gating, it is safe to select a known demo persona for that portal.
-  // This guarantees API headers are usable even when storage is missing/stale.
-  if (getPersona().role !== role) switchToRole(role);
-  if (getPersona().role !== role) {
-    const fallback = personaCatalog.find((p) => p.role === role) || DEFAULT_PERSONAS.find((p) => p.role === role);
-    if (fallback) setPersona(fallback);
-  }
-  ensurePersonaForRole(role);
+  // An explicit selection for this portal always wins — never fall back over it.
+  // A provisional persona of the right role is also left alone.
+  if (getPersona().role === role) return true;
+  // Nothing usable is selected for this portal. Entering an explicit role portal is
+  // the fallback boundary: unlike organizer route gating, it is safe to select a
+  // known demo persona so API headers stay usable. The fallback is PROVISIONAL —
+  // it must not persist, so a pending explicit selection survives catalog loading.
+  const fallback =
+    (role === "speaker"
+      ? personaCatalog.find((p) => p.id === "spk-sam") || personaCatalog.find((p) => p.role === role)
+      : personaCatalog.find((p) => p.role === role)) || DEFAULT_PERSONAS.find((p) => p.role === role);
+  if (fallback) setPersona(fallback, { explicit: false });
   return true;
 }
 
@@ -239,6 +290,14 @@ export const api = {
   editContentSpeaker: (id:string,body:any) => mut(`/api/events/${EVENT_ID}/content/speakers/${id}`,{method:"PATCH",body:JSON.stringify(body)}),
   restoreContentHistory: (id:string) => mut(`/api/events/${EVENT_ID}/content/history/${id}/restore`,{method:"POST",body:"{}"}),
   contentExportUrl: () => `/api/events/${EVENT_ID}/content/export`,
+  /** Download the latest-version ZIP and report how many files it contains. */
+  contentExportZip: async () => {
+    const r = await fetch(`/api/events/${EVENT_ID}/content/export`, { headers: headers() });
+    if (!r.ok) throw new Error(`Export failed (${r.status})`);
+    const fileCount = Number(r.headers.get("x-cue-file-count") || "0");
+    const blob = await r.blob();
+    return { blob, fileCount, filename: "cue-latest-content.zip" };
+  },
   resource: (slug: string) =>
     req<{ data: any }>(`/api/speaker/events/${EVENT_ID}/resources/${slug}`),
   templates: () => req<{ data: any[] }>(`/api/events/${EVENT_ID}/comms/templates`),
@@ -289,6 +348,9 @@ export const api = {
   crmMerge: (primaryId: string, secondaryId: string) => mut<{ data: any }>(`/api/crm/contacts/merge`, { method: "POST", body: JSON.stringify({ primaryId, secondaryId }) }),
   crmValidateImport: (csv: string) => mut<{ data: any[] }>(`/api/crm/import/validate`, { method: "POST", body: JSON.stringify({ csv }) }),
   crmImport: (csv: string, mergeDuplicates = false) => mut<{ data: any }>(`/api/crm/import`, { method: "POST", body: JSON.stringify({ csv, mergeDuplicates }) }),
+  crmFieldDefinitions: () => req<{ data: any[] }>(`/api/crm/field-definitions`),
+  crmSaveFieldDefinition: (body: any) => mut<{ data: any }>(`/api/crm/field-definitions`, { method: "POST", body: JSON.stringify(body) }),
+  crmDeleteFieldDefinition: (key: string) => mut(`/api/crm/field-definitions/${key}`, { method: "DELETE" }),
   crmSegments: () => req<{ data: any[] }>(`/api/crm/segments`),
   crmSaveSegment: (body: any) => mut<{ data: any }>(`/api/crm/segments`, { method: "POST", body: JSON.stringify(body) }),
   crmDeleteSegment: (id: string) => mut(`/api/crm/segments/${id}`, { method: "DELETE" }),

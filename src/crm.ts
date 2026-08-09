@@ -89,10 +89,24 @@ export interface CrmCampaign {
   sends: CrmCampaignSend[];
 }
 
+/**
+ * Typed CRM custom field definition (Settings-level). "select" fields render as a
+ * dropdown on contact profiles and only accept one of their configured options.
+ */
+export interface CrmFieldDefinition {
+  key: string;
+  label: string;
+  type: "text" | "select";
+  options: string[];
+  createdAt: string;
+}
+
 export interface CrmState {
   contacts: CrmContact[];
   segments: CrmSegment[];
   campaigns: CrmCampaign[];
+  /** Optional: older snapshots restore without it (see ensureCrm). */
+  fieldDefinitions?: CrmFieldDefinition[];
 }
 
 export type CrmContactQuery = {
@@ -107,7 +121,9 @@ const now = () => new Date().toISOString();
 const id = (p: string) => `${p}-${crypto.randomUUID().slice(0, 8)}`;
 
 export function emptyCrmState(): CrmState {
-  return { contacts: [], segments: [], campaigns: [] };
+  // Ship one worked example (Speaker Type: Internal/External) so the typed-field
+  // workflow is discoverable instead of an empty configuration screen.
+  return { contacts: [], segments: [], campaigns: [], fieldDefinitions: [...DEFAULT_CRM_FIELD_DEFINITIONS] };
 }
 
 export function ensureCrm(life: LifecycleStore = store): CrmState {
@@ -116,6 +132,7 @@ export function ensureCrm(life: LifecycleStore = store): CrmState {
   if (!Array.isArray(anyStore.crm.contacts)) anyStore.crm.contacts = [];
   if (!Array.isArray(anyStore.crm.segments)) anyStore.crm.segments = [];
   if (!Array.isArray(anyStore.crm.campaigns)) anyStore.crm.campaigns = [];
+  if (!Array.isArray(anyStore.crm.fieldDefinitions)) anyStore.crm.fieldDefinitions = [...DEFAULT_CRM_FIELD_DEFINITIONS];
   return anyStore.crm;
 }
 
@@ -206,7 +223,11 @@ export function updateContact(
   if (patch.company !== undefined) contact.company = String(patch.company || "").trim() || undefined;
   if (patch.bio !== undefined) contact.bio = String(patch.bio || "").trim() || undefined;
   if (patch.tags) contact.tags = uniqueTags(patch.tags);
-  if (patch.customFields) contact.customFields = { ...contact.customFields, ...patch.customFields };
+  if (patch.customFields) {
+    const checked = validateCustomFields(patch.customFields);
+    if (!checked.ok) return { ok: false, error: checked.error };
+    contact.customFields = { ...contact.customFields, ...checked.values };
+  }
   contact.updatedAt = now();
   return { ok: true, contact };
 }
@@ -498,9 +519,10 @@ export function mergeContacts(
   primaryId: string,
   secondaryId: string,
   actor?: { id: string; name: string },
+  life: LifecycleStore = store,
 ): { ok: true; contact: CrmContact } | { ok: false; error: string } {
   if (primaryId === secondaryId) return { ok: false, error: "cannot merge a contact with itself" };
-  const crm = ensureCrm();
+  const crm = ensureCrm(life);
   const primary = crm.contacts.find((c) => c.id === primaryId);
   const secondary = crm.contacts.find((c) => c.id === secondaryId);
   if (!primary || !secondary) return { ok: false, error: "contact not found" };
@@ -515,10 +537,11 @@ export function mergeContacts(
   // Prefer more advanced stage
   const order = Object.fromEntries(CRM_STAGES.map((s) => [s.id, s.order])) as Record<CrmStage, number>;
   if (order[secondary.stage] > order[primary.stage] && canTransition(primary.stage, secondary.stage)) {
-    moveStage(primary.id, secondary.stage, actor, `Merged from ${secondary.email}`);
+    const from=primary.stage;primary.stage=secondary.stage;primary.stageHistory.push({id:id("stage"),from,to:secondary.stage,at:now(),byId:actor?.id,byName:actor?.name,note:`Merged from ${secondary.email}`});
   }
   if (actor) addNote(primary.id, `Merged duplicate ${secondary.name} <${secondary.email}>`, actor);
-  deleteContact(secondaryId);
+  const secondaryIndex=crm.contacts.findIndex((contact)=>contact.id===secondaryId);
+  if(secondaryIndex>=0)crm.contacts.splice(secondaryIndex,1);
   primary.updatedAt = now();
   return { ok: true, contact: primary };
 }
@@ -913,6 +936,86 @@ function pathToStage(from: CrmStage, to: CrmStage): CrmStage[] {
   // fallback direct if allowed else jump via declined reset
   if (canTransition(from, to)) return [to];
   return [to];
+}
+
+/** —— Typed custom field definitions (additive; used by CRM Settings + profiles) —— */
+
+export const DEFAULT_CRM_FIELD_DEFINITIONS: CrmFieldDefinition[] = [
+  {
+    key: "speakerType",
+    label: "Speaker Type",
+    type: "select",
+    options: ["Internal", "External"],
+    createdAt: "2026-01-01T00:00:00.000Z",
+  },
+];
+
+export function listFieldDefinitions(): CrmFieldDefinition[] {
+  return ensureCrm().fieldDefinitions || [];
+}
+
+export function saveFieldDefinition(input: {
+  key?: string;
+  label: string;
+  type?: string;
+  options?: string[] | string;
+}): { ok: true; definition: CrmFieldDefinition } | { ok: false; error: string } {
+  const crm = ensureCrm();
+  const label = String(input.label || "").trim();
+  if (!label) return { ok: false, error: "field label is required" };
+  const type = input.type === "select" ? "select" : "text";
+  const key =
+    String(input.key || "").trim() ||
+    label
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "_")
+      .replace(/^_|_$/g, "");
+  if (!key) return { ok: false, error: "field key is required" };
+  const options = (Array.isArray(input.options) ? input.options : String(input.options || "").split(","))
+    .map((o) => String(o).trim())
+    .filter(Boolean);
+  if (type === "select" && options.length < 2) {
+    return { ok: false, error: "dropdown fields need at least two options" };
+  }
+  const list = crm.fieldDefinitions || (crm.fieldDefinitions = []);
+  const existing = list.find((f) => f.key === key);
+  if (existing) {
+    Object.assign(existing, { label, type, options });
+    return { ok: true, definition: existing };
+  }
+  const definition: CrmFieldDefinition = { key, label, type, options, createdAt: now() };
+  list.push(definition);
+  return { ok: true, definition };
+}
+
+export function deleteFieldDefinition(key: string) {
+  const crm = ensureCrm();
+  const list = crm.fieldDefinitions || [];
+  const index = list.findIndex((f) => f.key === key);
+  if (index < 0) return false;
+  list.splice(index, 1);
+  return true;
+}
+
+/**
+ * Server-side enforcement for typed custom fields: a "select" field only accepts one
+ * of its configured options (empty string clears it). Undefined keys pass through so
+ * ad-hoc custom fields keep working.
+ */
+export function validateCustomFields(
+  values: Record<string, string>,
+): { ok: true; values: Record<string, string> } | { ok: false; error: string } {
+  const defs = listFieldDefinitions();
+  const out: Record<string, string> = {};
+  for (const [key, raw] of Object.entries(values || {})) {
+    const value = String(raw ?? "").trim();
+    const def = defs.find((d) => d.key === key);
+    if (def?.type === "select" && value && !def.options.includes(value)) {
+      return { ok: false, error: `${def.label} must be one of: ${def.options.join(", ")}` };
+    }
+    out[key] = value;
+  }
+  return { ok: true, values: out };
 }
 
 // Augment LifecycleStore for TypeScript consumers

@@ -521,7 +521,7 @@ export function ReviewerQueuePage({ done = false }: { done?: boolean }) {
         {rows.map((r) => (
           <Link
             key={r.id}
-            to={`/r/${r.submissionId}`}
+            to={`/r/${r.id}`}
             className="flex items-center justify-between rounded-[24px] border border-line bg-white p-4 hover:border-ink/20"
           >
             <div>
@@ -566,6 +566,7 @@ export function ReviewerSubmissionPage() {
   const [confirmRecuse, setConfirmRecuse] = useState(false);
   const [recuseBusy, setRecuseBusy] = useState(false);
   const [notice, setNotice] = useState("");
+  const [aiBusy, setAiBusy] = useState(false);
   const load = () =>
     api
       .reviewerAssignment(submissionId!)
@@ -604,7 +605,7 @@ export function ReviewerSubmissionPage() {
           </p>
         </Card>
         <Card className="p-5">
-          <h2 className="mb-4 font-bold">Scorecard</h2>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2"><div><h2 className="font-bold">Scorecard</h2><p className="text-xs text-mid">AI drafts are heuristic, advisory, and never submit or decide.</p></div><Button variant="secondary" disabled={aiBusy} onClick={async()=>{setAiBusy(true);try{const r:any=await api.aiAssist(data.review?.id || data.assignment.id);setResponses(x=>({...x,...(r.data.scores||{}),comments:r.data.notes||x.comments||""}));setNotice("AI advisory draft applied. Review and edit every value before submitting.")}catch(e:any){setErr(e.message)}finally{setAiBusy(false)}}}>{aiBusy?"Drafting…":"AI draft review"}</Button></div>
           {scoreCriteria.map((criterion: any) => {
             const min = criterion.min ?? 1;
             const max = criterion.max ?? 5;

@@ -16,8 +16,11 @@ import {
   ics,
   icsForSession,
   readiness,
+  isSafeAccent,
   resolveDemoPersona,
   reviewForRound,
+  reviewHistory,
+  markReviewSubmitted,
   reminderPlans,
   safeEmbed,
   sendTemplate,
@@ -36,6 +39,7 @@ import { createReviewRoutes } from "./reviewRoutes.js";
 import { createContentRoutes } from "./contentRoutes.js";
 import { createPublicSite } from "./publicSite.js";
 import { createCrmRoutes } from "./crmRoutes.js";
+import { deleteFieldDefinition, listFieldDefinitions, saveFieldDefinition } from "./crm.js";
 import { createSpeakerRoutes } from "./speakerRoutes.js";
 import { blindSubmission } from "./review.js";
 import { createAgendaRoutes } from "./agendaRoutes.js";
@@ -118,6 +122,24 @@ export function createApp(deps: AppDeps = {}) {
   app.route("/api/events", createReviewRoutes({ store, persist, persona: personaOf, mailer }));
   app.route("/", createContentRoutes({ store, persist, persona: personaOf, mailer, repo }));
   app.route("/", createPublicSite({ repo }));
+  // CRM typed custom-field definitions. Registered here (not in crmRoutes.ts) to keep
+  // this addition isolated from the contact/merge handlers.
+  app.get("/api/crm/field-definitions", (c) => c.json({ data: listFieldDefinitions() }));
+  app.post("/api/crm/field-definitions", async (c) => {
+    if (actor(c) !== "organizer") return fail(c, "organizer role required", 403);
+    const b = (await c.req.json().catch(() => null)) as any;
+    if (!b) return fail(c, "JSON body required");
+    const saved = saveFieldDefinition(b);
+    if (!saved.ok) return fail(c, saved.error);
+    await persist();
+    return c.json({ data: saved.definition }, 201);
+  });
+  app.delete("/api/crm/field-definitions/:key", async (c) => {
+    if (actor(c) !== "organizer") return fail(c, "organizer role required", 403);
+    if (!deleteFieldDefinition(c.req.param("key"))) return fail(c, "field definition not found", 404);
+    await persist();
+    return c.body(null, 204);
+  });
   app.route("/", createCrmRoutes({ store, persist, persona: personaOf, mailer }));
   app.route("/", createAgendaRoutes({ store, repo, persist, persona: personaOf }));
   app.get("/api/events/:eventId/automation",(c)=>c.json({data:store.automation||{enabled:true,schedule:"0 * * * *",speakerSent:0,reviewerSent:0,status:"never"}}));
@@ -127,7 +149,7 @@ export function createApp(deps: AppDeps = {}) {
     try{const plans=reminderPlans(),deliverableIds=store.deliverableTasks.filter(x=>x.status!=="complete"&&Date.parse(x.dueAt)<=Date.now()+7*86400000).map(x=>x.speakerId),speakerIds=[...new Set([...plans.map(x=>x.speakerId),...deliverableIds])];for(const speakerId of speakerIds){const row=sendTemplate("task_reminder",speakerId,"outstanding tasks and deliverables","reminder");await deliver(row);speakerSent++}for(const reviewerId of [...new Set(store.reviewAssignments.filter(a=>a.status==="assigned").map(a=>a.reviewerId))]){const p=store.personas.find(x=>x.id===reviewerId&&x.role==="reviewer");if(!p)continue;const outstanding=store.reviewAssignments.filter(a=>a.reviewerId===reviewerId&&a.status==="assigned").length,result=await mailer.send({to:p.email,subject:`${outstanding} CUE reviews outstanding`,text:`Please complete your ${outstanding} assigned reviews.`}).catch(()=>({status:"failed" as const}));store.communications.push({id:`comm-${crypto.randomUUID().slice(0,8)}`,speakerId:reviewerId,subject:`${outstanding} CUE reviews outstanding`,body:`Scheduled reviewer reminder for ${p.name}`,kind:"reminder",status:result.status,ics:"",createdAt:new Date().toISOString()});reviewerSent++}Object.assign(state,{lastRunAt:new Date().toISOString(),speakerSent,reviewerSent,status:"completed"});await persist();return c.json({data:state})}catch(error){Object.assign(state,{lastRunAt:new Date().toISOString(),speakerSent,reviewerSent,status:"failed"});await persist();return fail(c,error instanceof Error?error.message:"automation failed",500)}
   });
   app.get("/api/events/:eventId/embed-configs",(c)=>c.json({data:store.embedConfigs||[]}));
-  app.post("/api/events/:eventId/embed-configs",async(c)=>{if(actor(c)!=="organizer")return fail(c,"organizer role required",403);const b=await c.req.json().catch(()=>null) as any;if(!b?.name||!["sessions","speakers","agenda","itinerary","gallery"].includes(b.widget))return fail(c,"name and valid widget required");store.embedConfigs||=[];const row={id:`embed-${crypto.randomUUID().slice(0,8)}`,name:String(b.name),widget:b.widget,filters:{track:b.filters?.track||undefined,day:b.filters?.day||undefined},theme:{accent:b.theme?.accent||undefined},createdAt:new Date().toISOString()};store.embedConfigs.push(row);await persist();return c.json({data:row},201)});
+  app.post("/api/events/:eventId/embed-configs",async(c)=>{if(actor(c)!=="organizer")return fail(c,"organizer role required",403);const b=await c.req.json().catch(()=>null) as any;if(!b?.name||!["sessions","speakers","agenda","itinerary","gallery"].includes(b.widget))return fail(c,"name and valid widget required");store.embedConfigs||=[];const accent=isSafeAccent(b.theme?.accent)?String(b.theme.accent).trim():undefined;if(b.theme?.accent&&!accent)return fail(c,"accent must be a hex color like #4B5563");const row={id:`embed-${crypto.randomUUID().slice(0,8)}`,name:String(b.name),widget:b.widget,filters:{track:b.filters?.track||undefined,format:b.filters?.format||undefined,room:b.filters?.room||undefined,day:b.filters?.day||undefined},theme:{accent},createdAt:new Date().toISOString()};store.embedConfigs.push(row);await persist();return c.json({data:row},201)});
   app.delete("/api/events/:eventId/embed-configs/:id",async(c)=>{if(actor(c)!=="organizer")return fail(c,"organizer role required",403);const i=(store.embedConfigs||[]).findIndex(x=>x.id===c.req.param("id"));if(i<0)return fail(c,"embed config not found",404);store.embedConfigs.splice(i,1);await persist();return c.body(null,204)});
 
   app.get("/health", (c) =>
@@ -371,7 +393,7 @@ export function createApp(deps: AppDeps = {}) {
       data: rows.map((s) => ({
         ...(persona.role === "reviewer" ? blindSubmission(s, Boolean(store.reviewRounds.find((r) => r.id === store.reviewAssignments.find((a) => a.submissionId === s.id && a.reviewerId === persona.id)?.roundId)?.blind)) : s),
         avgScore: avgScore(s.id),
-        reviews: store.reviews.filter((r) => r.submissionId === s.id),
+        reviews: reviewHistory(s.id),
       })),
     });
   });
@@ -388,7 +410,7 @@ export function createApp(deps: AppDeps = {}) {
     return c.json({
       data: {
         ...projected,
-        reviews: store.reviews.filter((r) => r.submissionId === s.id && (persona.role !== "reviewer" || r.reviewerId === persona.id)),
+        reviews: reviewHistory(s.id).filter((r) => persona.role !== "reviewer" || r.reviewerId === persona.id),
         profile: persona.role === "reviewer" ? undefined : store.profiles.find((p) => p.speakerId === s.speakerId),
         avgScore: avgScore(s.id),
       },
@@ -403,7 +425,8 @@ export function createApp(deps: AppDeps = {}) {
         : store.reviews.filter((r) => r.reviewerId === persona.id && store.reviewAssignments.some((a) => a.submissionId === r.submissionId && a.reviewerId === persona.id && a.status !== "recused"));
     return c.json({
       data: rows.map((r) => ({
-        ...r,
+        // Canonical projection: reviewer name, round, criterion labels, average.
+        ...(reviewHistory(r.submissionId).find((x) => x.id === r.id) || r),
         submission: (() => { const s=store.submissions.find((x) => x.id === r.submissionId); const a=store.reviewAssignments.find((x)=>x.submissionId===r.submissionId&&x.reviewerId===persona.id); return s ? blindSubmission(s, persona.role === "reviewer" && Boolean(store.reviewRounds.find((x)=>x.id===a?.roundId)?.blind)) : undefined; })(),
       })),
     });
@@ -436,17 +459,37 @@ export function createApp(deps: AppDeps = {}) {
       target.scores = b.scores || target.scores;
     }
     target.notes = b.notes ?? target.notes;
-    target.status = "submitted";
     target.source = "human";
+    // Canonical mirror: also completes the reviewer's assignment + advances status.
+    markReviewSubmitted(target);
     const sub = store.submissions.find((s) => s.id === r.submissionId);
-    if (sub && sub.status === "submitted") sub.status = "under_review";
     if (sub && legacyRound) sub.round = legacyRound;
     await persist();
     return c.json({ data: target });
   });
 
   app.post("/api/events/:eventId/reviews/:id/ai-assist", (c) => {
-    const r = store.reviews.find((x) => x.id === c.req.param("id"));
+    let r = store.reviews.find((x) => x.id === c.req.param("id"));
+    // Runtime-invited reviewers may have an assignment before their Review row
+    // exists. The scorecard can request a draft with the assignment id.
+    if (!r) {
+      const assignment = store.reviewAssignments.find((x) => x.id === c.req.param("id"));
+      if (assignment) {
+        const persona = resolveDemoPersona(c.req.header("x-demo-persona"));
+        if (persona.role === "reviewer" && assignment.reviewerId !== persona.id) return fail(c, "assignment not found", 404);
+        r = {
+          id: `review-${crypto.randomUUID().slice(0, 8)}`,
+          submissionId: assignment.submissionId,
+          reviewerId: assignment.reviewerId,
+          round: "r1",
+          roundId: assignment.roundId,
+          scores: {},
+          notes: "",
+          status: "assigned",
+        };
+        store.reviews.push(r);
+      }
+    }
     if (!r) return fail(c, "review not found", 404);
     const sub = store.submissions.find((s) => s.id === r.submissionId);
     if (!sub) return fail(c, "submission not found", 404);

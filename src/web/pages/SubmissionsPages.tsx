@@ -310,10 +310,7 @@ export function ReviewStudioPage() {
             <Badge tone="info">Board · {data.reviewBoard}</Badge>
           </div>
           <h2 className="text-2xl font-bold tracking-tight">{data.title}</h2>
-          <p className="mt-1 text-sm text-mid">
-            {data.name} · {data.email}
-          </p>
-          {data.additionalSpeakers?.length ? <div className="mt-2 rounded-[18px] border border-line p-3 text-sm"><b>Co-authors / co-presenters</b><ul className="mt-1 list-disc pl-5">{data.additionalSpeakers.map((p:any)=><li key={p.id}>{p.name} · {p.email}</li>)}</ul></div> : null}
+          <div className="mt-2 rounded-[18px] border border-line p-3 text-sm"><b>Speakers</b><ul className="mt-1 space-y-1"><li>{data.name} · {data.email} <Badge tone="muted">lead</Badge></li>{(data.additionalSpeakers||[]).map((p:any)=><li key={p.id}>{p.name} · {p.email} <Badge tone="muted">co-presenter</Badge></li>)}</ul></div>
           <p className="mt-4 whitespace-pre-wrap text-sm leading-relaxed text-ink-soft">{data.abstract}</p>
           {data.answers?.workshopPlan ? (
             <div className="mt-4 rounded-[18px] bg-canvas p-3 text-sm">
@@ -470,7 +467,7 @@ export function ReviewStudioPage() {
                 }
               }}
             >
-              AI assist
+              AI draft review
             </Button>
             <Button
               disabled={busy || !activeReview}
@@ -523,7 +520,7 @@ export function ReviewStudioPage() {
                 setBusy(true);
                 try {
                   await api.decide(data.id, { nextStatus: "rejected", sendComms: true });
-                  toast("Declined and mock email logged");
+                  toast("Rejected and mock email logged");
                   load();
                 } catch (e: any) {
                   toast(e.message, "danger");
@@ -532,7 +529,7 @@ export function ReviewStudioPage() {
                 }
               }}
             >
-              Decline
+              Reject
             </Button>
           </div>
 
@@ -540,29 +537,40 @@ export function ReviewStudioPage() {
             <h3 className="text-xs font-bold uppercase tracking-wide text-mid">Review history</h3>
             <ul className="mt-2 space-y-2 text-xs text-mid">
               {data.reviews?.map((r: any) => {
-                const avg = averageScores(r.scores);
+                const avg = r.average != null ? r.average : averageScores(r.scores);
+                const entries: any[] = r.entries?.length
+                  ? r.entries
+                  : Object.entries(r.scores || {}).map(([key, value]) => ({ key, label: key, value }));
+                const comment = r.comment || r.notes || "";
                 return (
-                  <li key={r.id} className="rounded-lg bg-soft p-3">
+                  <li key={r.id} className="rounded-lg bg-soft p-3" data-testid="review-history-item">
                     <div className="flex flex-wrap items-center gap-2">
-                      <b className="uppercase">{r.round}</b>
+                      <b className="text-ink">{r.reviewerName || r.reviewerId}</b>
+                      <span className="uppercase">{r.roundName || r.round}</span>
                       <StatusBadge status={r.status} />
-                      <Badge tone={r.source === "ai_draft" ? "ai" : "muted"}>
-                        {r.source === "ai_draft" ? "AI draft" : "Human"}
+                      <Badge tone={r.isAiDraft || r.source === "ai_draft" ? "ai" : "muted"}>
+                        {r.isAiDraft || r.source === "ai_draft" ? "AI draft" : "Human"}
                       </Badge>
                       {avg != null ? <span className="font-semibold">Avg {avg}</span> : null}
+                      {r.submittedAt ? (
+                        <span className="text-mid">submitted {new Date(r.submittedAt).toLocaleString()}</span>
+                      ) : null}
                     </div>
-                    {r.scores && Object.keys(r.scores).length ? (
+                    {entries.length ? (
                       <div className="mt-2 flex flex-wrap gap-2">
-                        {Object.entries(r.scores).map(([k, v]) => (
-                          <span key={k} className="rounded-md bg-white px-2 py-0.5 capitalize">
-                            {k} {String(v)}
+                        {entries.map((e: any) => (
+                          <span key={e.key} className="rounded-md bg-white px-2 py-0.5">
+                            {e.label} {String(e.value)}
                           </span>
                         ))}
                       </div>
                     ) : (
                       <div className="mt-1 text-mid">No scores yet</div>
                     )}
-                    {r.notes ? <p className="mt-2 text-mid">{r.notes}</p> : null}
+                    {r.recommendation ? (
+                      <p className="mt-2 text-ink">Recommendation: {r.recommendation}</p>
+                    ) : null}
+                    {comment ? <p className="mt-2 text-mid">{comment}</p> : null}
                   </li>
                 );
               })}

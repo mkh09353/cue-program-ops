@@ -158,8 +158,10 @@ const STATUS_LABELS: Record<string, string> = {
   in_review: "In review",
   accepted: "Accepted",
   waitlisted: "Waitlisted",
-  rejected: "Declined",
-  declined: "Declined",
+  // Organizer decision wording is "Rejected" (submission decisions). A speaker who
+  // turns down an invitation keeps the distinct "Declined invite" wording.
+  rejected: "Rejected",
+  declined: "Declined invite",
   withdrawn: "Withdrawn",
   assigned: "Awaiting score",
   completed: "Done",
@@ -264,4 +266,13 @@ export function averageScores(scores?: Record<string, number> | null): number | 
   const vals = Object.values(scores).map(Number).filter((n) => Number.isFinite(n) && n > 0);
   if (!vals.length) return null;
   return Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 10) / 10;
+}
+
+/**
+ * Builder autosave race guard: adopt the server's saved copy ONLY when the local
+ * draft has not changed while the request was in flight. Ticking "required" on a
+ * freshly added field used to be clobbered by the in-flight autosave response.
+ */
+export function adoptSaveResult<T>(current: T, sentSnapshot: string, server: T, snapshot: (v: T) => string): T {
+  return snapshot(current) === sentSnapshot ? server : current;
 }

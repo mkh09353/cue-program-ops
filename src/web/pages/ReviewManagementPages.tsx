@@ -264,6 +264,7 @@ export function EvaluationPlanPage() {
           </Button>
         }
       />
+      <Notice tone="info">AI review assistance is advisory. Open any submission in <a className="font-semibold underline" href="/app/submissions">Review Studio</a> and choose <b>AI draft review</b>; a human must edit and submit it.</Notice>
       {error ? <Notice tone="danger">{error}</Notice> : null}
       <div className="mb-4 max-w-sm">
         <Field label="New round name">
@@ -531,6 +532,7 @@ export function ResultsPage() {
           </Button>
         }
       />
+      <Notice tone="info">Need evaluation help? AI drafts are advisory only. Open a submission in <a className="font-semibold underline" href="/app/submissions">Review Studio</a> and choose <b>AI draft review</b>; human reviewers retain responsibility.</Notice>
       {exportMsg ? <Notice tone="ok">{exportMsg}</Notice> : null}
       <div className="overflow-x-auto rounded-[24px] border bg-paper">
         <table className="w-full text-left text-sm">

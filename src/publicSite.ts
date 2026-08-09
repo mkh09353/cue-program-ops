@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import type { Repository } from "./domain.js";
-import { store } from "./lifecycle.js";
+import { isSafeAccent, store } from "./lifecycle.js";
 import {
   agendaByDay,
   buildIcs,
@@ -35,6 +35,8 @@ function fmtWhen(iso: string, timeZone: string, opts: Intl.DateTimeFormatOptions
 }
 
 function fmtTimeRange(startsAt: string, endsAt: string, timeZone: string) {
+  // Published-but-unscheduled catalog entries carry no slot times.
+  if (!startsAt || !endsAt) return "Time to be announced";
   const d = fmtWhen(startsAt, timeZone, { weekday: "short", month: "short", day: "numeric" });
   const a = fmtWhen(startsAt, timeZone, { hour: "numeric", minute: "2-digit" });
   const b = fmtWhen(endsAt, timeZone, { hour: "numeric", minute: "2-digit" });
@@ -84,7 +86,8 @@ input[type=search]{flex:1 1 220px;min-width:180px}
 .btn.ghost{background:transparent;color:var(--ink);border:1px solid transparent}
 .btn.sm{padding:6px 10px;font-size:12px;border-radius:var(--radius-pill);min-height:32px}
 .count{font-size:13px;font-weight:500;color:var(--mid)}
-.facets{display:flex;flex-wrap:wrap;gap:8px;width:100%}
+.facets{display:flex;flex-wrap:wrap;gap:8px;width:100%;border:1px solid var(--line);border-radius:14px;padding:10px 12px;margin:0}
+.facet-legend{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);padding:0 4px}
 .facets label{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:500;text-transform:uppercase;letter-spacing:.04em;color:var(--mid)}
 .grid{display:grid;gap:12px}
 .cards{grid-template-columns:1fr}
@@ -175,26 +178,36 @@ function avatarHtml(sp: { name: string; initials: string; headshotUrl?: string }
   return `<div class="avatar ${cls}" aria-hidden="true">${esc(sp.initials)}</div>`;
 }
 
+/** Job title + company shown under every speaker name (public cards + detail). */
+function speakerRole(sp: { title?: string; company?: string }) {
+  const role = [sp.title, sp.company].filter(Boolean).join(" · ");
+  return role || "Speaker";
+}
+
 function speakerChips(speakers: PublicSpeakerView[], base: string) {
   if (!speakers.length) return `<div class="meta">Speakers TBA</div>`;
   return `<div class="speakers">${speakers
     .map(
       (sp) => `<a class="speaker-chip" href="${esc(base)}/speakers/${esc(sp.id)}">
       ${avatarHtml(sp)}
-      <span class="who"><b>${esc(sp.name)}</b><span>${esc([sp.title, sp.company].filter(Boolean).join(" · ") || "Speaker")}</span></span>
+      <span class="who"><b>${esc(sp.name)}</b><span data-speaker-role>${esc(speakerRole(sp))}</span></span>
     </a>`,
     )
     .join("")}</div>`;
 }
 
 function sessionCard(s: PublicSessionView, program: PublicProgram, base: string, opts?: { star?: boolean; detailHref?: string }) {
-  const trackPills = s.trackNames.map((t) => `<span class="pill track">${esc(t)}</span>`).join("");
+  // Always render a distinct Track badge — sessions without a track still get a
+  // labelled "General" tag so track is never silently missing next to format/room.
+  const trackPills = (s.trackNames.length ? s.trackNames : ["General"])
+    .map((t) => `<span class="pill track" data-track-pill>Track · ${esc(t)}</span>`)
+    .join("");
   const detail = opts?.detailHref || `${base}/sessions/${s.id}`;
   const star = opts?.star
     ? `<button type="button" class="star" data-star="${esc(s.id)}" aria-label="Add to my schedule" title="My Schedule">☆</button>`
     : "";
   return `<article class="card" data-session-id="${esc(s.id)}" data-title="${esc(s.title)}" data-tracks="${esc(s.trackNames.join("|"))}" data-format="${esc(s.format)}" data-room="${esc(s.room)}" data-speakers="${esc(s.speakers.map((x) => x.name).join(" | "))}">
-    <div class="pills">${trackPills}<span class="pill format">${esc(s.format)}</span><span class="pill room">${esc(s.room)}</span></div>
+    <div class="pills">${trackPills}<span class="pill format" data-format-pill>Format · ${esc(s.format)}</span><span class="pill room" data-room-pill>Room · ${esc(s.room)}</span></div>
     <h3><a href="${esc(detail)}">${esc(s.title)}</a></h3>
     <div class="meta">${esc(fmtTimeRange(s.startsAt, s.endsAt, program.event.timezone))} · ${esc(s.room)}</div>
     <p class="desc clamp" data-desc>${esc(s.abstract)}</p>
@@ -389,15 +402,21 @@ function notFoundHtml(message = "Event not found") {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>Not found</title><style>${SHARED_CSS}</style></head><body><main><div class="empty"><h1>404</h1><p>${esc(message)}</p></div></main></body></html>`;
 }
 
+/**
+ * Three clearly labelled facet groups (Track / Format / Room · Location). Counts make
+ * the facets self-describing so an agent can see they exist and what they do.
+ */
 function facetControls(program: PublicProgram) {
-  const trackOpts = program.facets.tracks.map((t) => `<option value="${esc(t)}">${esc(t)}</option>`).join("");
-  const formatOpts = program.facets.formats.map((t) => `<option value="${esc(t)}">${esc(t)}</option>`).join("");
-  const roomOpts = program.facets.rooms.map((t) => `<option value="${esc(t)}">${esc(t)}</option>`).join("");
-  return `<div class="facets">
-    <label>Track<select data-filter-track><option value="">All tracks</option>${trackOpts}</select></label>
-    <label>Format<select data-filter-format><option value="">All formats</option>${formatOpts}</select></label>
-    <label>Room / Location<select data-filter-room><option value="">All rooms</option>${roomOpts}</select></label>
-  </div>`;
+  const opt = (t: string) => `<option value="${esc(t)}">${esc(t)}</option>`;
+  const trackOpts = program.facets.tracks.map(opt).join("");
+  const formatOpts = program.facets.formats.map(opt).join("");
+  const roomOpts = program.facets.rooms.map(opt).join("");
+  return `<fieldset class="facets" data-facets>
+    <legend class="facet-legend">Filter sessions</legend>
+    <label data-facet="track">Track (${program.facets.tracks.length})<select data-filter-track aria-label="Filter by track"><option value="">All tracks</option>${trackOpts}</select></label>
+    <label data-facet="format">Format (${program.facets.formats.length})<select data-filter-format aria-label="Filter by format"><option value="">All formats</option>${formatOpts}</select></label>
+    <label data-facet="room">Room · Location (${program.facets.rooms.length})<select data-filter-room aria-label="Filter by room or location"><option value="">All rooms</option>${roomOpts}</select></label>
+  </fieldset>`;
 }
 
 function renderItinerary(program: PublicProgram, base: string) {
@@ -478,6 +497,16 @@ function renderSessionsPage(program: PublicProgram, base: string) {
   const cards = program.sessions
     .map((s) => sessionCard(s, program, base).replace('data-session-id="', `data-day="${esc(s.dayKey)}" data-session-id="`))
     .join("");
+  // Published sessions awaiting a schedule slot still belong in the catalog.
+  const unscheduled = (program.unscheduledSessions || [])
+    .map((s) => sessionCard(s, program, base).replace('data-session-id="', 'data-day="" data-session-id="'))
+    .join("");
+  const unscheduledBlock = unscheduled
+    ? `<section style="margin-top:26px">
+    <h2 style="font-size:14px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:0 0 8px">Published · time to be announced (${program.unscheduledSessions.length})</h2>
+    <div class="grid cards">${unscheduled}</div>
+  </section>`
+    : "";
   const body = `
   <h1>Sessions</h1>
   <p class="sub">Browse the published catalog. Keyword search matches titles and speaker names.</p>
@@ -487,9 +516,10 @@ function renderSessionsPage(program: PublicProgram, base: string) {
       <span class="count" data-count>${program.sessions.length} of ${program.sessions.length} sessions</span>
       ${facetControls(program)}
     </div>
-    <div class="grid cards">${cards || emptyState("No published sessions yet.")}</div>
+    <div class="grid cards">${cards || (unscheduled ? "" : emptyState("No published sessions yet."))}</div>
     <div class="empty" data-empty-filter style="display:none;margin-top:12px">No sessions match your search or filters.</div>
   </div>
+  ${unscheduledBlock}
   <script>${CLIENT_FILTER_JS}</script>`;
   return shell(program, { title: "Sessions", active: "sessions", body, base });
 }
@@ -520,8 +550,7 @@ function renderSpeakersList(program: PublicProgram, base: string, mode: "list" |
         return `<a class="card" data-speaker-id="${esc(sp.id)}" data-name="${esc(sp.name)}" href="${esc(href)}">
           ${avatarHtml(sp)}
           <h3 style="margin:0;font-size:15px">${esc(sp.name)}</h3>
-          <div class="meta">${esc(sp.title || "Speaker")}</div>
-          <div class="meta">${esc(sp.company || "")}</div>
+          <div class="meta" data-speaker-role>${esc(speakerRole(sp))}</div>
         </a>`;
       }
       const sess = sessionsForSpeaker(program, sp.id)
@@ -536,7 +565,7 @@ function renderSpeakersList(program: PublicProgram, base: string, mode: "list" |
           ${avatarHtml(sp)}
           <div>
             <h3 style="margin:0"><a href="${esc(href)}">${esc(sp.name)}</a></h3>
-            <div class="meta">${esc([sp.title, sp.company].filter(Boolean).join(" · ") || "Speaker")}</div>
+            <div class="meta" data-speaker-role>${esc(speakerRole(sp))}</div>
           </div>
         </div>
         <p class="desc clamp" data-desc>${esc(sp.bio || "Biography coming soon.")}</p>
@@ -549,7 +578,7 @@ function renderSpeakersList(program: PublicProgram, base: string, mode: "list" |
 
   const body = `
   <h1>${isGallery ? "Speaker gallery" : "Speakers"}</h1>
-  <p class="sub">${isGallery ? "Visual directory of speakers on published sessions." : "Directory paired with each speaker's published sessions. Sorted by surname."}</p>
+  <p class="sub">${isGallery ? "Visual directory of speakers on published sessions, sorted by surname (A–Z)." : "Directory paired with each speaker's published sessions. Sorted by surname (A–Z)."}</p>
   <div data-filter-root="speakers">
     <div class="toolbar">
       <input type="search" data-search placeholder="${isGallery ? "Search speaker by name" : "Search speakers"}" aria-label="Search speakers"/>
@@ -652,8 +681,29 @@ function renderAgenda(program: PublicProgram, base: string, dayKey?: string) {
 }
 
 function jsonProgram(program: PublicProgram) {
+  const sessionJson = (s: PublicSessionView) => ({
+    id: s.id,
+    title: s.title,
+    abstract: s.abstract,
+    format: s.format,
+    startsAt: s.startsAt,
+    endsAt: s.endsAt,
+    dayKey: s.dayKey,
+    room: s.room,
+    scheduled: Boolean(s.startsAt),
+    tracks: s.trackNames,
+    speakers: s.speakers.map((sp) => ({
+      id: sp.id,
+      name: sp.name,
+      title: sp.title,
+      company: sp.company,
+      bio: sp.bio,
+      headshotUrl: sp.headshotUrl,
+    })),
+  });
   return {
     event: program.event,
+    unscheduledSessions: (program.unscheduledSessions || []).map(sessionJson),
     sessions: program.sessions.map((s) => ({
       id: s.id,
       title: s.title,
@@ -687,6 +737,125 @@ function jsonProgram(program: PublicProgram) {
   };
 }
 
+
+/** —— Saved embed configurations (branding + multi-facet filters) —— */
+
+/** Expand #abc → #aabbcc so alpha suffixes (#rrggbbaa) stay valid; allow safe names. */
+function normalizeAccent(accent?: string) {
+  if (!accent || !isSafeAccent(accent)) return undefined;
+  const v = accent.trim();
+  if (!v.startsWith("#")) return v.toLowerCase();
+  return v.length === 4 ? `#${v[1]}${v[1]}${v[2]}${v[2]}${v[3]}${v[3]}` : v;
+}
+
+type EmbedWidget = "sessions" | "speakers" | "agenda" | "itinerary" | "gallery";
+
+/** Resolve ?config=… for a widget. Returns null when the id is unknown/mismatched. */
+function embedConfigFor(configId: string | undefined, widget: EmbedWidget) {
+  if (!configId) return undefined;
+  const found = (store.embedConfigs || []).find((x) => x.id === configId && x.widget === widget);
+  return found || null;
+}
+
+/**
+ * Apply a saved config's multi-facet filters (track + format + room + day) to the
+ * canonical program. Speakers are recomputed from the surviving sessions so the
+ * speakers/gallery widgets stay consistent with the filtered catalog.
+ */
+function applyEmbedFilters(program: PublicProgram, filters?: { track?: string; format?: string; room?: string; day?: string }) {
+  if (!filters || !(filters.track || filters.format || filters.room || filters.day)) return program;
+  const sessions = filterPublicSessions(program, filters).sessions;
+  const unscheduledSessions = (program.unscheduledSessions || []).filter((s) => {
+    if (filters.day) return false; // an unscheduled session has no day
+    if (filters.track && !s.trackNames.includes(filters.track)) return false;
+    if (filters.format && s.format !== filters.format) return false;
+    if (filters.room && s.room !== filters.room) return false;
+    return true;
+  });
+  const keep = new Set([...sessions, ...unscheduledSessions].flatMap((s) => s.speakers.map((sp) => sp.id)));
+  return {
+    ...program,
+    sessions,
+    unscheduledSessions,
+    speakers: program.speakers.filter((sp) => keep.has(sp.id)),
+  };
+}
+
+/** Inject the embed accent (the single branding exception) into rendered HTML. */
+function withAccent(html: string, accent?: string) {
+  const value = normalizeAccent(accent);
+  if (!value) return html;
+  const tint = value.startsWith("#") ? `${value}1f` : "transparent";
+  const style = `<style data-embed-accent>:root{--accent:${value}}` +
+    `.pill{background:${tint};color:${value};border:1px solid ${value}}` +
+    `.tabs a.active{background:${value};color:#fff;border-color:${value}}` +
+    `.btn{background:${value};border-color:${value}}` +
+    `a{color:${value}}` +
+    `</style>`;
+  return html.replace("</head>", `${style}</head>`);
+}
+
+/** —— XML feeds (alongside JSON + iCal) —— */
+const xmlEsc = (v: unknown) =>
+  String(v ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+
+function speakerXml(sp: PublicSpeakerView, indent = "      ") {
+  return `${indent}<speaker id="${xmlEsc(sp.id)}">
+${indent}  <name>${xmlEsc(sp.name)}</name>
+${indent}  <title>${xmlEsc(sp.title || "")}</title>
+${indent}  <company>${xmlEsc(sp.company || "")}</company>
+${indent}  <headshotUrl>${xmlEsc(sp.headshotUrl || "")}</headshotUrl>
+${indent}  <bio>${xmlEsc(sp.bio || "")}</bio>
+${indent}</speaker>`;
+}
+
+function sessionXml(s: PublicSessionView) {
+  return `    <session id="${xmlEsc(s.id)}" scheduled="${s.startsAt ? "true" : "false"}">
+      <title>${xmlEsc(s.title)}</title>
+      <abstract>${xmlEsc(s.abstract)}</abstract>
+      <format>${xmlEsc(s.format)}</format>
+      <room>${xmlEsc(s.room)}</room>
+      <startsAt>${xmlEsc(s.startsAt)}</startsAt>
+      <endsAt>${xmlEsc(s.endsAt)}</endsAt>
+      <day>${xmlEsc(s.dayKey)}</day>
+      <tracks>${s.trackNames.map((t) => `<track>${xmlEsc(t)}</track>`).join("")}</tracks>
+      <speakers>
+${s.speakers.map((sp) => speakerXml(sp, "        ")).join("\n")}
+      </speakers>
+    </session>`;
+}
+
+function programXml(program: PublicProgram, scope: "program" | "sessions" | "speakers" | "agenda" = "program") {
+  const head = `<?xml version="1.0" encoding="UTF-8"?>
+<program generator="CUE" scope="${scope}">
+  <event id="${xmlEsc(program.event.id)}" slug="${xmlEsc(program.event.slug)}">
+    <name>${xmlEsc(program.event.name)}</name>
+    <timezone>${xmlEsc(program.event.timezone)}</timezone>
+    <startsAt>${xmlEsc(program.event.startsAt)}</startsAt>
+    <endsAt>${xmlEsc(program.event.endsAt)}</endsAt>
+    <location>${xmlEsc(program.event.location)}</location>
+    <website>${xmlEsc(program.event.website)}</website>
+  </event>`;
+  const sessions = scope === "speakers" ? "" : `
+  <sessions count="${program.sessions.length}">
+${program.sessions.map(sessionXml).join("\n")}
+  </sessions>
+  <unscheduledSessions count="${(program.unscheduledSessions || []).length}">
+${(program.unscheduledSessions || []).map(sessionXml).join("\n")}
+  </unscheduledSessions>`;
+  const speakers = scope === "sessions" ? "" : `
+  <speakers count="${program.speakers.length}">
+${program.speakers.map((sp) => speakerXml(sp)).join("\n")}
+  </speakers>`;
+  return `${head}${sessions}${speakers}
+</program>`;
+}
+
 export function createPublicSite(deps: PublicSiteDeps) {
   const app = new Hono();
   const { repo } = deps;
@@ -703,16 +872,18 @@ export function createPublicSite(deps: PublicSiteDeps) {
   app.get("/e/:slug/public/sessions", async (c) => {
     const loaded = await withProgram(c.req.param("slug"));
     if (!loaded) return c.html(notFoundHtml(), 404);
-    const configId=c.req.query("config"),config=configId?(store.embedConfigs||[]).find(x=>x.id===configId&&x.widget==="sessions"):undefined;
-    if(configId&&!config)return c.html(notFoundHtml("Embed configuration not found"),404);
-    const program=config?{...loaded.program,sessions:filterPublicSessions(loaded.program,config.filters).sessions}:loaded.program;
-    return c.html(renderSessionsPage(program, baseFor(loaded.slug)));
+    const config = embedConfigFor(c.req.query("config"), "sessions");
+    if (config === null) return c.html(notFoundHtml("Embed configuration not found"), 404);
+    const program = applyEmbedFilters(loaded.program, config?.filters);
+    return c.html(withAccent(renderSessionsPage(program, baseFor(loaded.slug)), config?.theme?.accent));
   });
 
   app.get("/e/:slug/public/sessions/:id", async (c) => {
     const loaded = await withProgram(c.req.param("slug"));
     if (!loaded) return c.html(notFoundHtml(), 404);
-    const session = loaded.program.sessions.find((s) => s.id === c.req.param("id") || s.slug === c.req.param("id"));
+    const session = [...loaded.program.sessions, ...(loaded.program.unscheduledSessions || [])].find(
+      (s) => s.id === c.req.param("id") || s.slug === c.req.param("id"),
+    );
     if (!session) return c.html(notFoundHtml("Session not found"), 404);
     const from = c.req.query("from");
     if (from === "agenda") {
@@ -731,7 +902,10 @@ export function createPublicSite(deps: PublicSiteDeps) {
   app.get("/e/:slug/public/speakers", async (c) => {
     const loaded = await withProgram(c.req.param("slug"));
     if (!loaded) return c.html(notFoundHtml(), 404);
-    return c.html(renderSpeakersList(loaded.program, baseFor(loaded.slug), "list"));
+    const config = embedConfigFor(c.req.query("config"), "speakers");
+    if (config === null) return c.html(notFoundHtml("Embed configuration not found"), 404);
+    const program = applyEmbedFilters(loaded.program, config?.filters);
+    return c.html(withAccent(renderSpeakersList(program, baseFor(loaded.slug), "list"), config?.theme?.accent));
   });
 
   app.get("/e/:slug/public/speakers/:id", async (c) => {
@@ -746,20 +920,51 @@ export function createPublicSite(deps: PublicSiteDeps) {
   app.get("/e/:slug/public/agenda", async (c) => {
     const loaded = await withProgram(c.req.param("slug"));
     if (!loaded) return c.html(notFoundHtml(), 404);
-    return c.html(renderAgenda(loaded.program, baseFor(loaded.slug), c.req.query("day") || undefined));
+    const config = embedConfigFor(c.req.query("config"), "agenda");
+    if (config === null) return c.html(notFoundHtml("Embed configuration not found"), 404);
+    const program = applyEmbedFilters(loaded.program, config?.filters);
+    const day = c.req.query("day") || config?.filters?.day || undefined;
+    return c.html(withAccent(renderAgenda(program, baseFor(loaded.slug), day), config?.theme?.accent));
   });
 
   app.get("/e/:slug/public/itinerary", async (c) => {
     const loaded = await withProgram(c.req.param("slug"));
     if (!loaded) return c.html(notFoundHtml(), 404);
-    return c.html(renderItinerary(loaded.program, baseFor(loaded.slug)));
+    const config = embedConfigFor(c.req.query("config"), "itinerary");
+    if (config === null) return c.html(notFoundHtml("Embed configuration not found"), 404);
+    const program = applyEmbedFilters(loaded.program, config?.filters);
+    return c.html(withAccent(renderItinerary(program, baseFor(loaded.slug)), config?.theme?.accent));
   });
 
   app.get("/e/:slug/public/gallery", async (c) => {
     const loaded = await withProgram(c.req.param("slug"));
     if (!loaded) return c.html(notFoundHtml(), 404);
-    return c.html(renderSpeakersList(loaded.program, baseFor(loaded.slug), "gallery"));
+    const config = embedConfigFor(c.req.query("config"), "gallery");
+    if (config === null) return c.html(notFoundHtml("Embed configuration not found"), 404);
+    const program = applyEmbedFilters(loaded.program, config?.filters);
+    return c.html(withAccent(renderSpeakersList(program, baseFor(loaded.slug), "gallery"), config?.theme?.accent));
   });
+
+  // XML feeds (one per widget, alongside JSON + iCal). ?config= applies a saved embed config.
+  const xmlResponse = (c: any, body: string) => c.body(body, 200, { "content-type": "application/xml; charset=utf-8" });
+  const xmlHandler = (scope: "program" | "sessions" | "speakers" | "agenda", widget: EmbedWidget) => async (c: any) => {
+    const loaded = await withProgram(c.req.param("slug") || c.req.param("eventId"));
+    if (!loaded) return c.text("event not found", 404);
+    const config = embedConfigFor(c.req.query("config"), widget);
+    if (config === null) return c.text("embed configuration not found", 404);
+    const program = applyEmbedFilters(loaded.program, config?.filters);
+    return xmlResponse(c, programXml(program, scope));
+  };
+  app.get("/e/:slug/public/feed.xml", xmlHandler("program", "sessions"));
+  app.get("/e/:slug/public/sessions.xml", xmlHandler("sessions", "sessions"));
+  app.get("/e/:slug/public/speakers.xml", xmlHandler("speakers", "speakers"));
+  app.get("/e/:slug/public/agenda.xml", xmlHandler("agenda", "agenda"));
+  app.get("/e/:slug/public/itinerary.xml", xmlHandler("agenda", "itinerary"));
+  app.get("/e/:slug/public/gallery.xml", xmlHandler("speakers", "gallery"));
+  app.get("/public/events/:eventId/feed.xml", xmlHandler("program", "sessions"));
+  app.get("/public/events/:eventId/sessions.xml", xmlHandler("sessions", "sessions"));
+  app.get("/public/events/:eventId/speakers.xml", xmlHandler("speakers", "speakers"));
+  app.get("/public/events/:eventId/agenda.xml", xmlHandler("agenda", "agenda"));
 
   // JSON + ICS feeds (slug)
   app.get("/e/:slug/public/feed.json", async (c) => {

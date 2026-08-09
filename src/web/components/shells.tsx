@@ -71,7 +71,7 @@ function PersonaSwitcher({ lockRole }: { lockRole?: Role }) {
           const pool = list.length ? list : getPersonaCatalog();
           const p = pool.find((x) => x.id === e.target.value);
           if (!p) return;
-          setPersona(p);
+          setPersona(p, { explicit: true });
           nav(roleHome(p.role));
         }}
       >
@@ -117,15 +117,18 @@ function SkipLink() {
 
 function useRoleSync(role: Role) {
   const location = useLocation();
+  const persona = usePersona();
   const [ready, setReady] = useState(false);
   // Rehydrate stored persona before any role gating so direct URL loads don't flash 403.
+  // This never overrides an explicit selection (see resolvePortalPersona).
   resolvePortalPersona(role);
   useEffect(() => {
     restorePersonaFromSession();
     ensurePersonaForRole(role);
     setReady(true);
   }, [role, location.pathname]);
-  return ready;
+  // Portal pages are keyed on the persona id so every query refetches on switch.
+  return { ready, personaKey: persona.id };
 }
 
 const orgNav = [
@@ -254,7 +257,7 @@ export function OrganizerShell() {
 }
 
 export function ReviewerShell() {
-  const ready = useRoleSync("reviewer");
+  const { ready, personaKey } = useRoleSync("reviewer");
   if (!ready) {
     return (
       <div className="grid min-h-screen place-items-center bg-canvas text-sm text-mid">
@@ -292,7 +295,7 @@ export function ReviewerShell() {
         </div>
         <PersonaSwitcher lockRole="reviewer" />
       </header>
-      <main id="main" className="mx-auto max-w-5xl p-4 sm:p-6">
+      <main id="main" className="mx-auto max-w-5xl p-4 sm:p-6" key={personaKey}>
         <Outlet />
       </main>
     </div>
@@ -300,7 +303,7 @@ export function ReviewerShell() {
 }
 
 export function PortalShell() {
-  const ready = useRoleSync("speaker");
+  const { ready, personaKey } = useRoleSync("speaker");
   const links = [
     { to: "/p", label: "Home", icon: Home, end: true },
     { to: "/p/talks", label: "Talks" },
@@ -342,7 +345,7 @@ export function PortalShell() {
           <PersonaSwitcher lockRole="speaker" />
         </div>
       </header>
-      <main id="main" className="mx-auto max-w-3xl p-4 sm:p-6">
+      <main id="main" className="mx-auto max-w-3xl p-4 sm:p-6" key={personaKey}>
         <Outlet />
       </main>
       <nav

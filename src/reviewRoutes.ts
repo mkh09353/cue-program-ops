@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import type { Mailer } from "./mailer.js";
-import { EVENT_ID, type LifecycleStore, type ReviewRound } from "./lifecycle.js";
+import { EVENT_ID, markReviewSubmitted, reviewHistory, type LifecycleStore, type ReviewRound } from "./lifecycle.js";
 import { assignSpecific, autoDistribute, blindSubmission, csvCell, weightedScore } from "./review.js";
 
 const error = (c: any, message: string, status = 400) => c.json({ error: { message } }, status as any);
@@ -81,16 +81,23 @@ export function createReviewRoutes(deps: {
     const data = deps.store.reviewAssignments.filter((a) => a.reviewerId === p.id && a.status !== "recused").map((a) => ({ ...a, round: round(a.roundId), submission: blindSubmission(deps.store.submissions.find((s) => s.id === a.submissionId)!, Boolean(round(a.roundId)?.blind)), review: deps.store.reviews.find((r) => r.submissionId === a.submissionId && r.reviewerId === p.id) }));
     return c.json({ data });
   });
-  app.get("/:eventId/reviewer-queue/:submissionId", (c) => {
+  app.get("/:eventId/reviewer-queue/:assignmentOrSubmissionId", (c) => {
     if (!event(c)) return error(c, "event not found", 404); const p = deps.persona(c); if (p.role !== "reviewer") return error(c, "reviewer role required", 403);
-    const assignment = deps.store.reviewAssignments.find((a) => a.submissionId === c.req.param("submissionId") && a.reviewerId === p.id && a.status !== "recused"); if (!assignment) return error(c, "assignment not found", 404);
+    // Queue rows expose both ids. Accept either so old bookmarked submission
+    // links and assignment-id links use the exact same scoped record.
+    const key = c.req.param("assignmentOrSubmissionId");
+    const assignment = deps.store.reviewAssignments.find((a) => (a.id === key || a.submissionId === key) && a.reviewerId === p.id && a.status !== "recused"); if (!assignment) return error(c, "assignment not found", 404);
     const r = round(assignment.roundId)!; return c.json({ data: { assignment, round: r, submission: blindSubmission(deps.store.submissions.find((s) => s.id === assignment.submissionId)!, r.blind), review: deps.store.reviews.find((x) => x.submissionId === assignment.submissionId && x.reviewerId === p.id) } });
   });
   app.post("/:eventId/reviewer-queue/:assignmentId/submit", async (c) => {
     if (!event(c)) return error(c, "event not found", 404); const p = deps.persona(c); const a = deps.store.reviewAssignments.find((x) => x.id === c.req.param("assignmentId") && x.reviewerId === p.id && x.status !== "recused"); if (!a) return error(c, "assignment not found", 404);
     const b = await c.req.json(); let review = deps.store.reviews.find((r) => r.submissionId === a.submissionId && r.reviewerId === p.id);
-    if (!review) { review = { id: `review-${crypto.randomUUID().slice(0, 8)}`, submissionId: a.submissionId, reviewerId: p.id, round: "r1", scores: {}, notes: "", status: "assigned" }; deps.store.reviews.push(review); }
-    const responses: Record<string, string | number> = b.responses || {}; review.responses = responses; review.scores = Object.fromEntries(Object.entries(responses).filter(([,v]) => typeof v === "number")) as Record<string,number>; review.notes = String(responses.comments || b.notes || ""); review.recommendation = String(responses.recommendation || ""); review.status = "submitted"; review.source = "human"; a.status = "completed"; a.completedAt = new Date().toISOString(); await deps.persist(); return c.json({ data: review });
+    if (!review) { review = { id: `review-${crypto.randomUUID().slice(0, 8)}`, submissionId: a.submissionId, reviewerId: p.id, round: "r1", roundId: a.roundId, scores: {}, notes: "", status: "assigned" }; deps.store.reviews.push(review); }
+    const responses: Record<string, string | number> = b.responses || {}; review.responses = responses; review.scores = Object.fromEntries(Object.entries(responses).filter(([,v]) => typeof v === "number")) as Record<string,number>; review.notes = String(responses.comments || b.notes || ""); review.recommendation = String(responses.recommendation || ""); review.roundId = a.roundId; review.source = "human";
+    // Canonical mirror: assignment completion + submission status live in one place,
+    // so the organizer's Review history reads this scorecard immediately.
+    markReviewSubmitted(review);
+    await deps.persist(); return c.json({ data: reviewHistory(a.submissionId).find((r) => r.id === review!.id) || review });
   });
   app.post("/:eventId/reviewer-queue/:assignmentId/recuse", async (c) => {
     if (!event(c)) return error(c, "event not found", 404); const p = deps.persona(c); const a = deps.store.reviewAssignments.find((x) => x.id === c.req.param("assignmentId") && x.reviewerId === p.id && x.status === "assigned"); if (!a) return error(c, "assignment not found", 404);

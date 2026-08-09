@@ -154,7 +154,7 @@ export function createCrmRoutes(deps: {
     if (denied) return denied;
     const b = await c.req.json();
     const p = deps.persona(c);
-    const merged = mergeContacts(b.primaryId, b.secondaryId, { id: p.id, name: p.name });
+    const merged = mergeContacts(b.primaryId, b.secondaryId, { id: p.id, name: p.name }, deps.store);
     if (!merged.ok) return fail(c, merged.error, merged.error.includes("not found") ? 404 : 400);
     await deps.persist();
     return c.json({ data: merged.contact });

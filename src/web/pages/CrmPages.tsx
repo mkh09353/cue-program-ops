@@ -52,6 +52,10 @@ function StageBadge({ stage }: { stage: string }) {
   return <Badge tone={tone as any}>{stage}</Badge>;
 }
 
+export const toggleCrmSelection = (selected: string[], id: string) =>
+  selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id];
+export const canBulkCommunicate = (selected: string[]) => selected.length >= 2;
+
 export function CrmDirectoryPage() {
   const [rows, setRows] = useState<any[]>([]);
   const [meta, setMeta] = useState<{ total?: number; filtered?: number }>({});
@@ -82,6 +86,7 @@ export function CrmDirectoryPage() {
     return Promise.all([api.crmContacts(params), api.crmDashboard()])
       .then(([c, d]) => {
         setRows(c.data);
+        setSelected((current) => current.filter((id) => c.data.some((row: any) => row.id === id)));
         setMeta(c.meta || {});
         setDash(d.data);
         setLoaded(true);
@@ -98,7 +103,7 @@ export function CrmDirectoryPage() {
   }, [q, tag, company, stage, searchParams]);
 
   const toggle = (id: string) =>
-    setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+    setSelected((prev) => toggleCrmSelection(prev, id));
 
   if (!loaded) return <Spinner />;
 
@@ -114,7 +119,7 @@ export function CrmDirectoryPage() {
             </Button>
             <Button
               variant="secondary"
-              disabled={!selected.length}
+              disabled={!canBulkCommunicate(selected)}
               onClick={() => setComposeOpen(true)}
             >
               Communicate ({selected.length})
@@ -213,6 +218,7 @@ export function CrmDirectoryPage() {
                 <th className="px-3 py-2">
                   <input
                     type="checkbox"
+                    aria-label="Select all visible contacts"
                     checked={selected.length === rows.length && rows.length > 0}
                     onChange={(e) => setSelected(e.target.checked ? rows.map((r) => r.id) : [])}
                   />
@@ -228,7 +234,7 @@ export function CrmDirectoryPage() {
               {rows.map((r) => (
                 <tr key={r.id} className="border-b border-line hover:bg-soft">
                   <td className="px-3 py-2">
-                    <input type="checkbox" checked={selected.includes(r.id)} onChange={() => toggle(r.id)} />
+                    <input type="checkbox" aria-label={`Select ${r.name}`} checked={selected.includes(r.id)} onChange={(e) => { e.stopPropagation(); toggle(r.id); }} />
                   </td>
                   <td className="px-3 py-2">
                     <Link className="font-semibold text-ink hover:underline" to={`/app/crm/contacts/${r.id}`}>
@@ -309,11 +315,18 @@ export function CrmContactPage() {
   const [tagInput, setTagInput] = useState("");
   const [loaded, setLoaded] = useState(false);
   const [eventRole,setEventRole]=useState("speaker");
+  const [eventId,setEventId]=useState("evt-ai-summit-2026");
+  const [handoff,setHandoff]=useState("");
   const [noteBusy, setNoteBusy] = useState(false);
   const [dupes, setDupes] = useState<any[]>([]);
   const [cfKey, setCfKey] = useState("");
   const [cfVal, setCfVal] = useState("");
   const [editFields, setEditFields] = useState<Record<string, string>>({});
+  const [fieldDefs, setFieldDefs] = useState<any[]>([]);
+  const [cfErr, setCfErr] = useState("");
+  useEffect(() => {
+    api.crmFieldDefinitions().then((r) => setFieldDefs(r.data)).catch(() => {});
+  }, []);
 
   const load = () =>
     Promise.all([api.crmContact(id!), api.crmContacts().catch(() => ({ data: [] }))])
@@ -356,11 +369,14 @@ export function CrmContactPage() {
             <Button variant="secondary" onClick={() => navigate("/app/crm")}>
               Back to directory
             </Button>
+            <Select value={eventId} onChange={e=>setEventId(e.target.value)} aria-label="Event"><option value="evt-ai-summit-2026">AI Engineer Summit 2026</option></Select>
             <Select value={eventRole} onChange={e=>setEventRole(e.target.value)} aria-label="Event role"><option value="speaker">Speaker</option><option value="reviewer">Reviewer</option></Select>
             <Button
               onClick={async () => {
                 try {
-                  const r = await api.crmAddToEvent(contact.id,{role:eventRole});
+                  const r:any = await api.crmAddToEvent(contact.id,{eventId,role:eventRole});
+                  const linked=r.data.speakerId||r.data.reviewerId;
+                  setHandoff(`${r.data.created?"Created":"Linked"} ${eventRole}: ${contact.name}${linked?` · ${linked}`:""} · AI Engineer Summit 2026`);
                   toast(r.data.created ? `Added to event as ${eventRole}` : "Already linked to event");
                   load();
                 } catch (e: any) {
@@ -375,6 +391,7 @@ export function CrmContactPage() {
       />
       <CrmSubnav />
       {err ? <Notice tone="danger">{err}</Notice> : null}
+      {handoff ? <Notice tone="ok">{handoff}</Notice> : null}
 
       <div className="grid gap-4 lg:grid-cols-3">
         <Card className="p-4 lg:col-span-2">
@@ -508,8 +525,68 @@ export function CrmContactPage() {
           </Card>
           <Card className="p-4">
             <h3 className="text-sm font-bold uppercase tracking-wide text-mid">Custom fields</h3>
+            {cfErr ? <Notice tone="danger" onClose={() => setCfErr("")}>{cfErr}</Notice> : null}
+            {fieldDefs.length ? (
+              <div className="mt-2 space-y-2" data-testid="crm-defined-fields">
+                {fieldDefs.map((def: any) => (
+                  <Field key={def.key} label={`${def.label}${def.type === "select" ? " (dropdown)" : ""}`}>
+                    {def.type === "select" ? (
+                      <Select
+                        aria-label={def.label}
+                        value={editFields[def.key] || ""}
+                        onChange={async (e) => {
+                          const next = { ...editFields, [def.key]: e.target.value };
+                          setEditFields(next);
+                          setCfErr("");
+                          try {
+                            await api.crmUpdateContact(contact.id, { customFields: next });
+                            toast(`${def.label}: ${e.target.value || "cleared"}`);
+                            load();
+                          } catch (err: any) {
+                            setCfErr(err?.message || "Save failed");
+                            toast(err?.message || "Save failed", "danger");
+                          }
+                        }}
+                      >
+                        <option value="">Not set</option>
+                        {(def.options || []).map((o: string) => (
+                          <option key={o} value={o}>
+                            {o}
+                          </option>
+                        ))}
+                      </Select>
+                    ) : (
+                      <div className="flex gap-2">
+                        <Input
+                          aria-label={def.label}
+                          value={editFields[def.key] || ""}
+                          onChange={(e) => setEditFields((f) => ({ ...f, [def.key]: e.target.value }))}
+                        />
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={async () => {
+                            try {
+                              await api.crmUpdateContact(contact.id, { customFields: editFields });
+                              toast(`${def.label} saved`);
+                              load();
+                            } catch (err: any) {
+                              setCfErr(err?.message || "Save failed");
+                            }
+                          }}
+                        >
+                          Save
+                        </Button>
+                      </div>
+                    )}
+                  </Field>
+                ))}
+              </div>
+            ) : null}
             <dl className="mt-2 space-y-2 text-sm">
-              {Object.entries(editFields).map(([k, v]) => (
+              {Object.entries(editFields)
+                .filter(([k]) => !fieldDefs.some((d: any) => d.key === k))
+                .map(([k, v]) => (
                 <div key={k} className="grid gap-1">
                   <dt className="text-xs text-mid">{k}</dt>
                   <div className="flex gap-2">
@@ -534,7 +611,9 @@ export function CrmContactPage() {
                   </div>
                 </div>
               ))}
-              {!Object.keys(editFields).length ? <p className="text-mid">No custom fields yet.</p> : null}
+              {!Object.keys(editFields).filter((k) => !fieldDefs.some((d: any) => d.key === k)).length ? (
+                <p className="text-mid">No ad-hoc custom fields yet.</p>
+              ) : null}
             </dl>
             <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
               <Input placeholder="Field name" value={cfKey} onChange={(e) => setCfKey(e.target.value)} />
@@ -614,12 +693,15 @@ export function CrmPipelinePage() {
   const [columns, setColumns] = useState<any[]>([]);
   const [err, setErr] = useState("");
   const [loaded, setLoaded] = useState(false);
+  const [contacts,setContacts]=useState<any[]>([]);
+  const [prospectId,setProspectId]=useState("");
 
   const load = () =>
-    api
-      .crmPipeline()
-      .then((r) => {
+    Promise.all([api.crmPipeline(),api.crmContacts()])
+      .then(([r,list]) => {
         setColumns(r.data.columns || []);
+        setContacts(list.data||[]);
+        setProspectId((current)=>current||list.data?.[0]?.id||"");
         setLoaded(true);
       })
       .catch((e) => {
@@ -639,6 +721,7 @@ export function CrmPipelinePage() {
       <PageHeader title="Sourcing pipeline" description="Kanban-style stages for speaker prospects. Move cards with stage buttons." />
       <CrmSubnav />
       {err ? <Notice tone="danger">{err}</Notice> : null}
+      <Card className="mb-4 p-4"><h2 className="font-bold">Add prospect</h2><p className="text-sm text-mid">Enroll an existing directory contact into the Prospect stage.</p><div className="mt-3 flex flex-wrap gap-2"><Select aria-label="Prospect contact" value={prospectId} onChange={e=>setProspectId(e.target.value)}>{contacts.map(c=><option key={c.id} value={c.id}>{c.name} · {c.email}</option>)}</Select><Button disabled={!prospectId} onClick={async()=>{try{await api.crmMoveStage(prospectId,"prospect");toast("Contact enrolled as prospect");load()}catch(e:any){toast(e.message||"Could not enroll prospect","danger")}}}>Add prospect</Button></div></Card>
       <div className="flex gap-3 overflow-x-auto pb-4">
         {columns.map((col) => (
           <div key={col.id} className="w-64 shrink-0 rounded-[18px] border border-line bg-soft p-3">
@@ -692,6 +775,98 @@ export function CrmPipelinePage() {
   );
 }
 
+
+/**
+ * Typed custom field definitions for CRM contacts. A "select" field becomes a
+ * dropdown on every contact profile and is enforced server-side (crm.validateCustomFields).
+ */
+function CrmFieldDefinitionsCard() {
+  const [defs, setDefs] = useState<any[]>([]);
+  const [label, setLabel] = useState("Speaker Type");
+  const [type, setType] = useState("select");
+  const [options, setOptions] = useState("Internal, External");
+  const [msg, setMsg] = useState("");
+  const [err, setErr] = useState("");
+
+  const load = () => api.crmFieldDefinitions().then((r) => setDefs(r.data)).catch((e) => setErr(e.message));
+  useEffect(() => {
+    void load();
+    return subscribeData(load);
+  }, []);
+
+  return (
+    <Card className="mb-4 p-4" data-testid="crm-field-definitions">
+      <h3 className="text-sm font-bold uppercase tracking-wide text-mid">Custom field definitions</h3>
+      <p className="mt-1 text-xs text-mid">
+        Define typed fields once; they appear on every contact profile. Dropdown fields only accept their configured
+        options (enforced by the API).
+      </p>
+      {err ? <Notice tone="danger" onClose={() => setErr("")}>{err}</Notice> : null}
+      {msg ? <Notice tone="ok" onClose={() => setMsg("")}>{msg}</Notice> : null}
+      <ul className="mt-3 space-y-2 text-sm">
+        {defs.map((d) => (
+          <li key={d.key} className="flex flex-wrap items-center justify-between gap-2 rounded-[18px] bg-soft p-3">
+            <div>
+              <b>{d.label}</b> <Badge tone="muted">{d.type}</Badge>
+              <div className="text-xs text-mid">
+                key: {d.key}
+                {d.type === "select" ? ` · options: ${(d.options || []).join(", ")}` : ""}
+              </div>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={async () => {
+                await api.crmDeleteFieldDefinition(d.key);
+                setMsg(`Removed ${d.label}`);
+                load();
+              }}
+            >
+              Remove
+            </Button>
+          </li>
+        ))}
+        {!defs.length ? <li className="text-mid">No custom fields defined yet.</li> : null}
+      </ul>
+      <div className="mt-3 grid gap-2 md:grid-cols-[1fr_auto_1fr_auto]">
+        <Field label="Field label">
+          <Input aria-label="Custom field label" value={label} onChange={(e) => setLabel(e.target.value)} />
+        </Field>
+        <Field label="Type">
+          <Select aria-label="Custom field type" value={type} onChange={(e) => setType(e.target.value)}>
+            <option value="select">Dropdown</option>
+            <option value="text">Text</option>
+          </Select>
+        </Field>
+        <Field label="Dropdown options (comma separated)">
+          <Input
+            aria-label="Custom field options"
+            value={options}
+            disabled={type !== "select"}
+            onChange={(e) => setOptions(e.target.value)}
+          />
+        </Field>
+        <div className="flex items-end">
+          <Button
+            onClick={async () => {
+              setErr("");
+              try {
+                const r = await api.crmSaveFieldDefinition({ label, type, options: options.split(",") });
+                setMsg(`Saved "${r.data.label}" (${r.data.type}${r.data.type === "select" ? `: ${r.data.options.join(", ")}` : ""})`);
+                load();
+              } catch (e: any) {
+                setErr(e?.message || "Save failed");
+              }
+            }}
+          >
+            Save field
+          </Button>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
 export function CrmSegmentsPage() {
   const [segments, setSegments] = useState<any[]>([]);
   const [name, setName] = useState("");
@@ -725,6 +900,8 @@ export function CrmSegmentsPage() {
       <PageHeader title="Segments" description="Saved filters for outreach and pipeline lists." />
       <CrmSubnav />
       {err ? <Notice tone="danger">{err}</Notice> : null}
+
+      <CrmFieldDefinitionsCard />
 
       <Card className="mb-4 p-4">
         <h3 className="mb-2 text-sm font-bold">Save segment</h3>
