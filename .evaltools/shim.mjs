@@ -44,6 +44,7 @@ function toOpenAI(body) {
     }
   }
   const req = { model: body.model, messages: out, max_tokens: body.max_tokens };
+  if (process.env.SHIM_REASONING_EFFORT) req.reasoning_effort = process.env.SHIM_REASONING_EFFORT;
   if (body.temperature !== undefined) req.temperature = body.temperature;
   if (Array.isArray(body.tools) && body.tools.length)
     req.tools = body.tools.map((t) => ({ type: "function", function: { name: t.name, description: t.description ?? "", parameters: t.input_schema ?? { type: "object", properties: {} } } }));

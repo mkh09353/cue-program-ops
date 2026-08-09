@@ -45,11 +45,20 @@ export function SchedulePage() {
   const [showTrackForm, setShowTrackForm] = useState(false);
   const [programDays, setProgramDays] = useState<ProgramDay[]>(() => [...PROGRAM_DAYS]);
   const [selectedDay, setSelectedDay] = useState<string>(PROGRAM_DAYS[0].id);
+  const [publishBusy, setPublishBusy] = useState(false);
+  const [publishBanner, setPublishBanner] = useState("");
 
   const load = () =>
     api
       .schedule()
-      .then(setD)
+      .then((sched) => {
+        setD(sched);
+        const last = (sched as any)?.lastAgendaPublish;
+        if (last?.publishedAt != null && last?.count != null) {
+          const when = new Date(last.publishedAt).toLocaleString();
+          setPublishBanner(`Published · ${last.count} session${last.count === 1 ? "" : "s"} · ${when}`);
+        }
+      })
       .catch((e) => setErr(e.message));
   const loadAgenda = () => api.agendaProposals().then((r) => setAgenda(r.data)).catch((e) => setErr(e.message));
 
@@ -192,8 +201,51 @@ export function SchedulePage() {
         </label>
         <Button size="sm" variant="secondary" onClick={() => { setShowRoomForm((v) => !v); setShowTrackForm(false); }}>+ Room</Button>
         <Button size="sm" variant="secondary" onClick={() => { setShowTrackForm((v) => !v); setShowRoomForm(false); }}>+ Track</Button>
-        <Button size="sm" onClick={async()=>{const r=await api.publishAgenda();toast(`${r.data.count} sessions published`);load();window.open(r.data.publicUrl,"_blank")}}>Publish agenda</Button>
+        <Button
+          size="sm"
+          disabled={publishBusy}
+          onClick={async () => {
+            setPublishBusy(true);
+            try {
+              const r = await api.publishAgenda();
+              const count = r.data?.count ?? 0;
+              const when = r.data?.publishedAt
+                ? new Date(r.data.publishedAt).toLocaleString()
+                : new Date().toLocaleString();
+              const line =
+                r.data?.message ||
+                `Published · ${count} session${count === 1 ? "" : "s"} · ${when}`;
+              setPublishBanner(line);
+              toast(line);
+              load();
+              if (r.data?.publicUrl) window.open(r.data.publicUrl, "_blank", "noopener,noreferrer");
+            } catch (e: any) {
+              const msg = e?.message || "Publish failed";
+              setErr(msg);
+              toast(msg, "danger");
+            } finally {
+              setPublishBusy(false);
+            }
+          }}
+        >
+          {publishBusy ? "Publishing…" : "Publish agenda"}
+        </Button>
       </div>
+
+      {publishBanner ? (
+        <Notice tone="ok" onClose={() => setPublishBanner("")}>
+          <span data-testid="agenda-publish-status">{publishBanner}</span>
+          {" · "}
+          <a
+            className="font-semibold underline"
+            href={(d as any)?.lastAgendaPublish?.publicUrl || `/public/events/${EVENT_ID}/itinerary`}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Open public itinerary ↗
+          </a>
+        </Notice>
+      ) : null}
 
       {showRoomForm ? (
         <Card className="mb-3 flex flex-wrap items-end gap-2 p-3" id="add-room-form">

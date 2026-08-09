@@ -34,26 +34,95 @@ function inboxScore(s: any): string {
 
 export function SubmissionsListPage() {
   const [params, setParams] = useSearchParams();
-  const filter = params.get("filter") || "";
+  // Normalize unknown/stale filter query values so we never false-empty the inbox.
+  const rawFilter = params.get("filter") || "";
+  const allowedFilters = new Set(["", "pending", "unscored", "accepted", "rejected"]);
+  const filter = allowedFilters.has(rawFilter) ? rawFilter : "";
   const [rows, setRows] = useState<any[]>([]);
   const [reviews, setReviews] = useState<any[]>([]);
   const [err, setErr] = useState("");
+  const [loaded, setLoaded] = useState(false);
+  const [loading, setLoading] = useState(true);
 
-  const load = () =>
+  const load = (opts?: { silent?: boolean }) => {
+    if (!opts?.silent) {
+      setLoading(true);
+      setErr("");
+    }
+    return Promise.all([
+      api.submissions(filter || undefined),
+      api.reviews().catch(() => ({ data: [] as any[] })),
+    ])
+      .then(([subs, revs]) => {
+        const list = Array.isArray(subs?.data)
+          ? subs.data
+          : Array.isArray(subs)
+            ? (subs as any[])
+            : null;
+        if (list == null) {
+          throw new Error("Submissions response was empty or malformed");
+        }
+        setRows(list);
+        setReviews(revs?.data || []);
+        setErr("");
+        setLoaded(true);
+      })
+      .catch((e) => {
+        // Keep prior rows on refresh failure so a transient error is not a false-empty inbox.
+        setErr(e?.message || "Failed to load submissions");
+        setLoaded(true);
+      })
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    // Drop stale rows when the filter changes; show spinner instead of a false empty state.
+    setRows([]);
+    setLoaded(false);
+    setErr("");
+    let cancelled = false;
+    setLoading(true);
     Promise.all([
       api.submissions(filter || undefined),
       api.reviews().catch(() => ({ data: [] as any[] })),
     ])
       .then(([subs, revs]) => {
-        setRows(subs.data);
-        setReviews(revs.data || []);
+        if (cancelled) return;
+        const list = Array.isArray(subs?.data)
+          ? subs.data
+          : Array.isArray(subs)
+            ? (subs as any[])
+            : null;
+        if (list == null) throw new Error("Submissions response was empty or malformed");
+        setRows(list);
+        setReviews(revs?.data || []);
+        setErr("");
+        setLoaded(true);
       })
-      .catch((e) => setErr(e.message));
-
-  useEffect(() => {
-    load();
-    return subscribeData(load);
+      .catch((e) => {
+        if (cancelled) return;
+        setErr(e?.message || "Failed to load submissions");
+        setLoaded(true);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    const unsub = subscribeData(() => {
+      if (!cancelled) load({ silent: true });
+    });
+    return () => {
+      cancelled = true;
+      unsub();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filter]);
+
+  // If URL had a bad filter, rewrite to All so the UI matches the fetch.
+  useEffect(() => {
+    if (rawFilter && !allowedFilters.has(rawFilter)) {
+      setParams({}, { replace: true });
+    }
+  }, [rawFilter, setParams]);
 
   const enriched = useMemo(() => {
     return rows.map((s) => ({
@@ -68,7 +137,16 @@ export function SubmissionsListPage() {
         title="Submissions"
         description="Inbox for CFP proposals. Open Review Studio to score, accept, or decline."
       />
-      {err ? <Notice tone="danger">{err}</Notice> : null}
+      {err ? (
+        <Notice tone="danger">
+          <div className="flex flex-wrap items-center gap-3">
+            <span>{err}</span>
+            <Button size="sm" variant="secondary" onClick={() => load()}>
+              Retry
+            </Button>
+          </div>
+        </Notice>
+      ) : null}
       <div className="mb-4 flex flex-wrap gap-2" role="tablist" aria-label="Submission filters">
         {[
           ["", "All"],
@@ -88,53 +166,66 @@ export function SubmissionsListPage() {
           </Button>
         ))}
       </div>
-      <Card className="overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[720px] text-left text-sm">
-            <thead className="border-b bg-soft text-[11px] uppercase tracking-wide text-mid">
-              <tr>
-                <th className="px-4 py-3">Title</th>
-                <th className="px-4 py-3">Speaker</th>
-                <th className="px-4 py-3">Track</th>
-                <th className="px-4 py-3">Board</th>
-                <th className="px-4 py-3">Round</th>
-                <th className="px-4 py-3">Score</th>
-                <th className="px-4 py-3">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {enriched.map((s) => (
-                <tr key={s.id} className="border-b last:border-0 hover:bg-soft">
-                  <td className="px-4 py-3">
-                    <Link className="font-semibold text-ink hover:text-ink" to={`/app/submissions/${s.id}`}>
-                      {s.title}
-                    </Link>
-                    <div className="text-xs text-mid">{s.format}</div>
-                  </td>
-                  <td className="px-4 py-3">
-                    {s.name}
-                    {s.additionalSpeakers?.length
-                      ? s.additionalSpeakers.map((p: any) => ` + ${p.name}`).join("")
-                      : ""}
-                  </td>
-                  <td className="px-4 py-3">{s.category}</td>
-                  <td className="px-4 py-3">{s.reviewBoard}</td>
-                  <td className="px-4 py-3 uppercase">{s.round}</td>
-                  <td className="px-4 py-3">{inboxScore(s)}</td>
-                  <td className="px-4 py-3">
-                    <StatusBadge status={s.status} />
-                  </td>
+      {!loaded || loading ? (
+        <Spinner />
+      ) : (
+        <Card className="overflow-hidden" data-testid="submissions-table">
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[720px] text-left text-sm">
+              <thead className="border-b bg-soft text-[11px] uppercase tracking-wide text-mid">
+                <tr>
+                  <th className="px-4 py-3">Title</th>
+                  <th className="px-4 py-3">Speaker</th>
+                  <th className="px-4 py-3">Track</th>
+                  <th className="px-4 py-3">Board</th>
+                  <th className="px-4 py-3">Round</th>
+                  <th className="px-4 py-3">Score</th>
+                  <th className="px-4 py-3">Status</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        {!enriched.length ? (
-          <div className="p-6">
-            <EmptyState title="No submissions" description="Nothing matches this filter yet." />
+              </thead>
+              <tbody>
+                {enriched.map((s) => (
+                  <tr key={s.id} className="border-b last:border-0 hover:bg-soft">
+                    <td className="px-4 py-3">
+                      <Link className="font-semibold text-ink hover:text-ink" to={`/app/submissions/${s.id}`}>
+                        {s.title}
+                      </Link>
+                      <div className="text-xs text-mid">{s.format}</div>
+                    </td>
+                    <td className="px-4 py-3">
+                      {s.name}
+                      {s.additionalSpeakers?.length
+                        ? s.additionalSpeakers.map((p: any) => ` + ${p.name}`).join("")
+                        : ""}
+                    </td>
+                    <td className="px-4 py-3">{s.category}</td>
+                    <td className="px-4 py-3">{s.reviewBoard}</td>
+                    <td className="px-4 py-3 uppercase">{s.round}</td>
+                    <td className="px-4 py-3">{inboxScore(s)}</td>
+                    <td className="px-4 py-3">
+                      <StatusBadge status={s.status} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-        ) : null}
-      </Card>
+          {!enriched.length ? (
+            <div className="p-6">
+              <EmptyState
+                title={err ? "Could not load submissions" : "No submissions"}
+                description={
+                  err
+                    ? "Use Retry above after checking your connection or persona."
+                    : filter
+                      ? `Nothing matches the “${filter}” filter yet.`
+                      : "Nothing in the inbox yet."
+                }
+              />
+            </div>
+          ) : null}
+        </Card>
+      )}
     </div>
   );
 }
