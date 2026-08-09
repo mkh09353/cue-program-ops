@@ -58,11 +58,11 @@ function PersonaSwitcher({ lockRole }: { lockRole?: Role }) {
   const value = shown.some((p) => p.id === persona.id) ? persona.id : shown[0]?.id || persona.id;
 
   return (
-    <label className="flex items-center gap-2 text-xs font-semibold text-stone-600">
+    <label className="flex items-center gap-2 text-xs font-medium text-mid">
       <span className="hidden sm:inline">Demo as</span>
       <select
         aria-label="Demo persona"
-        className="h-9 max-w-[200px] rounded-lg border border-stone-300 bg-white px-2 text-sm font-semibold text-ink"
+        className="h-9 max-w-[200px] rounded-[18px] border-0 bg-canvas px-2.5 text-sm font-medium text-ink outline-none focus:ring-2 focus:ring-ink"
         value={value}
         onChange={(e) => {
           const pool = list.length ? list : getPersonaCatalog();
@@ -86,15 +86,15 @@ function Brand({ subtitle = "Conference ops", compact = false }: { subtitle?: st
   return (
     <div className="flex items-center gap-2">
       <div
-        className="grid h-9 w-9 place-items-center rounded-xl bg-ink text-sm font-black text-lime"
+        className="grid h-9 w-9 place-items-center rounded-[18px] bg-ink text-sm font-semibold text-soft"
         aria-hidden
       >
         C
       </div>
       {!compact ? (
         <div>
-          <div className="text-sm font-bold tracking-tight">CUE</div>
-          <div className="text-[10px] font-semibold uppercase tracking-wider text-stone-500">{subtitle}</div>
+          <div className="text-sm font-semibold tracking-tight text-ink">CUE</div>
+          <div className="text-[10px] font-medium uppercase tracking-wider text-mid">{subtitle}</div>
         </div>
       ) : null}
     </div>
@@ -105,7 +105,7 @@ function SkipLink() {
   return (
     <a
       href="#main"
-      className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[100] focus:rounded-lg focus:bg-ink focus:px-3 focus:py-2 focus:text-white"
+      className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[100] focus:rounded-[18px] focus:bg-ink focus:px-3 focus:py-2 focus:text-soft"
     >
       Skip to content
     </a>
@@ -142,9 +142,9 @@ const orgNav = [
 export function OrganizerShell() {
   const currentPersona = usePersona();
   const [open, setOpen] = useState(false);
-  if (currentPersona.role !== "organizer") return <div className="grid min-h-screen place-items-center bg-canvas p-6"><div className="max-w-md rounded-2xl border bg-white p-6 text-center"><h1 className="text-xl font-bold">Organizer access required</h1><p className="mt-2 text-sm text-stone-500">Speaker and reviewer personas cannot open organizer content or administration views.</p><Button asChild className="mt-4"><a href={roleHome(currentPersona.role)}>Return to your portal</a></Button></div></div>;
+  if (currentPersona.role !== "organizer") return <div className="grid min-h-screen place-items-center bg-canvas p-6"><div className="max-w-md rounded-[24px] border border-line bg-paper p-6 text-center shadow-card"><h1 className="text-xl font-semibold">Organizer access required</h1><p className="mt-2 text-sm text-mid">Speaker and reviewer personas cannot open organizer content or administration views.</p><Button asChild className="mt-4"><a href={roleHome(currentPersona.role)}>Return to your portal</a></Button></div></div>;
   const nav = (
-    <nav className="flex flex-col gap-1 p-3" aria-label="Organizer">
+    <nav className="flex flex-col gap-0.5 p-3" aria-label="Organizer">
       {orgNav.map((item) => (
         <NavLink
           key={item.to}
@@ -153,8 +153,8 @@ export function OrganizerShell() {
           onClick={() => setOpen(false)}
           className={({ isActive }) =>
             cn(
-              "flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold text-stone-600 hover:bg-stone-100",
-              isActive && "bg-ink text-white hover:bg-ink",
+              "flex items-center gap-2 rounded-[18px] px-3 py-2 text-sm font-medium text-mid hover:bg-canvas hover:text-ink",
+              isActive && "bg-ink text-soft hover:bg-ink hover:text-soft",
             )
           }
         >
@@ -169,17 +169,17 @@ export function OrganizerShell() {
     <div className="min-h-screen bg-canvas text-ink">
       <SkipLink />
       <div className="mx-auto flex min-h-screen max-w-[1500px]">
-        <aside className="sticky top-0 hidden h-screen w-60 shrink-0 border-r border-stone-200 bg-white/90 md:block">
-          <div className="border-b border-stone-200 p-4">
+        <aside className="sticky top-0 hidden h-screen w-60 shrink-0 border-r border-line bg-soft md:block">
+          <div className="border-b border-line p-4">
             <Brand />
           </div>
           {nav}
-          <div className="absolute bottom-0 left-0 right-0 border-t border-stone-200 p-3 text-[11px] text-stone-500">
+          <div className="absolute bottom-0 left-0 right-0 border-t border-line p-3 text-[11px] text-mid">
             {EVENT_NAME} · in-memory demo
           </div>
         </aside>
         <div className="flex min-w-0 flex-1 flex-col">
-          <header className="sticky top-0 z-20 flex items-center justify-between gap-3 border-b border-stone-200 bg-canvas/90 px-4 py-3 backdrop-blur">
+          <header className="sticky top-0 z-20 flex items-center justify-between gap-3 border-b border-line bg-canvas/90 px-4 py-3 backdrop-blur">
             <div className="flex items-center gap-2">
               <Button
                 variant="ghost"
@@ -193,7 +193,7 @@ export function OrganizerShell() {
               <div className="md:hidden">
                 <Brand compact />
               </div>
-              <div className="hidden text-sm text-stone-500 sm:block">Organizer workspace</div>
+              <div className="hidden text-sm text-mid sm:block">Organizer workspace</div>
             </div>
             <PersonaSwitcher />
           </header>
@@ -205,8 +205,8 @@ export function OrganizerShell() {
       {open ? (
         <div className="fixed inset-0 z-40 md:hidden">
           <button className="absolute inset-0 bg-ink/40" aria-label="Close menu" onClick={() => setOpen(false)} />
-          <div className="absolute left-0 top-0 h-full w-72 bg-white shadow-xl">
-            <div className="flex items-center justify-between border-b p-4">
+          <div className="absolute left-0 top-0 h-full w-72 bg-soft shadow-card">
+            <div className="flex items-center justify-between border-b border-line p-4">
               <Brand />
               <Button variant="ghost" size="icon" onClick={() => setOpen(false)} aria-label="Close menu">
                 <X className="h-5 w-5" />
@@ -225,7 +225,7 @@ export function ReviewerShell() {
   return (
     <div className="min-h-screen bg-canvas">
       <SkipLink />
-      <header className="sticky top-0 z-10 flex items-center justify-between border-b border-stone-200 bg-white/90 px-4 py-3 backdrop-blur">
+      <header className="sticky top-0 z-10 flex items-center justify-between border-b border-line bg-paper/90 px-4 py-3 backdrop-blur">
         <div className="flex min-w-0 items-center gap-3 sm:gap-4">
           <Brand subtitle="Reviewer" />
           <nav className="flex gap-1 overflow-x-auto" aria-label="Reviewer">
@@ -240,8 +240,8 @@ export function ReviewerShell() {
                 end={l.end}
                 className={({ isActive }) =>
                   cn(
-                    "whitespace-nowrap rounded-lg px-3 py-2 text-sm font-semibold text-stone-600",
-                    isActive && "bg-ink text-white",
+                    "whitespace-nowrap rounded-[18px] px-3 py-2 text-sm font-medium text-mid",
+                    isActive && "bg-ink text-soft",
                   )
                 }
               >
@@ -275,7 +275,7 @@ export function PortalShell() {
       style={{ paddingBottom: "max(5rem, env(safe-area-inset-bottom))" }}
     >
       <SkipLink />
-      <header className="sticky top-0 z-10 border-b border-stone-200 bg-white/95 px-4 py-3 backdrop-blur">
+      <header className="sticky top-0 z-10 border-b border-line bg-paper/95 px-4 py-3 backdrop-blur">
         <div className="mx-auto flex max-w-3xl items-center justify-between gap-3">
           <Brand subtitle="Speaker portal" />
           <nav className="hidden gap-1 sm:flex" aria-label="Speaker portal">
@@ -285,7 +285,7 @@ export function PortalShell() {
                 to={l.to}
                 end={l.end}
                 className={({ isActive }) =>
-                  cn("rounded-lg px-3 py-2 text-sm font-semibold text-stone-600", isActive && "bg-ink text-white")
+                  cn("rounded-[18px] px-3 py-2 text-sm font-medium text-mid", isActive && "bg-ink text-soft")
                 }
               >
                 {l.label}
@@ -299,7 +299,7 @@ export function PortalShell() {
         <Outlet />
       </main>
       <nav
-        className="fixed bottom-0 left-0 right-0 z-10 grid grid-cols-6 border-t border-stone-200 bg-white pb-[env(safe-area-inset-bottom)] sm:hidden"
+        className="fixed bottom-0 left-0 right-0 z-10 grid grid-cols-6 border-t border-line bg-paper pb-[env(safe-area-inset-bottom)] sm:hidden"
         aria-label="Speaker mobile"
       >
         {links.map((l) => (
@@ -308,7 +308,7 @@ export function PortalShell() {
             to={l.to}
             end={l.end}
             className={({ isActive }) =>
-              cn("py-3 text-center text-[11px] font-bold", isActive ? "text-iris" : "text-stone-500")
+              cn("py-3 text-center text-[11px] font-medium", isActive ? "text-ink" : "text-mid")
             }
           >
             {l.label}
@@ -323,13 +323,13 @@ export function PublicShell() {
   return (
     <div className="min-h-screen bg-canvas">
       <SkipLink />
-      <header className="border-b border-stone-200 bg-white">
+      <header className="border-b border-line bg-paper">
         <div className="mx-auto flex max-w-2xl items-center justify-between px-4 py-4">
           <div>
-            <div className="text-xs font-bold uppercase tracking-wider text-iris">Call for speakers</div>
-            <div className="text-base font-bold tracking-tight">{EVENT_NAME}</div>
+            <div className="text-xs font-medium uppercase tracking-wider text-mid">Call for speakers</div>
+            <div className="text-base font-semibold tracking-tight text-ink">{EVENT_NAME}</div>
           </div>
-          <a className="text-sm font-semibold text-iris underline-offset-2 hover:underline" href="/p">
+          <a className="text-sm font-medium text-ink underline-offset-2 hover:underline" href="/p">
             Speaker portal
           </a>
         </div>
@@ -337,7 +337,7 @@ export function PublicShell() {
       <main id="main" className="mx-auto max-w-2xl p-4 sm:p-6">
         <Outlet />
       </main>
-      <footer className="mx-auto max-w-2xl px-4 pb-8 text-center text-[11px] text-stone-400">
+      <footer className="mx-auto max-w-2xl px-4 pb-8 text-center text-[11px] text-mid">
         Powered by CUE
       </footer>
     </div>

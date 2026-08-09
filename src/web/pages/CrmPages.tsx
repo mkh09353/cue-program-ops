@@ -16,10 +16,10 @@ import {
 } from "../components/ui";
 
 function CrmSubnav() {
-  const link = "rounded-lg px-3 py-1.5 text-sm font-medium text-stone-600 hover:bg-stone-100";
-  const active = "bg-indigo-50 text-indigo-700";
+  const link = "rounded-lg px-3 py-1.5 text-sm font-medium text-mid hover:bg-canvas";
+  const active = "bg-canvas text-ink";
   return (
-    <div className="mb-4 flex flex-wrap gap-1 border-b border-stone-200 pb-3">
+    <div className="mb-4 flex flex-wrap gap-1 border-b border-line pb-3">
       <NavLink to="/app/crm" end className={({ isActive }) => `${link} ${isActive ? active : ""}`}>
         Directory
       </NavLink>
@@ -124,19 +124,19 @@ export function CrmDirectoryPage() {
       {dash ? (
         <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Card className="p-4">
-            <p className="text-xs font-semibold uppercase tracking-wide text-stone-500">Contacts</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-mid">Contacts</p>
             <p className="mt-1 text-2xl font-bold">{dash.totalContacts}</p>
           </Card>
           <Card className="p-4">
-            <p className="text-xs font-semibold uppercase tracking-wide text-stone-500">Segments</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-mid">Segments</p>
             <p className="mt-1 text-2xl font-bold">{dash.segments}</p>
           </Card>
           <Card className="p-4">
-            <p className="text-xs font-semibold uppercase tracking-wide text-stone-500">Campaigns</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-mid">Campaigns</p>
             <p className="mt-1 text-2xl font-bold">{dash.campaigns}</p>
           </Card>
           <Card className="p-4">
-            <p className="text-xs font-semibold uppercase tracking-wide text-stone-500">Top tag</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-mid">Top tag</p>
             <p className="mt-1 text-lg font-bold">{dash.topTags?.[0]?.name || "—"}</p>
           </Card>
         </div>
@@ -155,7 +155,7 @@ export function CrmDirectoryPage() {
           </Field>
           <Field label="Stage">
             <select
-              className="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm"
+              className="w-full rounded-lg border border-line bg-white px-3 py-2 text-sm"
               value={stage}
               onChange={(e) => setStage(e.target.value)}
             >
@@ -168,7 +168,7 @@ export function CrmDirectoryPage() {
             </select>
           </Field>
         </div>
-        <p className="mt-2 text-xs text-stone-500">
+        <p className="mt-2 text-xs text-mid">
           Showing {meta.filtered ?? rows.length} of {meta.total ?? rows.length} contacts
         </p>
       </Card>
@@ -199,9 +199,9 @@ export function CrmDirectoryPage() {
       {!rows.length ? (
         <EmptyState title="No contacts match" description="Adjust filters or import a CSV." />
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-stone-200 bg-white">
+        <div className="overflow-x-auto rounded-[18px] border border-line bg-white">
           <table className="min-w-full text-left text-sm">
-            <thead className="border-b border-stone-200 bg-stone-50 text-xs uppercase tracking-wide text-stone-500">
+            <thead className="border-b border-line bg-soft text-xs uppercase tracking-wide text-mid">
               <tr>
                 <th className="px-3 py-2">
                   <input
@@ -219,19 +219,19 @@ export function CrmDirectoryPage() {
             </thead>
             <tbody>
               {rows.map((r) => (
-                <tr key={r.id} className="border-b border-stone-100 hover:bg-stone-50">
+                <tr key={r.id} className="border-b border-line hover:bg-soft">
                   <td className="px-3 py-2">
                     <input type="checkbox" checked={selected.includes(r.id)} onChange={() => toggle(r.id)} />
                   </td>
                   <td className="px-3 py-2">
-                    <Link className="font-semibold text-indigo-700 hover:underline" to={`/app/crm/contacts/${r.id}`}>
+                    <Link className="font-semibold text-ink hover:underline" to={`/app/crm/contacts/${r.id}`}>
                       {r.name}
                     </Link>
-                    <div className="text-xs text-stone-500">{r.email}</div>
+                    <div className="text-xs text-mid">{r.email}</div>
                   </td>
                   <td className="px-3 py-2">
                     <div>{r.company || "—"}</div>
-                    <div className="text-xs text-stone-500">{r.title || ""}</div>
+                    <div className="text-xs text-mid">{r.title || ""}</div>
                   </td>
                   <td className="px-3 py-2">
                     <StageBadge stage={r.stage} />
@@ -245,7 +245,7 @@ export function CrmDirectoryPage() {
                       ))}
                     </div>
                   </td>
-                  <td className="px-3 py-2 text-xs text-stone-500">{(r.eventHistory || []).length}</td>
+                  <td className="px-3 py-2 text-xs text-mid">{(r.eventHistory || []).length}</td>
                 </tr>
               ))}
             </tbody>
@@ -257,7 +257,7 @@ export function CrmDirectoryPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <Card className="max-h-[90vh] w-full max-w-lg overflow-y-auto p-5">
             <h3 className="text-lg font-bold">Bulk communicate</h3>
-            <p className="mt-1 text-sm text-stone-500">
+            <p className="mt-1 text-sm text-mid">
               {selected.length} recipient(s). Merge tags: {"{{name}}"}, {"{{first_name}}"}, {"{{company}}"}, {"{{event_name}}"}.
             </p>
             <div className="mt-3"><Field label="Subject">
@@ -357,10 +357,10 @@ export function CrmContactPage() {
         <Card className="p-4 lg:col-span-2">
           <div className="flex flex-wrap items-center gap-2">
             <StageBadge stage={contact.stage} />
-            <span className="text-sm text-stone-500">{contact.title}</span>
+            <span className="text-sm text-mid">{contact.title}</span>
             {contact.company ? <span className="text-sm font-medium">@ {contact.company}</span> : null}
           </div>
-          <p className="mt-3 text-sm leading-relaxed text-stone-700">{contact.bio || "No bio yet."}</p>
+          <p className="mt-3 text-sm leading-relaxed text-ink-soft">{contact.bio || "No bio yet."}</p>
           <div className="mt-3 flex flex-wrap gap-1">
             {(contact.tags || []).map((t: string) => (
               <Badge key={t}>{t}</Badge>
@@ -387,7 +387,7 @@ export function CrmContactPage() {
             </Button>
           </div>
 
-          <h3 className="mt-6 text-sm font-bold uppercase tracking-wide text-stone-500">Move stage</h3>
+          <h3 className="mt-6 text-sm font-bold uppercase tracking-wide text-mid">Move stage</h3>
           <div className="mt-2 flex flex-wrap gap-2">
             {nextStages.map((s) => (
               <Button
@@ -409,7 +409,7 @@ export function CrmContactPage() {
             ))}
           </div>
 
-          <h3 className="mt-6 text-sm font-bold uppercase tracking-wide text-stone-500">Notes</h3>
+          <h3 className="mt-6 text-sm font-bold uppercase tracking-wide text-mid">Notes</h3>
           <div className="mt-2 flex gap-2">
             <Textarea className="flex-1" rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Internal note…" />
             <Button
@@ -429,8 +429,8 @@ export function CrmContactPage() {
           </div>
           <ul className="mt-3 space-y-2">
             {(contact.notes || []).map((n: any) => (
-              <li key={n.id} className="rounded-lg border border-stone-200 bg-stone-50 p-3 text-sm">
-                <div className="text-xs text-stone-500">
+              <li key={n.id} className="rounded-lg border border-line bg-soft p-3 text-sm">
+                <div className="text-xs text-mid">
                   {n.authorName} · {new Date(n.createdAt).toLocaleString()}
                 </div>
                 <div className="mt-1">{n.body}</div>
@@ -441,13 +441,13 @@ export function CrmContactPage() {
 
         <div className="space-y-4">
           <Card className="p-4">
-            <h3 className="text-sm font-bold uppercase tracking-wide text-stone-500">Event history</h3>
+            <h3 className="text-sm font-bold uppercase tracking-wide text-mid">Event history</h3>
             {(contact.eventHistory || []).length ? (
               <ul className="mt-2 space-y-2 text-sm">
                 {contact.eventHistory.map((e: any, i: number) => (
-                  <li key={i} className="rounded-lg border border-stone-200 p-2">
+                  <li key={i} className="rounded-lg border border-line p-2">
                     <div className="font-semibold">{e.eventName}</div>
-                    <div className="text-xs text-stone-500">
+                    <div className="text-xs text-mid">
                       {e.role} · {e.status}
                       {e.speakerId ? ` · ${e.speakerId}` : ""}
                     </div>
@@ -455,36 +455,36 @@ export function CrmContactPage() {
                 ))}
               </ul>
             ) : (
-              <p className="mt-2 text-sm text-stone-500">No linked events yet.</p>
+              <p className="mt-2 text-sm text-mid">No linked events yet.</p>
             )}
           </Card>
           <Card className="p-4">
-            <h3 className="text-sm font-bold uppercase tracking-wide text-stone-500">Stage timeline</h3>
+            <h3 className="text-sm font-bold uppercase tracking-wide text-mid">Stage timeline</h3>
             <ul className="mt-2 space-y-2 text-sm">
               {(contact.stageHistory || [])
                 .slice()
                 .reverse()
                 .map((h: any) => (
-                  <li key={h.id} className="border-l-2 border-indigo-200 pl-3">
+                  <li key={h.id} className="border-l-2 border-line pl-3">
                     <div className="font-medium">
                       {h.from || "—"} → {h.to}
                     </div>
-                    <div className="text-xs text-stone-500">
+                    <div className="text-xs text-mid">
                       {new Date(h.at).toLocaleString()}
                       {h.byName ? ` · ${h.byName}` : ""}
                     </div>
-                    {h.note ? <div className="text-xs text-stone-600">{h.note}</div> : null}
+                    {h.note ? <div className="text-xs text-mid">{h.note}</div> : null}
                   </li>
                 ))}
             </ul>
           </Card>
           {contact.customFields && Object.keys(contact.customFields).length ? (
             <Card className="p-4">
-              <h3 className="text-sm font-bold uppercase tracking-wide text-stone-500">Custom fields</h3>
+              <h3 className="text-sm font-bold uppercase tracking-wide text-mid">Custom fields</h3>
               <dl className="mt-2 space-y-1 text-sm">
                 {Object.entries(contact.customFields).map(([k, v]) => (
                   <div key={k} className="flex justify-between gap-2">
-                    <dt className="text-stone-500">{k}</dt>
+                    <dt className="text-mid">{k}</dt>
                     <dd className="font-medium">{String(v)}</dd>
                   </div>
                 ))}
@@ -528,7 +528,7 @@ export function CrmPipelinePage() {
       {err ? <Notice tone="danger">{err}</Notice> : null}
       <div className="flex gap-3 overflow-x-auto pb-4">
         {columns.map((col) => (
-          <div key={col.id} className="w-64 shrink-0 rounded-xl border border-stone-200 bg-stone-50 p-3">
+          <div key={col.id} className="w-64 shrink-0 rounded-[18px] border border-line bg-soft p-3">
             <div className="mb-2 flex items-center justify-between">
               <h3 className="text-sm font-bold">{col.label}</h3>
               <Badge tone="muted">{col.contacts?.length || 0}</Badge>
@@ -536,10 +536,10 @@ export function CrmPipelinePage() {
             <div className="space-y-2">
               {(col.contacts || []).map((c: any) => (
                 <Card key={c.id} className="p-3 shadow-sm">
-                  <Link to={`/app/crm/contacts/${c.id}`} className="font-semibold text-indigo-700 hover:underline">
+                  <Link to={`/app/crm/contacts/${c.id}`} className="font-semibold text-ink hover:underline">
                     {c.name}
                   </Link>
-                  <p className="text-xs text-stone-500">{c.company || c.email}</p>
+                  <p className="text-xs text-mid">{c.company || c.email}</p>
                   <div className="mt-2 flex flex-wrap gap-1">
                     {(c.tags || []).slice(0, 3).map((t: string) => (
                       <Badge key={t} tone="muted">
@@ -555,7 +555,7 @@ export function CrmPipelinePage() {
                         <button
                           key={s}
                           type="button"
-                          className="rounded bg-white px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-stone-600 ring-1 ring-stone-200 hover:bg-indigo-50"
+                          className="rounded bg-white px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-mid ring-1 ring-line hover:bg-canvas"
                           onClick={async () => {
                             try {
                               await api.crmMoveStage(c.id, s);
@@ -618,7 +618,7 @@ export function CrmSegmentsPage() {
         <div className="flex flex-wrap gap-2">
           <Input className="max-w-xs" placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} />
           <select
-            className="rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm"
+            className="rounded-lg border border-line bg-white px-3 py-2 text-sm"
             value={stage}
             onChange={(e) => setStage(e.target.value)}
           >
@@ -656,7 +656,7 @@ export function CrmSegmentsPage() {
             <div className="flex items-start justify-between gap-2">
               <div>
                 <h3 className="font-bold">{s.name}</h3>
-                <p className="text-xs text-stone-500">{s.description || JSON.stringify(s.filters)}</p>
+                <p className="text-xs text-mid">{s.description || JSON.stringify(s.filters)}</p>
               </div>
               <Badge>{s.count} contacts</Badge>
             </div>
@@ -759,9 +759,9 @@ export function CrmImportPage() {
       ) : null}
 
       {results ? (
-        <div className="mt-4 overflow-x-auto rounded-xl border border-stone-200 bg-white">
+        <div className="mt-4 overflow-x-auto rounded-[18px] border border-line bg-white">
           <table className="min-w-full text-left text-sm">
-            <thead className="border-b bg-stone-50 text-xs uppercase text-stone-500">
+            <thead className="border-b bg-soft text-xs uppercase text-mid">
               <tr>
                 <th className="px-3 py-2">Row</th>
                 <th className="px-3 py-2">Name</th>
@@ -772,14 +772,14 @@ export function CrmImportPage() {
             </thead>
             <tbody>
               {results.map((r) => (
-                <tr key={r.row} className="border-b border-stone-100">
+                <tr key={r.row} className="border-b border-line">
                   <td className="px-3 py-2">{r.row}</td>
                   <td className="px-3 py-2">{r.raw?.name}</td>
                   <td className="px-3 py-2">{r.raw?.email}</td>
                   <td className="px-3 py-2">
                     <Badge tone={r.ok ? "ok" : "danger"}>{r.action || (r.ok ? "ok" : "error")}</Badge>
                   </td>
-                  <td className="px-3 py-2 text-xs text-stone-500">{r.error || r.duplicateOf || r.contactId || "—"}</td>
+                  <td className="px-3 py-2 text-xs text-mid">{r.error || r.duplicateOf || r.contactId || "—"}</td>
                 </tr>
               ))}
             </tbody>

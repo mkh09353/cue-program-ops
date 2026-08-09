@@ -101,9 +101,9 @@ export function CommandPage() {
 
       <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
         <Card className="p-5">
-          <h2 className="text-xs font-bold uppercase tracking-wider text-stone-500">Needs you</h2>
+          <h2 className="text-xs font-bold uppercase tracking-wider text-mid">Needs you</h2>
           {blockers?.length ? (
-            <ul className="mt-3 divide-y divide-stone-100">
+            <ul className="mt-3 divide-y divide-line">
               {blockers.map((b: any) => (
                 <li key={b.id} className="flex flex-wrap items-center justify-between gap-2 py-3">
                   <div className="flex items-center gap-2">
@@ -145,7 +145,7 @@ export function CommandPage() {
 
         <div className="space-y-4">
           <Card className="p-5">
-            <h2 className="text-xs font-bold uppercase tracking-wider text-stone-500">Onboarding funnel</h2>
+            <h2 className="text-xs font-bold uppercase tracking-wider text-mid">Onboarding funnel</h2>
             <div className="mt-4 space-y-2 text-sm">
               {[
                 ["Accepted", data.funnel.accepted],
@@ -154,8 +154,8 @@ export function CommandPage() {
                 ["Slides", data.funnel.slides],
                 ["Fully ready", data.funnel.ready],
               ].map(([label, n]) => (
-                <div key={label as string} className="flex justify-between border-b border-stone-100 py-2">
-                  <span className="text-stone-600">{label}</span>
+                <div key={label as string} className="flex justify-between border-b border-line py-2">
+                  <span className="text-mid">{label}</span>
                   <b>{n as number}</b>
                 </div>
               ))}
@@ -163,25 +163,25 @@ export function CommandPage() {
           </Card>
 
           <Card className="p-5">
-            <h2 className="text-xs font-bold uppercase tracking-wider text-stone-500">Blocked speakers</h2>
+            <h2 className="text-xs font-bold uppercase tracking-wider text-mid">Blocked speakers</h2>
             <ul className="mt-3 space-y-2">
               {data.blockedSpeakers.map((s: any) => (
-                <li key={s.speakerId} className="rounded-xl bg-stone-50 p-3 text-sm">
+                <li key={s.speakerId} className="rounded-[18px] bg-soft p-3 text-sm">
                   <div className="flex items-center justify-between gap-2">
                     <b>{s.name}</b>
                     <Badge tone={s.pct >= 100 ? "ok" : s.pct > 0 ? "warn" : "danger"}>{s.pct}%</Badge>
                   </div>
-                  <p className="mt-1 text-xs text-stone-500">{s.title}</p>
-                  <p className="mt-1 text-xs text-warn">
+                  <p className="mt-1 text-xs text-mid">{s.title}</p>
+                  <p className="mt-1 text-xs text-ink-soft">
                     Missing: {(s.missing || []).map(humanizeMissing).join(" · ")}
                   </p>
                 </li>
               ))}
               {!data.blockedSpeakers.length ? (
-                <li className="text-sm text-stone-500">Everyone accepted is ready.</li>
+                <li className="text-sm text-mid">Everyone accepted is ready.</li>
               ) : null}
             </ul>
-            <Link className="mt-3 inline-block text-sm font-semibold text-iris" to="/app/speakers">
+            <Link className="mt-3 inline-block text-sm font-semibold text-ink" to="/app/speakers">
               View all speakers →
             </Link>
           </Card>

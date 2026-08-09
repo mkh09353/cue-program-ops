@@ -50,24 +50,24 @@ export function PortalHomePage() {
       <Card className="mb-4 p-5">
         <div className="flex items-center justify-between gap-2">
           <div>
-            <div className="text-xs font-bold uppercase tracking-wide text-stone-500">Onboarding</div>
+            <div className="text-xs font-bold uppercase tracking-wide text-mid">Onboarding</div>
             <div className="mt-1 text-3xl font-bold">{data.readiness.pct}%</div>
           </div>
           <StatusBadge status={data.readiness.state} />
         </div>
-        <div className="mt-3 h-2 overflow-hidden rounded-full bg-stone-100" aria-hidden>
-          <div className="h-full bg-iris" style={{ width: `${data.readiness.pct}%` }} />
+        <div className="mt-3 h-2 overflow-hidden rounded-full bg-canvas" aria-hidden>
+          <div className="h-full bg-ink" style={{ width: `${data.readiness.pct}%` }} />
         </div>
-        <p className="mt-2 text-sm text-stone-500">
+        <p className="mt-2 text-sm text-mid">
           {data.readiness.completedRequiredTaskCount}/{data.readiness.requiredTaskCount} required tasks complete
         </p>
       </Card>
 
       {next ? (
-        <Card className="mb-4 border-iris/30 p-5">
-          <div className="text-xs font-bold uppercase tracking-wide text-iris">Up next</div>
+        <Card className="mb-4 border-line p-5">
+          <div className="text-xs font-bold uppercase tracking-wide text-ink">Up next</div>
           <h2 className="mt-1 text-xl font-bold">{next.title}</h2>
-          <p className="mt-1 text-xs text-stone-500">{taskTypeLabel(next.type)}</p>
+          <p className="mt-1 text-xs text-mid">{taskTypeLabel(next.type)}</p>
           <Button asChild className="mt-3">
             <Link to={`/p/tasks/${next.id}`}>Continue task</Link>
           </Button>
@@ -80,7 +80,7 @@ export function PortalHomePage() {
         <Card className="mb-4 p-5">
           <h3 className="text-sm font-bold">Your session</h3>
           <p className="mt-1 text-lg font-semibold">{scheduled.title}</p>
-          <p className="text-sm text-stone-500">
+          <p className="text-sm text-mid">
             {fmtTime(scheduled.slot.startsAt)}–{fmtTime(scheduled.slot.endsAt)} UTC
           </p>
           <CalendarButtons
@@ -96,9 +96,9 @@ export function PortalHomePage() {
         <Card className="p-5">
           <h3 className="text-sm font-bold">Latest message</h3>
           <p className="mt-1 font-semibold">{data.communications[0].subject}</p>
-          <p className="mt-2 whitespace-pre-wrap text-sm text-stone-600">{data.communications[0].body}</p>
+          <p className="mt-2 whitespace-pre-wrap text-sm text-mid">{data.communications[0].body}</p>
           <a
-            className="mt-3 inline-block text-sm font-semibold text-iris"
+            className="mt-3 inline-block text-sm font-semibold text-ink"
             href={`/api/communications/${data.communications[0].id}/calendar.ics`}
           >
             Download calendar invite (ICS)
@@ -154,7 +154,7 @@ export function PortalTalksPage() {
               <h3 className="font-bold">{s.title}</h3>
               <StatusBadge status={s.status} />
             </div>
-            <p className="mt-1 text-sm text-stone-500">
+            <p className="mt-1 text-sm text-mid">
               {s.category} · {s.format} · board {s.reviewBoard}
             </p>
             {s.editToken ? <Button asChild size="sm" variant="outline" className="mt-3"><a href={`/e/ai-engineer-summit/cfp?submission=${s.id}&token=${s.editToken}`}>{s.status === "draft" ? "Resume draft" : "View or edit submission"}</a></Button> : null}
@@ -180,11 +180,11 @@ export function PortalTasksPage() {
           <Link
             key={t.id}
             to={`/p/tasks/${t.id}`}
-            className="flex items-center justify-between rounded-2xl border border-stone-200 bg-white p-4 hover:border-iris/40"
+            className="flex items-center justify-between rounded-[24px] border border-line bg-white p-4 hover:border-ink/20"
           >
             <div>
               <div className="font-semibold">{t.title}</div>
-              <div className="text-xs text-stone-500">{taskTypeLabel(t.type)}</div>
+              <div className="text-xs text-mid">{taskTypeLabel(t.type)}</div>
             </div>
             <StatusBadge status={t.status} />
           </Link>
@@ -201,7 +201,7 @@ export function PortalDeliverablesPage() {
   const [rows,setRows]=useState<any[]>([]),[err,setErr]=useState("");
   useEffect(()=>{api.deliverables().then(r=>setRows(r.data)).catch(e=>setErr(e.message))},[]);
   if(err)return <Notice tone="danger">{err}</Notice>;
-  return <div><PageHeader title="Deliverables" description="Your assigned session files, deadlines, and approval state."/><div className="space-y-2">{rows.map(t=><Link key={t.id} to={`/p/deliverables/${t.id}`} className="flex justify-between rounded-2xl border bg-white p-4"><div><b>{t.name}</b><p className="text-xs text-stone-500">{t.session?.title} · Due {t.dueAt.slice(0,10)} · {t.uploadCount} version(s)</p></div><StatusBadge status={t.overdue?"overdue":t.status}/></Link>)}</div></div>;
+  return <div><PageHeader title="Deliverables" description="Your assigned session files, deadlines, and approval state."/><div className="space-y-2">{rows.map(t=><Link key={t.id} to={`/p/deliverables/${t.id}`} className="flex justify-between rounded-[24px] border bg-white p-4"><div><b>{t.name}</b><p className="text-xs text-mid">{t.session?.title} · Due {t.dueAt.slice(0,10)} · {t.uploadCount} version(s)</p></div><StatusBadge status={t.overdue?"overdue":t.status}/></Link>)}</div></div>;
 }
 
 export function PortalDeliverableDetailPage() {
@@ -209,7 +209,7 @@ export function PortalDeliverableDetailPage() {
   const load=()=>api.deliverable(id!).then(r=>setData(r.data)).catch(e=>setErr(e.message));useEffect(()=>{void load()},[id]);
   const upload=async(file:File)=>{const dataBase64=await new Promise<string>((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(String(r.result).split(",")[1]||"");r.onerror=reject;r.readAsDataURL(file)});await api.uploadDeliverable(id!,{name:file.name,mime:file.type,size:file.size,dataBase64,kind:file.type.startsWith("image/")?"headshot":file.type==="application/pdf"?"slides":"document"});toast("Upload saved as a new version");load()};
   if(!data&&!err)return <Spinner/>;if(err)return <Notice tone="danger">{err}</Notice>;const file=data.file;
-  return <div><PageHeader title={data.name} description={`${data.session?.title||"Speaker deliverable"} · Due ${data.dueAt.slice(0,10)}`}/><Card className="p-5"><StatusBadge status={data.overdue?"overdue":data.status}/><p className="mt-3 text-sm">{data.instructions}</p><div className="mt-4 rounded-xl border border-dashed p-4"><b>Upload file</b><p className="mb-2 text-xs text-stone-500">Accepted: {data.acceptedTypes.join(", ")} · Maximum 2 MB. Re-uploading creates a new version.</p><Input type="file" accept={data.acceptedTypes.join(",")} onChange={e=>{const f=e.target.files?.[0];if(f)void upload(f)}}/></div>{file?<div className="mt-5"><h2 className="font-bold">{file.versions.find((v:any)=>v.current)?.name}</h2><p className="text-sm text-stone-500">Approval: {file.status} · {file.versions.length} versions</p>{[...file.versions].reverse().map((v:any)=><div key={v.id} className="mt-2 flex justify-between rounded bg-stone-50 p-2 text-sm"><span>v{v.version} · {new Date(v.uploadedAt).toLocaleString()}</span><span>{v.current?<Badge tone="ok">Current</Badge>:null} <a className="text-iris underline" href={`/api/content/files/${file.id}/versions/${v.id}`}>View</a></span></div>)}<h3 className="mt-4 text-xs font-bold uppercase text-stone-500">Comments</h3>{file.comments.map((c:any)=><p key={c.id} className="mt-2 rounded bg-stone-50 p-2 text-sm"><b>{c.authorName}</b> · {new Date(c.createdAt).toLocaleString()}<br/>{c.body}</p>)}<div className="mt-2 flex gap-2"><Input value={comment} onChange={e=>setComment(e.target.value)} placeholder="Add a comment"/><Button onClick={async()=>{await api.addFileComment(file.id,comment);setComment("");load()}}>Comment</Button></div></div>:null}</Card></div>;
+  return <div><PageHeader title={data.name} description={`${data.session?.title||"Speaker deliverable"} · Due ${data.dueAt.slice(0,10)}`}/><Card className="p-5"><StatusBadge status={data.overdue?"overdue":data.status}/><p className="mt-3 text-sm">{data.instructions}</p><div className="mt-4 rounded-[18px] border border-dashed p-4"><b>Upload file</b><p className="mb-2 text-xs text-mid">Accepted: {data.acceptedTypes.join(", ")} · Maximum 2 MB. Re-uploading creates a new version.</p><Input type="file" accept={data.acceptedTypes.join(",")} onChange={e=>{const f=e.target.files?.[0];if(f)void upload(f)}}/></div>{file?<div className="mt-5"><h2 className="font-bold">{file.versions.find((v:any)=>v.current)?.name}</h2><p className="text-sm text-mid">Approval: {file.status} · {file.versions.length} versions</p>{[...file.versions].reverse().map((v:any)=><div key={v.id} className="mt-2 flex justify-between rounded bg-soft p-2 text-sm"><span>v{v.version} · {new Date(v.uploadedAt).toLocaleString()}</span><span>{v.current?<Badge tone="ok">Current</Badge>:null} <a className="text-ink underline" href={`/api/content/files/${file.id}/versions/${v.id}`}>View</a></span></div>)}<h3 className="mt-4 text-xs font-bold uppercase text-mid">Comments</h3>{file.comments.map((c:any)=><p key={c.id} className="mt-2 rounded bg-soft p-2 text-sm"><b>{c.authorName}</b> · {new Date(c.createdAt).toLocaleString()}<br/>{c.body}</p>)}<div className="mt-2 flex gap-2"><Input value={comment} onChange={e=>setComment(e.target.value)} placeholder="Add a comment"/><Button onClick={async()=>{await api.addFileComment(file.id,comment);setComment("");load()}}>Comment</Button></div></div>:null}</Card></div>;
 }
 
 const FILE_TYPES = new Set(["headshot", "slides", "supporting_doc"]);
@@ -262,7 +262,7 @@ export function PortalTaskDetailPage() {
       />
       <Card className="p-5">
         {task.description || task.instructions ? (
-          <p className="mb-4 text-sm text-stone-600">{task.description || task.instructions}</p>
+          <p className="mb-4 text-sm text-mid">{task.description || task.instructions}</p>
         ) : null}
 
         {task.type === "profile" && profile ? (
@@ -308,7 +308,7 @@ export function PortalTaskDetailPage() {
 
         {task.type === "form" ? (
           <>
-            <p className="mb-3 text-sm text-stone-600">Complete this logistics form. Answers are saved on your speaker record.</p>
+            <p className="mb-3 text-sm text-mid">Complete this logistics form. Answers are saved on your speaker record.</p>
             {formSchema.map((f: any) => (
               <Field key={f.key} label={`${f.label}${f.required ? " *" : ""}`}>
                 {f.type === "textarea" ? (
@@ -320,7 +320,7 @@ export function PortalTaskDetailPage() {
                   />
                 ) : f.type === "select" ? (
                   <select
-                    className="h-10 w-full rounded-lg border border-stone-300 bg-white px-3 text-sm"
+                    className="h-10 w-full rounded-lg border border-line bg-white px-3 text-sm"
                     value={formAnswers[f.key] || ""}
                     disabled={task.status === "completed"}
                     onChange={(e) => setFormAnswers({ ...formAnswers, [f.key]: e.target.value })}
@@ -356,7 +356,7 @@ export function PortalTaskDetailPage() {
                 Submit form
               </Button>
             ) : (
-              <p className="text-sm text-ok">Form submitted.</p>
+              <p className="text-sm text-ink">Form submitted.</p>
             )}
           </>
         ) : null}
@@ -364,12 +364,12 @@ export function PortalTaskDetailPage() {
         {isFile ? (
           <>
             {task.type === "headshot" ? (
-              <p className="mb-3 text-sm text-stone-600">
+              <p className="mb-3 text-sm text-mid">
                 Upload a well-lit headshot (PNG/JPEG). Image data is stored on your profile and synced to the organizer
                 roster and public gallery when published.
               </p>
             ) : (
-              <p className="mb-3 text-sm text-stone-600">
+              <p className="mb-3 text-sm text-mid">
                 Demo file receipt stores filename metadata on your speaker record. Prefer Deliverables for versioned
                 content files.
               </p>
@@ -438,9 +438,9 @@ export function PortalTaskDetailPage() {
         ) : null}
 
         {task.status === "completed" && task.type !== "form" ? (
-          <p className="mt-4 text-sm text-ok">This task is complete.</p>
+          <p className="mt-4 text-sm text-ink">This task is complete.</p>
         ) : isFile && task.status !== "completed" ? (
-          <p className="mt-4 text-xs text-stone-500">Required file tasks complete only after upload.</p>
+          <p className="mt-4 text-xs text-mid">Required file tasks complete only after upload.</p>
         ) : null}
       </Card>
     </div>
@@ -458,11 +458,11 @@ export function PortalResourcesPage() {
         {data.resources.map((r: any) => (
           <Card key={r.id} className="p-4">
             <h3 className="text-lg font-bold">
-              <Link className="hover:text-iris" to={`/p/resources/${r.slug}`}>
+              <Link className="hover:text-ink" to={`/p/resources/${r.slug}`}>
                 {r.title}
               </Link>
             </h3>
-            <p className="mt-1 text-sm text-stone-600">{r.body}</p>
+            <p className="mt-1 text-sm text-mid">{r.body}</p>
           </Card>
         ))}
         {!data.resources?.length ? (
@@ -492,9 +492,9 @@ export function PortalResourceDetailPage() {
     <div>
       <PageHeader title={r.title} />
       <Card className="p-5">
-        <p className="whitespace-pre-wrap text-sm leading-relaxed text-stone-700">{r.body}</p>
+        <p className="whitespace-pre-wrap text-sm leading-relaxed text-ink-soft">{r.body}</p>
         {safeEmbed ? (
-          <div className="mt-4 overflow-hidden rounded-xl border">
+          <div className="mt-4 overflow-hidden rounded-[18px] border">
             <iframe
               title="resource embed"
               src={r.embedUrl}
@@ -502,22 +502,22 @@ export function PortalResourceDetailPage() {
               sandbox="allow-scripts allow-same-origin allow-presentation"
               referrerPolicy="no-referrer"
             />
-            <p className="bg-stone-50 px-3 py-2 text-[11px] text-stone-500">
+            <p className="bg-soft px-3 py-2 text-[11px] text-mid">
               Allowlisted embed host only (YouTube/Vimeo). Sandboxed iframe.
             </p>
           </div>
         ) : (
-          <div className="mt-4 rounded-2xl border border-dashed border-stone-300 bg-stone-50 p-6">
-            <div className="text-xs font-bold uppercase tracking-wide text-iris">Speaker handbook</div>
+          <div className="mt-4 rounded-[24px] border border-dashed border-line bg-soft p-6">
+            <div className="text-xs font-bold uppercase tracking-wide text-ink">Speaker handbook</div>
             <h3 className="mt-2 text-lg font-bold">Session day checklist</h3>
-            <ul className="mt-3 list-disc space-y-2 pl-5 text-sm text-stone-700">
+            <ul className="mt-3 list-disc space-y-2 pl-5 text-sm text-ink-soft">
               <li>Arrive 30 minutes before your slot for AV check.</li>
               <li>Upload final slides at least 24 hours before you go on stage.</li>
               <li>Confirm headshot and bio match the public gallery.</li>
               <li>Join the speaker Slack channel for day-of logistics.</li>
               <li>Have a backup of your deck on a USB and in the cloud.</li>
             </ul>
-            <p className="mt-4 text-xs text-stone-500">
+            <p className="mt-4 text-xs text-mid">
               {r.embedUrl
                 ? "An external embed was suppressed because it is not on the professional allowlist."
                 : "No external embed configured for this page."}

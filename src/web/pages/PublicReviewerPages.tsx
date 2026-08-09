@@ -60,11 +60,11 @@ export function DemoLandingPage() {
   return (
     <div className="min-h-screen bg-canvas">
       <div className="mx-auto max-w-5xl px-6 py-12 sm:py-16">
-        <div className="mb-2 text-xs font-bold uppercase tracking-[0.2em] text-stone-500">Kill My SaaS · CUE</div>
-        <h1 className="max-w-3xl text-4xl font-bold tracking-tight sm:text-5xl">
+        <div className="mb-2 text-xs font-medium uppercase tracking-[0.2em] text-mid">Kill My SaaS · CUE</div>
+        <h1 className="max-w-3xl text-4xl font-semibold tracking-tight sm:text-5xl" style={{ letterSpacing: "-0.05em" }}>
           Conference program ops, end to end — without Sessionboard.
         </h1>
-        <p className="mt-4 max-w-2xl text-lg text-stone-600">
+        <p className="mt-4 max-w-2xl text-lg text-mid">
           Open-source path for <b>{eventName}</b>: CFP → review → onboard → schedule → publish → Accelevents.
           Credential-free demo with persona simulation (not production auth). State lives in process memory unless
           optional Airtable snapshot restore is configured.
@@ -77,8 +77,8 @@ export function DemoLandingPage() {
         </div>
 
         <section className="mt-10">
-          <h2 className="text-sm font-bold uppercase tracking-wide text-stone-500">Enter a role shell</h2>
-          <p className="mt-1 text-sm text-stone-500">
+          <h2 className="text-xs font-medium uppercase tracking-wide text-mid">Enter a role shell</h2>
+          <p className="mt-1 text-sm text-mid">
             Persona headers simulate identity. Pick a card to land in the matching shell with seed data loaded.
           </p>
           <div className="mt-4 grid gap-4 lg:grid-cols-3">
@@ -107,19 +107,19 @@ export function DemoLandingPage() {
               const list = byRole(shell.role);
               return (
                 <Card key={shell.role} className="flex flex-col p-5">
-                  <div className="text-xs font-bold uppercase tracking-wide text-iris">{shell.title}</div>
-                  <p className="mt-2 text-sm text-stone-600">{shell.blurb}</p>
-                  <code className="mt-2 block text-[11px] text-stone-400">{shell.path}/*</code>
+                  <div className="text-xs font-medium uppercase tracking-wide text-mid">{shell.title}</div>
+                  <p className="mt-2 text-sm text-mid">{shell.blurb}</p>
+                  <code className="mt-2 block text-[11px] text-mid">{shell.path}/*</code>
                   <div className="mt-4 flex flex-1 flex-col gap-2">
                     {list.map((p) => (
                       <button
                         key={p.id}
                         type="button"
-                        className="rounded-xl border border-stone-200 bg-white px-3 py-2 text-left shadow-sm hover:border-iris/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-iris"
+                        className="rounded-[18px] border border-line bg-paper px-3 py-2 text-left shadow-sm hover:border-ink/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink"
                         onClick={() => enter(p)}
                       >
                         <div className="font-semibold">{p.name}</div>
-                        <div className="text-xs text-stone-500">{p.email}</div>
+                        <div className="text-xs text-mid">{p.email}</div>
                       </button>
                     ))}
                     {!list.length ? (
@@ -135,27 +135,27 @@ export function DemoLandingPage() {
         </section>
 
         <section className="mt-12">
-          <h2 className="text-sm font-bold uppercase tracking-wide text-stone-500">Public surfaces</h2>
+          <h2 className="text-xs font-medium uppercase tracking-wide text-mid">Public surfaces</h2>
           <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {publicLinks.map((l) => (
               <Link
                 key={l.to}
                 to={l.to}
-                className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm transition hover:border-iris/40"
+                className="rounded-[24px] border border-line bg-paper p-4 shadow-card transition hover:border-ink/20"
               >
                 <div className="font-semibold text-ink">{l.label}</div>
-                <div className="mt-1 text-xs text-stone-500">{l.blurb}</div>
+                <div className="mt-1 text-xs text-mid">{l.blurb}</div>
               </Link>
             ))}
           </div>
           <div className="mt-4 flex flex-wrap gap-3 text-sm font-semibold">
-            <Link className="text-iris" to="/app/publish">
+            <Link className="text-ink" to="/app/publish">
               Organizer embed manager →
             </Link>
-            <a className="text-iris" href="/public/events/evt-ai-summit-2026/gallery">
+            <a className="text-ink" href="/public/events/evt-ai-summit-2026/gallery">
               Legacy gallery alias →
             </a>
-            <a className="text-iris" href="/health">
+            <a className="text-ink" href="/health">
               /health →
             </a>
           </div>
@@ -163,16 +163,16 @@ export function DemoLandingPage() {
 
         <section className="mt-12 grid gap-6 lg:grid-cols-2">
           <Card className="p-5">
-            <h2 className="text-sm font-bold uppercase tracking-wide text-stone-500">Judge walkthrough</h2>
-            <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm text-stone-700">
+            <h2 className="text-xs font-medium uppercase tracking-wide text-mid">Judge walkthrough</h2>
+            <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm text-ink-soft">
               {loop.map((step) => (
                 <li key={step}>{step}</li>
               ))}
             </ol>
           </Card>
           <Card className="p-5">
-            <h2 className="text-sm font-bold uppercase tracking-wide text-stone-500">Honest defaults</h2>
-            <ul className="mt-3 space-y-2 text-sm text-stone-700">
+            <h2 className="text-xs font-medium uppercase tracking-wide text-mid">Honest defaults</h2>
+            <ul className="mt-3 space-y-2 text-sm text-ink-soft">
               <li>Identity is header/persona simulation — not multi-tenant auth.</li>
               <li>Mailer is mock unless a Resend-compatible endpoint is configured.</li>
               <li>Accelevents sync is one-way mock; live HTTP is placeholder.</li>
@@ -230,12 +230,12 @@ export function PublicCfpPage() {
         <div className="mt-2">
           <Markdown text={data.form.successMd || ""} />
         </div>
-        <p className="mt-4 rounded-xl bg-indigo-50 p-3 text-sm">
+        <p className="mt-4 rounded-[18px] bg-canvas p-3 text-sm">
           Routed to <b>{result.boardLabel || result.reviewBoard}</b> review board
           {String(answers.format || "").startsWith("Workshop") ? " · Workshop conditional fields were collected." : ""}.
         </p>
         <p className="mt-3 text-sm"><b>Reference:</b> {result.id}</p>
-        <a className="mt-2 block text-sm font-semibold text-iris underline" href={result.editUrl}>View or edit this submission</a>
+        <a className="mt-2 block text-sm font-semibold text-ink underline" href={result.editUrl}>View or edit this submission</a>
         <div className="mt-4 flex flex-wrap gap-2">
           <Button
             onClick={() => {
@@ -293,7 +293,7 @@ export function PublicCfpPage() {
 
   return (
     <div>
-      <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+      <div className="mb-4 rounded-[24px] border border-line bg-canvas px-4 py-3 text-sm text-ink">
         Accepting until {new Date(data.form.closeAt).toLocaleString()} · max {data.form.maxPerUser} per user ·{" "}
         {formatStatus(data.form.status)}
       </div>
@@ -302,12 +302,12 @@ export function PublicCfpPage() {
         <Markdown text={data.form.welcomeMd || ""} />
       </div>
 
-      {!data.window?.open ? <Card className="my-6 border-amber-300 p-8 text-center"><Badge tone="warn">Closed</Badge><h2 className="mt-3 text-2xl font-bold">Submissions closed</h2><p className="mt-2 text-stone-600">{data.window?.reason}. The deadline was {new Date(data.form.closeAt).toLocaleString()}.</p></Card> : null}
+      {!data.window?.open ? <Card className="my-6 border-line p-8 text-center"><Badge tone="warn">Closed</Badge><h2 className="mt-3 text-2xl font-bold">Submissions closed</h2><p className="mt-2 text-mid">{data.window?.reason}. The deadline was {new Date(data.form.closeAt).toLocaleString()}.</p></Card> : null}
       {data.window?.open ? <><div className="my-6 flex flex-wrap gap-2 text-xs font-bold uppercase tracking-wide" aria-label="Steps">
         {["You", "Talk", "Review"].map((label, i) => (
           <span
             key={label}
-            className={`rounded-full px-3 py-1 ${i === step ? "bg-ink text-white" : "bg-stone-200 text-stone-600"}`}
+            className={`rounded-full px-3 py-1 ${i === step ? "bg-ink text-white" : "bg-canvas text-mid"}`}
           >
             {i + 1}. {label}
           </span>
@@ -385,19 +385,19 @@ export function PublicCfpPage() {
             <>
               <dl className="space-y-2 text-sm">
                 <div>
-                  <dt className="text-xs text-stone-500">Speaker</dt>
+                  <dt className="text-xs text-mid">Speaker</dt>
                   <dd className="font-semibold">
                     {name} · {email}
                   </dd>
                 </div>
                 {visibleFields.map((f: any) => (
                   <div key={f.key}>
-                    <dt className="text-xs text-stone-500">{f.label}</dt>
+                    <dt className="text-xs text-mid">{f.label}</dt>
                     <dd className="font-medium">{answers[f.key]}</dd>
                   </div>
                 ))}
                 <div>
-                  <dt className="text-xs text-stone-500">Review board routing</dt>
+                  <dt className="text-xs text-mid">Review board routing</dt>
                   <dd className="font-semibold">
                     {data.form.routes.find((r: any) => r.category === answers.category)?.boardLabel || "default"}
                   </dd>
@@ -449,11 +449,11 @@ export function ReviewerQueuePage({ done = false }: { done?: boolean }) {
           <Link
             key={r.id}
             to={`/r/${r.submissionId}`}
-            className="flex items-center justify-between rounded-2xl border border-stone-200 bg-white p-4 hover:border-iris/40"
+            className="flex items-center justify-between rounded-[24px] border border-line bg-white p-4 hover:border-ink/20"
           >
             <div>
               <div className="font-bold">{r.submission?.title || r.submissionId}</div>
-              <div className="text-xs text-stone-500">
+              <div className="text-xs text-mid">
                 {r.round?.blind ? "Anonymous speaker · Blind" : r.submission?.name} · {r.round?.name} · board {r.submission?.reviewBoard}
               </div>
             </div>
@@ -475,7 +475,7 @@ export function ReviewerGuidelinesPage() {
   return (
     <div>
       <PageHeader title="Guidelines" />
-      <Card className="space-y-3 p-5 text-sm text-stone-700">
+      <Card className="space-y-3 p-5 text-sm text-ink-soft">
         <p>Score relevance, novelty, clarity, and depth on a 1–5 scale.</p>
         <p>AI assist is deterministic and advisory. You must click Score & save as a human.</p>
         <p>Only organizers can accept or decline submissions. After scoring, use “Finish as organizer” on the submission.</p>
@@ -498,9 +498,9 @@ export function ReviewerSubmissionPage() {
   return <div>
     <PageHeader title={submission.title} description={`${round.name} · ${round.blind ? "Blind review — author identity redacted" : submission.name} · AI remains advisory`} />
     <div className="grid gap-4 lg:grid-cols-2">
-      <Card className="p-5"><div className="flex gap-2"><StatusBadge status={data.assignment.status}/>{round.blind?<Badge tone="primary">Blind</Badge>:null}</div><p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed">{submission.abstract}</p><p className="mt-4 text-xs text-stone-500">Category: {submission.category} · Review board: {submission.reviewBoard}</p></Card>
+      <Card className="p-5"><div className="flex gap-2"><StatusBadge status={data.assignment.status}/>{round.blind?<Badge tone="primary">Blind</Badge>:null}</div><p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed">{submission.abstract}</p><p className="mt-4 text-xs text-mid">Category: {submission.category} · Review board: {submission.reviewBoard}</p></Card>
       <Card className="p-5"><h2 className="mb-4 font-bold">Scorecard</h2>{round.criteria.map((criterion:any) => <Field key={criterion.id} label={`${criterion.label}${criterion.weight ? ` · ${criterion.weight}× weight` : ""}`}>
-        {criterion.type === "rating" ? <div><input className="w-full accent-iris" type="range" min={1} max={5} value={Number(responses[criterion.id] || 3)} onChange={e=>setResponses(x=>({...x,[criterion.id]:Number(e.target.value)}))}/><div className="text-right text-xs font-bold">{responses[criterion.id] || 3}/5</div></div> : criterion.type === "select" ? <Select value={String(responses[criterion.id]||"")} onChange={e=>setResponses(x=>({...x,[criterion.id]:e.target.value}))}><option value="">Select…</option>{criterion.options?.map((o:string)=><option key={o}>{o}</option>)}</Select> : <Textarea value={String(responses[criterion.id]||"")} onChange={e=>setResponses(x=>({...x,[criterion.id]:e.target.value}))}/>} 
+        {criterion.type === "rating" ? <div><input className="w-full accent-ink" type="range" min={1} max={5} value={Number(responses[criterion.id] || 3)} onChange={e=>setResponses(x=>({...x,[criterion.id]:Number(e.target.value)}))}/><div className="text-right text-xs font-bold">{responses[criterion.id] || 3}/5</div></div> : criterion.type === "select" ? <Select value={String(responses[criterion.id]||"")} onChange={e=>setResponses(x=>({...x,[criterion.id]:e.target.value}))}><option value="">Select…</option>{criterion.options?.map((o:string)=><option key={o}>{o}</option>)}</Select> : <Textarea value={String(responses[criterion.id]||"")} onChange={e=>setResponses(x=>({...x,[criterion.id]:e.target.value}))}/>} 
       </Field>)}<div className="flex flex-wrap gap-2"><Button onClick={async()=>{await api.submitAssignment(data.assignment.id,{responses});toast("Evaluation submitted");nav("/r/done")}}>Submit evaluation</Button><Button variant="danger" onClick={async()=>{await api.recuseAssignment(data.assignment.id,"Reviewer-declared conflict of interest");toast("Conflict logged; assignment removed");nav("/r")}}>Declare conflict / recuse</Button></div></Card>
     </div>
   </div>;

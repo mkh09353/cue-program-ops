@@ -89,14 +89,14 @@ export function SpeakersPage() {
       {progress ? (
         <Card className="mb-4 overflow-x-auto p-4">
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-            <h3 className="text-sm font-bold uppercase tracking-wide text-stone-500">Onboarding progress</h3>
-            <p className="text-xs text-stone-500">
+            <h3 className="text-sm font-bold uppercase tracking-wide text-mid">Onboarding progress</h3>
+            <p className="text-xs text-mid">
               {progress.summary?.ready || 0}/{progress.summary?.speakers || 0} ready · derived from live task state
             </p>
           </div>
           <table className="min-w-full text-left text-xs">
             <thead>
-              <tr className="border-b text-stone-500">
+              <tr className="border-b text-mid">
                 <th className="py-2 pr-3">Speaker</th>
                 <th className="py-2 pr-3">Status</th>
                 <th className="py-2 pr-3">%</th>
@@ -109,9 +109,9 @@ export function SpeakersPage() {
             </thead>
             <tbody>
               {(progress.rows || []).map((r: any) => (
-                <tr key={r.speakerId} className="border-b border-stone-100">
+                <tr key={r.speakerId} className="border-b border-line">
                   <td className="py-2 pr-3 font-semibold">
-                    <Link className="text-indigo-700 hover:underline" to={`/app/speakers/${r.speakerId}`}>
+                    <Link className="text-ink hover:underline" to={`/app/speakers/${r.speakerId}`}>
                       {r.name}
                     </Link>
                   </td>
@@ -143,7 +143,7 @@ export function SpeakersPage() {
           <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Name, company, email…" />
         </Field>
         <Field label="Workflow status">
-          <select className="h-10 w-full rounded-lg border border-stone-300 bg-white px-3 text-sm" value={status} onChange={(e) => setStatus(e.target.value)}>
+          <select className="h-10 w-full rounded-lg border border-line bg-white px-3 text-sm" value={status} onChange={(e) => setStatus(e.target.value)}>
             <option value="">All</option>
             {["invited", "confirmed", "accepted", "declined", "withdrawn"].map((s) => (
               <option key={s} value={s}>
@@ -153,7 +153,7 @@ export function SpeakersPage() {
           </select>
         </Field>
         <Field label="Readiness">
-          <select className="h-10 w-full rounded-lg border border-stone-300 bg-white px-3 text-sm" value={readiness} onChange={(e) => setReadiness(e.target.value)}>
+          <select className="h-10 w-full rounded-lg border border-line bg-white px-3 text-sm" value={readiness} onChange={(e) => setReadiness(e.target.value)}>
             <option value="">All</option>
             <option value="ready">Ready</option>
             <option value="not_ready">Not ready</option>
@@ -186,13 +186,13 @@ export function SpeakersPage() {
                   {s.headshotUrl || s.profile?.headshotUrl ? (
                     <img src={s.headshotUrl || s.profile?.headshotUrl} alt="" className="h-12 w-12 rounded-full object-cover" />
                   ) : (
-                    <div className="grid h-12 w-12 place-items-center rounded-full bg-indigo-100 text-sm font-bold text-indigo-700">
+                    <div className="grid h-12 w-12 place-items-center rounded-full bg-canvas text-sm font-bold text-ink">
                       {(s.name || "?").slice(0, 1)}
                     </div>
                   )}
                   <div>
                     <h3 className="text-lg font-bold">{s.name}</h3>
-                    <p className="text-sm text-stone-500">
+                    <p className="text-sm text-mid">
                       {[s.title, s.company].filter(Boolean).join(" · ") || s.email}
                     </p>
                   </div>
@@ -204,14 +204,14 @@ export function SpeakersPage() {
                   </div>
                 </div>
               </div>
-              <p className="mt-2 text-xs text-stone-500">
+              <p className="mt-2 text-xs text-mid">
                 {s.tasks?.filter((t: any) => t.status === "completed").length || 0}/{s.tasks?.length || 0} tasks · {s.files?.length || 0}{" "}
                 files · {s.sessions?.length || 0} session(s)
               </p>
               {s.readiness?.missing?.length ? (
-                <p className="mt-2 text-xs text-amber-700">Missing: {(s.readiness.missing as string[]).map(humanizeMissing).join(" · ")}</p>
+                <p className="mt-2 text-xs text-ink-soft">Missing: {(s.readiness.missing as string[]).map(humanizeMissing).join(" · ")}</p>
               ) : (
-                <p className="mt-2 text-xs text-emerald-700">Ready for showtime</p>
+                <p className="mt-2 text-xs text-ink">Ready for showtime</p>
               )}
               <div className="mt-3 flex flex-wrap gap-2">
                 <Button asChild size="sm" variant="outline">
@@ -311,7 +311,7 @@ export function SpeakersPage() {
           </Field>
           <Field label="Type">
             <select
-              className="h-10 w-full rounded-lg border border-stone-300 bg-white px-3 text-sm"
+              className="h-10 w-full rounded-lg border border-line bg-white px-3 text-sm"
               value={taskForm.type}
               onChange={(e) => setTaskForm({ ...taskForm, type: e.target.value })}
             >
@@ -320,7 +320,7 @@ export function SpeakersPage() {
               <option value="profile">Profile</option>
             </select>
           </Field>
-          <p className="mb-3 text-xs text-stone-500">
+          <p className="mb-3 text-xs text-mid">
             Assignees: {selected.length ? `${selected.length} selected` : `all ${rows.length} visible speakers`}
           </p>
           <Button
@@ -415,7 +415,7 @@ export function SpeakerDetailPage() {
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card className="p-4">
-          <h3 className="text-xs font-bold uppercase tracking-wide text-stone-500">Profile</h3>
+          <h3 className="text-xs font-bold uppercase tracking-wide text-mid">Profile</h3>
           {edit ? (
             <>
               {(["name", "email", "title", "company", "linkedin", "website", "travelPreference", "dietary"] as const).map((k) => (
@@ -428,7 +428,7 @@ export function SpeakerDetailPage() {
               </Field>
               <Field label="Workflow status">
                 <select
-                  className="h-10 w-full rounded-lg border border-stone-300 bg-white px-3 text-sm"
+                  className="h-10 w-full rounded-lg border border-line bg-white px-3 text-sm"
                   value={edit.workflowStatus}
                   onChange={(e) => setEdit({ ...edit, workflowStatus: e.target.value })}
                 >
@@ -454,29 +454,29 @@ export function SpeakerDetailPage() {
 
         <div className="space-y-4">
           <Card className="p-4">
-            <h3 className="text-xs font-bold uppercase tracking-wide text-stone-500">Sessions</h3>
+            <h3 className="text-xs font-bold uppercase tracking-wide text-mid">Sessions</h3>
             <ul className="mt-2 space-y-2 text-sm">
               {(row.sessions || []).map((s: any) => (
-                <li key={s.id} className="rounded-lg border border-stone-200 p-2">
+                <li key={s.id} className="rounded-lg border border-line p-2">
                   <b>{s.title}</b>
-                  <div className="text-xs text-stone-500">
+                  <div className="text-xs text-mid">
                     {s.status}
                     {s.slot ? ` · ${s.slot.startsAt}` : " · unscheduled"}
                   </div>
                 </li>
               ))}
-              {!row.sessions?.length ? <li className="text-stone-500">No session assignment yet.</li> : null}
+              {!row.sessions?.length ? <li className="text-mid">No session assignment yet.</li> : null}
             </ul>
           </Card>
 
           <Card className="p-4">
-            <h3 className="text-xs font-bold uppercase tracking-wide text-stone-500">Tasks</h3>
+            <h3 className="text-xs font-bold uppercase tracking-wide text-mid">Tasks</h3>
             <ul className="mt-3 divide-y">
               {row.tasks?.map((t: any) => (
                 <li key={t.id} className="flex items-center justify-between gap-2 py-3 text-sm">
                   <div>
                     <b>{t.title}</b>
-                    <div className="text-xs text-stone-500">
+                    <div className="text-xs text-mid">
                       {taskTypeLabel(t.type)} · due {t.dueAt?.slice(0, 10)}
                       {t.formAnswers && Object.keys(t.formAnswers).length ? ` · form submitted` : ""}
                     </div>
@@ -484,35 +484,35 @@ export function SpeakerDetailPage() {
                   <StatusBadge status={t.status} />
                 </li>
               ))}
-              {!row.tasks?.length ? <li className="py-4 text-sm text-stone-500">No onboarding tasks.</li> : null}
+              {!row.tasks?.length ? <li className="py-4 text-sm text-mid">No onboarding tasks.</li> : null}
             </ul>
           </Card>
 
           <Card className="p-4">
-            <h3 className="text-xs font-bold uppercase tracking-wide text-stone-500">Files / deliverables</h3>
+            <h3 className="text-xs font-bold uppercase tracking-wide text-mid">Files / deliverables</h3>
             <ul className="mt-2 space-y-2 text-sm">
               {(row.files || []).map((f: any) => (
-                <li key={f.id} className="rounded border border-stone-200 p-2">
+                <li key={f.id} className="rounded border border-line p-2">
                   <b>{f.name}</b>
-                  <div className="text-xs text-stone-500">
+                  <div className="text-xs text-mid">
                     {f.kind} · {f.createdAt?.slice(0, 19)} · {f.visibility}
                   </div>
                 </li>
               ))}
               {(row.contentFiles || []).map((f: any) => (
-                <li key={f.id} className="rounded border border-stone-200 p-2">
+                <li key={f.id} className="rounded border border-line p-2">
                   <b>{f.currentVersion?.name || f.id}</b>
-                  <div className="text-xs text-stone-500">
+                  <div className="text-xs text-mid">
                     content · {f.status} · {f.currentVersion?.uploadedAt?.slice(0, 19)}
                   </div>
                   {f.currentVersion ? (
-                    <a className="text-xs font-semibold text-indigo-700 underline" href={`/api/content/files/${f.id}/versions/${f.currentVersion.id}`}>
+                    <a className="text-xs font-semibold text-ink underline" href={`/api/content/files/${f.id}/versions/${f.currentVersion.id}`}>
                       View / download
                     </a>
                   ) : null}
                 </li>
               ))}
-              {!row.files?.length && !row.contentFiles?.length ? <li className="text-stone-500">No files yet.</li> : null}
+              {!row.files?.length && !row.contentFiles?.length ? <li className="text-mid">No files yet.</li> : null}
             </ul>
           </Card>
         </div>
@@ -578,14 +578,14 @@ export function CommsPage() {
 
       <div className="grid gap-4 lg:grid-cols-[200px_1fr_1fr]">
         <Card className="p-3">
-          <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-stone-500">Templates</h3>
+          <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-mid">Templates</h3>
           <div className="space-y-1">
             {templates.map((t) => (
               <button
                 key={t.id}
                 type="button"
                 onClick={() => setActive(t)}
-                className={`w-full rounded-lg px-3 py-2 text-left text-sm font-semibold ${active?.id === t.id ? "bg-ink text-white" : "hover:bg-stone-100"}`}
+                className={`w-full rounded-lg px-3 py-2 text-left text-sm font-semibold ${active?.id === t.id ? "bg-ink text-white" : "hover:bg-canvas"}`}
               >
                 {t.name}
               </button>
@@ -611,7 +611,7 @@ export function CommsPage() {
                 Include calendar invitation language (downloadable ICS — not calendar push)
               </label>
 
-              <div className="mb-3 max-h-40 space-y-1 overflow-auto rounded-lg border border-stone-200 p-2">
+              <div className="mb-3 max-h-40 space-y-1 overflow-auto rounded-lg border border-line p-2">
                 <label className="flex items-center gap-2 text-xs font-semibold">
                   <input
                     type="checkbox"
@@ -675,10 +675,10 @@ export function CommsPage() {
               </div>
 
               {preview ? (
-                <div className="mt-4 rounded-xl border border-indigo-100 bg-indigo-50/50 p-3 text-sm">
-                  <div className="text-xs font-bold uppercase text-indigo-700">Per-recipient preview</div>
+                <div className="mt-4 rounded-[18px] border border-line bg-soft p-3 text-sm">
+                  <div className="text-xs font-bold uppercase text-ink">Per-recipient preview</div>
                   <div className="mt-1 font-semibold">{preview.subject}</div>
-                  <pre className="mt-2 whitespace-pre-wrap text-xs text-stone-700">{preview.body}</pre>
+                  <pre className="mt-2 whitespace-pre-wrap text-xs text-ink-soft">{preview.body}</pre>
                 </div>
               ) : null}
             </>
@@ -686,20 +686,20 @@ export function CommsPage() {
         </Card>
 
         <Card className="p-4">
-          <h3 className="text-xs font-bold uppercase tracking-wide text-stone-500">Per-recipient send log</h3>
+          <h3 className="text-xs font-bold uppercase tracking-wide text-mid">Per-recipient send log</h3>
           <ul className="mt-3 max-h-[520px] space-y-2 overflow-auto">
             {log.map((c) => (
-              <li key={c.id} className="rounded-xl border border-stone-200 p-3 text-sm">
+              <li key={c.id} className="rounded-[18px] border border-line p-3 text-sm">
                 <div className="flex items-center justify-between gap-2">
                   <b>{c.subject}</b>
                   <StatusBadge status={c.status || "mock_sent"} />
                 </div>
-                <p className="mt-1 text-xs text-stone-500">
+                <p className="mt-1 text-xs text-mid">
                   {c.recipientName || c.speakerId} · {c.recipientEmail || "no email"} · {formatStatus(c.kind)} · {c.createdAt}
                 </p>
-                <p className="mt-1 text-[11px] text-stone-500">{c.deliveryNote || (c.status === "mock_sent" ? "Mock delivery" : "")}</p>
-                <p className="mt-2 line-clamp-3 whitespace-pre-wrap text-xs text-stone-600">{c.body}</p>
-                <a className="mt-2 inline-block text-xs font-semibold text-indigo-700" href={`/api/communications/${c.id}/calendar.ics`}>
+                <p className="mt-1 text-[11px] text-mid">{c.deliveryNote || (c.status === "mock_sent" ? "Mock delivery" : "")}</p>
+                <p className="mt-2 line-clamp-3 whitespace-pre-wrap text-xs text-mid">{c.body}</p>
+                <a className="mt-2 inline-block text-xs font-semibold text-ink" href={`/api/communications/${c.id}/calendar.ics`}>
                   Download ICS (not calendar-push)
                 </a>
               </li>

@@ -127,7 +127,7 @@ export function SchedulePage() {
         description="Drag accepted sessions onto rooms. Hard room/speaker conflicts are blocked server-side."
         actions={
           <a
-            className="text-sm font-semibold text-iris"
+            className="text-sm font-semibold text-ink"
             href={`/public/events/${EVENT_ID}/itinerary`}
             target="_blank"
             rel="noreferrer"
@@ -154,10 +154,10 @@ export function SchedulePage() {
             {v.charAt(0).toUpperCase() + v.slice(1)}
           </Button>
         ))}
-        <label className="ml-auto flex items-center gap-2 text-xs font-semibold text-stone-600">
+        <label className="ml-auto flex items-center gap-2 text-xs font-semibold text-mid">
           Drop hour (UTC)
           <select
-            className="h-8 rounded-md border border-stone-300 px-2"
+            className="h-8 rounded-md border border-line px-2"
             value={hour}
             aria-label="Drop hour UTC"
             onChange={(e) => setHour(Number(e.target.value))}
@@ -174,14 +174,14 @@ export function SchedulePage() {
         <Button size="sm" onClick={async()=>{const r=await api.publishAgenda();toast(`${r.data.count} sessions published`);load();window.open(r.data.publicUrl,"_blank")}}>Publish agenda</Button>
       </div>
 
-      <Card className="mb-4 border-indigo-200 p-4" id="ai-agenda">
-        <div className="flex flex-wrap items-start justify-between gap-3"><div><Badge tone="primary">AI Agenda · advisory</Badge><h2 className="mt-2 text-xl font-bold">Heuristic schedule assistant</h2><p className="text-sm text-stone-600">Deterministic demo heuristic only—not a model. It creates a persisted review draft and never changes the live schedule until you accept placements.</p></div><div className="flex gap-2"><Button onClick={async()=>{setBusy(true);try{await api.generateAgenda(constraints);toast("Reviewable agenda draft generated");loadAgenda()}catch(e:any){setErr(e.message)}finally{setBusy(false)}}} disabled={busy}>{agenda.length?"Regenerate draft":"Generate draft"}</Button>{agenda[0]?.status==="review"?<><Button variant="secondary" onClick={async()=>{await api.decideAgenda(agenda[0].id,"accept");toast("Accepted conflict-free placements through canonical schedule mutation");load();loadAgenda()}}>Accept all</Button><Button variant="outline" onClick={async()=>{await api.decideAgenda(agenda[0].id,"reject");toast("Proposal rejected; live schedule unchanged");loadAgenda()}}>Reject all</Button></>:null}</div></div>
-        <div className="mt-3 flex flex-wrap gap-3">{Object.entries(constraints).map(([key,value])=><label key={key} className="text-xs font-semibold text-stone-600">{key.replace(/([A-Z])/g," $1")}<input className="ml-2 w-16 rounded border px-2 py-1" type="number" value={value} onChange={e=>setConstraints(x=>({...x,[key]:Number(e.target.value)}))}/></label>)}</div>
-        {agenda[0]?<div className="mt-4"><p className="text-xs text-stone-500">Generation {agenda[0].generation} · {new Date(agenda[0].generatedAt).toLocaleString()} · provenance: {agenda[0].provenance}</p><div className="mt-2 grid gap-2 lg:grid-cols-2">{agenda[0].placements.map((p:any)=>{const s=session(p.sessionId),room=d?.rooms.find((r:any)=>r.id===p.slot.roomId);return <article key={p.id} className="rounded-xl border p-3"><div className="flex justify-between gap-2"><b>{s?.title||p.sessionId}</b><Badge tone={p.status==="accepted"?"ok":p.status==="conflict"?"danger":"primary"}>{p.status}</Badge></div><p className="mt-1 text-sm">{fmtDate(p.slot.startsAt)} · {fmtTime(p.slot.startsAt)} · {room?.name}</p><p className="mt-2 text-xs text-stone-500">Why: {p.rationale}</p>{p.conflicts?.length?<Notice tone="danger">{p.conflicts.join(" ")}</Notice>:null}{p.status==="proposed"?<div className="mt-2 flex gap-2"><Button size="sm" onClick={async()=>{try{await api.decideAgendaPlacement(agenda[0].id,p.id,"accept");toast("Placement applied through canonical conflict checks");load();loadAgenda()}catch(e:any){setErr(`AI proposal blocked: ${e.message}`);loadAgenda()}}}>Accept</Button><Button size="sm" variant="outline" onClick={async()=>{await api.decideAgendaPlacement(agenda[0].id,p.id,"reject");loadAgenda()}}>Reject</Button></div>:null}</article>})}</div>{!agenda[0].placements.length?<EmptyState title="No eligible unscheduled sessions" description="Accept a session or move one back to the pool, then regenerate."/>:null}</div>:null}
+      <Card className="mb-4 border-line p-4" id="ai-agenda">
+        <div className="flex flex-wrap items-start justify-between gap-3"><div><Badge tone="primary">AI Agenda · advisory</Badge><h2 className="mt-2 text-xl font-bold">Heuristic schedule assistant</h2><p className="text-sm text-mid">Deterministic demo heuristic only—not a model. It creates a persisted review draft and never changes the live schedule until you accept placements.</p></div><div className="flex gap-2"><Button onClick={async()=>{setBusy(true);try{await api.generateAgenda(constraints);toast("Reviewable agenda draft generated");loadAgenda()}catch(e:any){setErr(e.message)}finally{setBusy(false)}}} disabled={busy}>{agenda.length?"Regenerate draft":"Generate draft"}</Button>{agenda[0]?.status==="review"?<><Button variant="secondary" onClick={async()=>{await api.decideAgenda(agenda[0].id,"accept");toast("Accepted conflict-free placements through canonical schedule mutation");load();loadAgenda()}}>Accept all</Button><Button variant="outline" onClick={async()=>{await api.decideAgenda(agenda[0].id,"reject");toast("Proposal rejected; live schedule unchanged");loadAgenda()}}>Reject all</Button></>:null}</div></div>
+        <div className="mt-3 flex flex-wrap gap-3">{Object.entries(constraints).map(([key,value])=><label key={key} className="text-xs font-semibold text-mid">{key.replace(/([A-Z])/g," $1")}<input className="ml-2 w-16 rounded border px-2 py-1" type="number" value={value} onChange={e=>setConstraints(x=>({...x,[key]:Number(e.target.value)}))}/></label>)}</div>
+        {agenda[0]?<div className="mt-4"><p className="text-xs text-mid">Generation {agenda[0].generation} · {new Date(agenda[0].generatedAt).toLocaleString()} · provenance: {agenda[0].provenance}</p><div className="mt-2 grid gap-2 lg:grid-cols-2">{agenda[0].placements.map((p:any)=>{const s=session(p.sessionId),room=d?.rooms.find((r:any)=>r.id===p.slot.roomId);return <article key={p.id} className="rounded-[18px] border p-3"><div className="flex justify-between gap-2"><b>{s?.title||p.sessionId}</b><Badge tone={p.status==="accepted"?"ok":p.status==="conflict"?"danger":"primary"}>{p.status}</Badge></div><p className="mt-1 text-sm">{fmtDate(p.slot.startsAt)} · {fmtTime(p.slot.startsAt)} · {room?.name}</p><p className="mt-2 text-xs text-mid">Why: {p.rationale}</p>{p.conflicts?.length?<Notice tone="danger">{p.conflicts.join(" ")}</Notice>:null}{p.status==="proposed"?<div className="mt-2 flex gap-2"><Button size="sm" onClick={async()=>{try{await api.decideAgendaPlacement(agenda[0].id,p.id,"accept");toast("Placement applied through canonical conflict checks");load();loadAgenda()}catch(e:any){setErr(`AI proposal blocked: ${e.message}`);loadAgenda()}}}>Accept</Button><Button size="sm" variant="outline" onClick={async()=>{await api.decideAgendaPlacement(agenda[0].id,p.id,"reject");loadAgenda()}}>Reject</Button></div>:null}</article>})}</div>{!agenda[0].placements.length?<EmptyState title="No eligible unscheduled sessions" description="Accept a session or move one back to the pool, then regenerate."/>:null}</div>:null}
       </Card>
 
       {d?.warnings?.length ? (
-        <Card className="mb-4 border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+        <Card className="mb-4 border-line bg-canvas p-3 text-sm text-ink">
           <b>
             {d.warnings.length} unscheduled accepted session{d.warnings.length === 1 ? "" : "s"}
           </b>
@@ -196,20 +196,20 @@ export function SchedulePage() {
       <div className="grid gap-4 lg:grid-cols-[260px_1fr]">
         <Card className="p-4 lg:sticky lg:top-24 lg:self-start">
           <h3 className="text-sm font-bold">Unscheduled pool</h3>
-          <p className="mt-1 text-xs text-stone-500">Accepted sessions needing a room. Drag onto a lane.</p>
+          <p className="mt-1 text-xs text-mid">Accepted sessions needing a room. Drag onto a lane.</p>
           <div className="mt-3 space-y-2">
             {unscheduled.map((x: any) => (
               <article
                 key={x.id}
                 draggable
                 onDragStart={() => setDrag(x.id)}
-                className="cursor-grab rounded-xl border border-stone-200 bg-stone-50 p-3 active:cursor-grabbing"
+                className="cursor-grab rounded-[18px] border border-line bg-soft p-3 active:cursor-grabbing"
               >
                 <Badge tone="primary">
                   {x.trackIds?.map((i: string) => d.tracks.find((t: any) => t.id === i)?.name).join(" · ")}
                 </Badge>
                 <div className="mt-1 text-sm font-semibold">{x.title}</div>
-                <div className="text-xs text-stone-500">
+                <div className="text-xs text-mid">
                   {x.speakerIds?.map((i: string) => d.speakers.find((q: any) => q.id === i)?.name).join(", ")}
                 </div>
                 <div className="mt-2 flex flex-wrap gap-1 md:hidden">
@@ -228,7 +228,7 @@ export function SchedulePage() {
         </Card>
 
         <Card className="p-4">
-          <div className="mb-3 flex items-center justify-between text-[11px] font-bold uppercase tracking-wider text-stone-500">
+          <div className="mb-3 flex items-center justify-between text-[11px] font-bold uppercase tracking-wider text-mid">
             <span>
               {view} view · program week · seed day {seedDayLabel}
             </span>
@@ -243,7 +243,7 @@ export function SchedulePage() {
                   <div key={slot.id} className="flex flex-wrap items-center justify-between gap-2 py-3 text-sm">
                     <div>
                       <b>{s?.title}</b>
-                      <div className="text-xs text-stone-500">
+                      <div className="text-xs text-mid">
                         {fmtDate(slot.startsAt)} · {fmtTime(slot.startsAt)}–{fmtTime(slot.endsAt)} ·{" "}
                         {d.rooms.find((r: any) => r.id === slot.roomId)?.name}
                       </div>
@@ -256,7 +256,7 @@ export function SchedulePage() {
                 <div key={x.id} className="flex flex-wrap items-center justify-between gap-2 py-3 text-sm">
                   <div>
                     <b>{x.title}</b>
-                    <div className="text-xs text-warn">Accepted · not on grid yet</div>
+                    <div className="text-xs text-ink-soft">Accepted · not on grid yet</div>
                   </div>
                   <div className="flex flex-wrap gap-1">
                     {(d.rooms || []).map((room: any) => (
@@ -279,7 +279,7 @@ export function SchedulePage() {
                 return (
                   <section
                     key={day.id}
-                    className="rounded-xl border border-stone-200 p-3"
+                    className="rounded-[18px] border border-line p-3"
                     onDragOver={(e) => e.preventDefault()}
                     onDrop={() => {
                       if (!drag) return;
@@ -293,13 +293,13 @@ export function SchedulePage() {
                     }}
                   >
                     <h3 className="text-sm font-bold">{day.label}</h3>
-                    <p className="text-[11px] text-stone-500">{day.dateLabel} · UTC grid</p>
-                    <div className="mt-2 min-h-28 rounded-lg border border-dashed border-stone-300 p-2">
+                    <p className="text-[11px] text-mid">{day.dateLabel} · UTC grid</p>
+                    <div className="mt-2 min-h-28 rounded-lg border border-dashed border-line p-2">
                       {daySlots.length ? (
                         daySlots.map((slot: any) => {
                           const s = session(slot.sessionId);
                           return (
-                            <div key={slot.id} className="mb-2 rounded-lg bg-stone-50 p-2 text-xs">
+                            <div key={slot.id} className="mb-2 rounded-lg bg-soft p-2 text-xs">
                               <b className="text-sm">{s?.title}</b>
                               <div>
                                 {fmtTime(slot.startsAt)} · {d.rooms.find((r: any) => r.id === slot.roomId)?.name}
@@ -308,8 +308,8 @@ export function SchedulePage() {
                           );
                         })
                       ) : (
-                        <div className="flex h-full min-h-24 flex-col justify-center text-center text-xs text-stone-500">
-                          <p className="font-semibold text-stone-600">Open day</p>
+                        <div className="flex h-full min-h-24 flex-col justify-center text-center text-xs text-mid">
+                          <p className="font-semibold text-mid">Open day</p>
                           <p className="mt-1">
                             Demo seed places sessions on {PROGRAM_DAYS[0].short}. Drop here to schedule onto{" "}
                             {day.short}.
@@ -326,7 +326,7 @@ export function SchedulePage() {
               {(view === "track" ? trackLanes : roomLanes).map((lane: any) => (
                 <section
                   key={lane.id}
-                  className="rounded-xl border border-stone-200 p-3"
+                  className="rounded-[18px] border border-line p-3"
                   onDragOver={(e) => e.preventDefault()}
                   onDrop={() => {
                     if (!drag) return;
@@ -337,9 +337,9 @@ export function SchedulePage() {
                 >
                   <div className="mb-2 flex items-center justify-between">
                     <h3 className="text-sm font-bold">{lane.name}</h3>
-                    <span className="text-[11px] text-stone-500">Drop → {hour}:00 UTC</span>
+                    <span className="text-[11px] text-mid">Drop → {hour}:00 UTC</span>
                   </div>
-                  <div className="min-h-16 rounded-lg border border-dashed border-stone-300 bg-stone-50/50 p-2">
+                  <div className="min-h-16 rounded-lg border border-dashed border-line bg-soft/50 p-2">
                     {items
                       .filter((slot: any) => {
                         const s = session(slot.sessionId);
@@ -355,11 +355,11 @@ export function SchedulePage() {
                             onDragStart={() => setDrag(s.id)}
                             className="mb-2 cursor-grab rounded-lg border-l-4 border-l-lime bg-white p-2 shadow-sm"
                           >
-                            <div className="text-[11px] font-bold text-stone-500">
+                            <div className="text-[11px] font-bold text-mid">
                               {fmtTime(slot.startsAt)}–{fmtTime(slot.endsAt)}
                             </div>
                             <div className="text-sm font-semibold">{s?.title}</div>
-                            <div className="text-xs text-stone-500">
+                            <div className="text-xs text-mid">
                               {s?.speakerIds
                                 ?.map((i: string) => d.speakers.find((q: any) => q.id === i)?.name)
                                 .join(", ")}
@@ -404,14 +404,14 @@ export function SchedulePage() {
       >
         {pending ? (
           <div className="space-y-3 text-sm">
-            <ul className="list-disc space-y-1 pl-5 text-amber-900">
+            <ul className="list-disc space-y-1 pl-5 text-ink">
               {pending.warnings.map((w) => (
                 <li key={w.id}>{w.message}</li>
               ))}
             </ul>
             {pending.alternatives?.length ? (
               <div>
-                <div className="mb-2 text-xs font-bold uppercase tracking-wide text-stone-500">
+                <div className="mb-2 text-xs font-bold uppercase tracking-wide text-mid">
                   Suggested alternatives
                 </div>
                 <div className="space-y-2">
@@ -419,7 +419,7 @@ export function SchedulePage() {
                     <button
                       key={i}
                       type="button"
-                      className="flex w-full items-center justify-between rounded-xl border border-stone-200 px-3 py-2 text-left hover:border-iris/40"
+                      className="flex w-full items-center justify-between rounded-[18px] border border-line px-3 py-2 text-left hover:border-ink/20"
                       onClick={() => {
                         const slot = {
                           ...pending.slot,
@@ -434,13 +434,13 @@ export function SchedulePage() {
                         {alt.label ||
                           `${alt.roomName || alt.roomId || "Room"} · ${alt.startsAt ? fmtTime(alt.startsAt) : "suggested time"}`}
                       </span>
-                      <span className="text-xs font-semibold text-iris">Use</span>
+                      <span className="text-xs font-semibold text-ink">Use</span>
                     </button>
                   ))}
                 </div>
               </div>
             ) : (
-              <p className="text-xs text-stone-500">No alternate slots returned by the validator.</p>
+              <p className="text-xs text-mid">No alternate slots returned by the validator.</p>
             )}
           </div>
         ) : null}

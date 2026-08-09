@@ -5,21 +5,21 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn, formatStatus, renderSimpleMarkdown } from "../lib/utils";
 
 export const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-iris focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50",
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[18px] text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink focus-visible:ring-offset-2 focus-visible:ring-offset-canvas disabled:pointer-events-none disabled:opacity-50",
   {
     variants: {
       variant: {
-        default: "bg-iris text-white hover:bg-iris/90",
-        secondary: "bg-stone-200 text-ink hover:bg-stone-300",
-        outline: "border border-stone-300 bg-white hover:bg-stone-50",
-        ghost: "hover:bg-stone-100",
+        default: "bg-ink text-soft hover:bg-ink-soft",
+        secondary: "bg-canvas text-ink hover:bg-line",
+        outline: "border border-line bg-paper text-ink hover:bg-soft",
+        ghost: "bg-transparent text-ink hover:bg-canvas",
         danger: "bg-danger text-white hover:bg-danger/90",
-        dark: "bg-ink text-white hover:bg-ink/90",
+        dark: "bg-ink text-soft hover:bg-ink-soft",
       },
       size: {
-        default: "h-10 px-4 py-2",
-        sm: "h-8 rounded-md px-3 text-xs",
-        lg: "h-11 px-6",
+        default: "h-9 px-4 py-2",
+        sm: "h-8 rounded-[18px] px-3 text-xs",
+        lg: "h-10 px-5",
         icon: "h-9 w-9",
       },
     },
@@ -44,7 +44,7 @@ Button.displayName = "Button";
 export function Card({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
   return (
     <div
-      className={cn("rounded-2xl border border-stone-200/80 bg-white shadow-sm", className)}
+      className={cn("rounded-[24px] border border-line bg-paper shadow-card", className)}
       {...props}
     />
   );
@@ -58,19 +58,20 @@ export function Badge({
 }: React.HTMLAttributes<HTMLSpanElement> & {
   tone?: "ok" | "warn" | "danger" | "info" | "muted" | "ai" | "primary";
 }) {
+  // Monochrome Paper: only danger keeps red; other tones are ink/muted hierarchy.
   const tones: Record<string, string> = {
-    ok: "bg-emerald-50 text-ok border-emerald-200",
-    warn: "bg-amber-50 text-warn border-amber-200",
-    danger: "bg-red-50 text-danger border-red-200",
-    info: "bg-sky-50 text-info border-sky-200",
-    muted: "bg-stone-100 text-stone-600 border-stone-200",
-    ai: "bg-violet-50 text-ai border-violet-200",
-    primary: "bg-indigo-50 text-iris border-indigo-200",
+    ok: "bg-ink-soft text-soft border-transparent",
+    warn: "bg-canvas text-ink border-line",
+    danger: "bg-danger/10 text-danger border-danger/20",
+    info: "bg-canvas text-mid border-line",
+    muted: "bg-canvas text-ink border-line",
+    ai: "bg-canvas text-ink border-line",
+    primary: "bg-ink text-soft border-transparent",
   };
   return (
     <span
       className={cn(
-        "inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-bold tracking-wide",
+        "inline-flex items-center rounded-[18px] border px-2 py-0.5 text-xs font-medium tracking-wide",
         tones[tone],
         className,
       )}
@@ -97,24 +98,19 @@ export function PageHeader({
   return (
     <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight text-ink sm:text-3xl">{title}</h1>
-        {description ? <p className="mt-1 max-w-2xl text-sm text-stone-500">{description}</p> : null}
+        <h1 className="text-2xl font-semibold tracking-tight text-ink sm:text-3xl">{title}</h1>
+        {description ? <p className="mt-1 max-w-2xl text-sm text-mid">{description}</p> : null}
       </div>
       {actions ? <div className="flex flex-wrap gap-2">{actions}</div> : null}
     </div>
   );
 }
 
+const fieldControl =
+  "h-9 w-full rounded-[18px] border border-transparent bg-canvas px-2.5 text-sm text-ink outline-none placeholder:text-mid focus:border-line focus:ring-0";
+
 export function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
-  return (
-    <input
-      {...props}
-      className={cn(
-        "h-10 w-full rounded-lg border border-stone-300 bg-white px-3 text-sm outline-none ring-iris focus:ring-2",
-        props.className,
-      )}
-    />
-  );
+  return <input {...props} className={cn(fieldControl, props.className)} />;
 }
 
 export function Textarea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
@@ -122,7 +118,7 @@ export function Textarea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement
     <textarea
       {...props}
       className={cn(
-        "min-h-24 w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm outline-none ring-iris focus:ring-2",
+        "min-h-24 w-full rounded-[18px] border border-transparent bg-canvas px-2.5 py-2 text-sm text-ink outline-none placeholder:text-mid focus:border-line focus:ring-0",
         props.className,
       )}
     />
@@ -130,19 +126,11 @@ export function Textarea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement
 }
 
 export function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
-  return (
-    <select
-      {...props}
-      className={cn(
-        "h-10 w-full rounded-lg border border-stone-300 bg-white px-3 text-sm outline-none ring-iris focus:ring-2",
-        props.className,
-      )}
-    />
-  );
+  return <select {...props} className={cn(fieldControl, props.className)} />;
 }
 
 export function Label({ className, ...props }: React.LabelHTMLAttributes<HTMLLabelElement>) {
-  return <label className={cn("mb-1 block text-xs font-semibold text-stone-600", className)} {...props} />;
+  return <label className={cn("mb-1 block text-xs font-medium text-mid", className)} {...props} />;
 }
 
 export function Field({
@@ -158,7 +146,7 @@ export function Field({
     <div className="mb-3">
       <Label>{label}</Label>
       {children}
-      {hint ? <p className="mt-1 text-xs text-stone-500">{hint}</p> : null}
+      {hint ? <p className="mt-1 text-xs text-mid">{hint}</p> : null}
     </div>
   );
 }
@@ -173,9 +161,9 @@ export function EmptyState({
   action?: React.ReactNode;
 }) {
   return (
-    <div className="rounded-2xl border border-dashed border-stone-300 bg-white/60 p-8 text-center">
-      <h3 className="text-base font-semibold">{title}</h3>
-      {description ? <p className="mx-auto mt-2 max-w-md text-sm text-stone-500">{description}</p> : null}
+    <div className="rounded-[24px] border border-dashed border-line bg-paper p-8 text-center">
+      <h3 className="text-base font-semibold text-ink">{title}</h3>
+      {description ? <p className="mx-auto mt-2 max-w-md text-sm text-mid">{description}</p> : null}
       {action ? <div className="mt-4 flex justify-center">{action}</div> : null}
     </div>
   );
@@ -191,19 +179,22 @@ export function Notice({
   onClose?: () => void;
 }) {
   const map = {
-    info: "bg-sky-50 text-sky-900 border-sky-200",
-    ok: "bg-emerald-50 text-emerald-900 border-emerald-200",
-    warn: "bg-amber-50 text-amber-900 border-amber-200",
-    danger: "bg-red-50 text-red-900 border-red-200",
+    info: "bg-canvas text-ink border-line",
+    ok: "bg-soft text-ink border-line",
+    warn: "bg-canvas text-ink-soft border-line",
+    danger: "bg-danger/10 text-danger border-danger/20",
   };
   return (
     <div
       role="status"
-      className={cn("mb-4 flex items-start justify-between gap-3 rounded-xl border px-3 py-2 text-sm", map[tone])}
+      className={cn(
+        "mb-4 flex items-start justify-between gap-3 rounded-[18px] border px-3 py-2 text-sm",
+        map[tone],
+      )}
     >
       <div>{children}</div>
       {onClose ? (
-        <button type="button" className="font-bold opacity-60" onClick={onClose} aria-label="Dismiss">
+        <button type="button" className="font-medium opacity-60" onClick={onClose} aria-label="Dismiss">
           ×
         </button>
       ) : null}
@@ -228,13 +219,13 @@ export function KpiTile({
       type={onClick ? "button" : undefined}
       onClick={onClick}
       className={cn(
-        "rounded-2xl border border-stone-200 bg-white p-4 text-left shadow-sm transition",
-        onClick && "hover:border-iris/40 hover:shadow",
+        "rounded-[24px] border border-line bg-paper p-5 text-left shadow-card transition",
+        onClick && "hover:border-ink/20 hover:shadow-card",
       )}
     >
-      <div className="text-[11px] font-bold uppercase tracking-wider text-stone-500">{label}</div>
-      <div className="mt-2 text-3xl font-bold tracking-tight text-ink sm:text-4xl">{value}</div>
-      {hint ? <div className="mt-1 text-xs text-stone-500">{hint}</div> : null}
+      <div className="text-xs font-medium uppercase tracking-wide text-mid">{label}</div>
+      <div className="mt-2 text-3xl font-semibold tracking-tight text-ink sm:text-4xl">{value}</div>
+      {hint ? <div className="mt-1 text-xs text-mid">{hint}</div> : null}
     </Comp>
   );
 }
@@ -251,7 +242,7 @@ export function statusTone(status: string): React.ComponentProps<typeof Badge>["
 
 export function Spinner() {
   return (
-    <div className="grid min-h-[40vh] place-items-center text-sm font-semibold text-stone-500" role="status">
+    <div className="grid min-h-[40vh] place-items-center text-sm font-medium text-mid" role="status">
       Loading…
     </div>
   );
@@ -260,7 +251,7 @@ export function Spinner() {
 export function Markdown({ text, className }: { text: string; className?: string }) {
   return (
     <div
-      className={cn("text-sm leading-relaxed text-stone-700 [&_strong]:font-semibold [&_strong]:text-ink", className)}
+      className={cn("text-sm leading-relaxed text-ink-soft [&_strong]:font-semibold [&_strong]:text-ink", className)}
       dangerouslySetInnerHTML={{ __html: renderSimpleMarkdown(text) }}
     />
   );
@@ -303,11 +294,11 @@ export function ToastViewport() {
         <div
           key={t.id}
           className={cn(
-            "pointer-events-auto rounded-xl border px-4 py-3 text-sm font-medium shadow-lg",
-            t.tone === "ok" && "border-emerald-200 bg-emerald-50 text-emerald-950",
-            t.tone === "warn" && "border-amber-200 bg-amber-50 text-amber-950",
-            t.tone === "danger" && "border-red-200 bg-red-50 text-red-950",
-            t.tone === "info" && "border-sky-200 bg-sky-50 text-sky-950",
+            "pointer-events-auto rounded-[18px] border px-4 py-3 text-sm font-medium shadow-card",
+            t.tone === "ok" && "border-line bg-paper text-ink",
+            t.tone === "warn" && "border-line bg-canvas text-ink",
+            t.tone === "danger" && "border-danger/20 bg-danger/10 text-danger",
+            t.tone === "info" && "border-line bg-soft text-ink",
           )}
         >
           {t.message}
@@ -357,12 +348,12 @@ export function Dialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby="cue-dialog-title"
-        className="relative z-10 w-full max-w-lg rounded-2xl border border-stone-200 bg-white p-5 shadow-xl"
+        className="relative z-10 w-full max-w-lg rounded-[24px] border border-line bg-paper p-5 shadow-card"
       >
-        <h2 id="cue-dialog-title" className="text-lg font-bold tracking-tight">
+        <h2 id="cue-dialog-title" className="text-lg font-semibold tracking-tight text-ink">
           {title}
         </h2>
-        {description ? <p className="mt-1 text-sm text-stone-500">{description}</p> : null}
+        {description ? <p className="mt-1 text-sm text-mid">{description}</p> : null}
         {children ? <div className="mt-4">{children}</div> : null}
         {footer ? <div className="mt-5 flex flex-wrap justify-end gap-2">{footer}</div> : null}
       </div>

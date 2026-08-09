@@ -91,7 +91,7 @@ export function SubmissionsListPage() {
       <Card className="overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[720px] text-left text-sm">
-            <thead className="border-b bg-stone-50 text-[11px] uppercase tracking-wide text-stone-500">
+            <thead className="border-b bg-soft text-[11px] uppercase tracking-wide text-mid">
               <tr>
                 <th className="px-4 py-3">Title</th>
                 <th className="px-4 py-3">Speaker</th>
@@ -104,12 +104,12 @@ export function SubmissionsListPage() {
             </thead>
             <tbody>
               {enriched.map((s) => (
-                <tr key={s.id} className="border-b last:border-0 hover:bg-stone-50">
+                <tr key={s.id} className="border-b last:border-0 hover:bg-soft">
                   <td className="px-4 py-3">
-                    <Link className="font-semibold text-ink hover:text-iris" to={`/app/submissions/${s.id}`}>
+                    <Link className="font-semibold text-ink hover:text-ink" to={`/app/submissions/${s.id}`}>
                       {s.title}
                     </Link>
-                    <div className="text-xs text-stone-500">{s.format}</div>
+                    <div className="text-xs text-mid">{s.format}</div>
                   </td>
                   <td className="px-4 py-3">{s.name}</td>
                   <td className="px-4 py-3">{s.category}</td>
@@ -200,12 +200,12 @@ export function ReviewStudioPage() {
             <Badge tone="info">Board · {data.reviewBoard}</Badge>
           </div>
           <h2 className="text-2xl font-bold tracking-tight">{data.title}</h2>
-          <p className="mt-1 text-sm text-stone-500">
+          <p className="mt-1 text-sm text-mid">
             {data.name} · {data.email}
           </p>
-          <p className="mt-4 whitespace-pre-wrap text-sm leading-relaxed text-stone-700">{data.abstract}</p>
+          <p className="mt-4 whitespace-pre-wrap text-sm leading-relaxed text-ink-soft">{data.abstract}</p>
           {data.answers?.workshopPlan ? (
-            <div className="mt-4 rounded-xl bg-amber-50 p-3 text-sm">
+            <div className="mt-4 rounded-[18px] bg-canvas p-3 text-sm">
               <b>Workshop plan</b>
               <p className="mt-1">{String(data.answers.workshopPlan)}</p>
               {data.answers.duration ? (
@@ -213,13 +213,13 @@ export function ReviewStudioPage() {
               ) : null}
             </div>
           ) : null}
-          <div className="mt-4 rounded-xl border border-stone-200 p-3">
-            <h3 className="text-xs font-bold uppercase tracking-wide text-stone-500">Submission answers</h3>
+          <div className="mt-4 rounded-[18px] border border-line p-3">
+            <h3 className="text-xs font-bold uppercase tracking-wide text-mid">Submission answers</h3>
             <dl className="mt-2 grid gap-2 text-sm sm:grid-cols-2">
-              {Object.entries(data.answers || {}).filter(([key]) => !["title","abstract","category","format","workshopPlan","duration"].includes(key)).map(([key,value]) => <div key={key}><dt className="text-xs font-semibold text-stone-500">{key.replaceAll("_"," ")}</dt><dd className="whitespace-pre-wrap">{String(value ?? "—")}</dd></div>)}
+              {Object.entries(data.answers || {}).filter(([key]) => !["title","abstract","category","format","workshopPlan","duration"].includes(key)).map(([key,value]) => <div key={key}><dt className="text-xs font-semibold text-mid">{key.replaceAll("_"," ")}</dt><dd className="whitespace-pre-wrap">{String(value ?? "—")}</dd></div>)}
             </dl>
           </div>
-          <div className="mt-4 text-xs text-stone-500">
+          <div className="mt-4 text-xs text-mid">
             Round on submission: <b className="uppercase">{data.round}</b>
           </div>
         </Card>
@@ -239,7 +239,7 @@ export function ReviewStudioPage() {
           <div className="space-y-4">
             {CRITERIA.map((k) => (
               <div key={k}>
-                <div className="mb-1 flex justify-between text-xs font-semibold uppercase tracking-wide text-stone-500">
+                <div className="mb-1 flex justify-between text-xs font-semibold uppercase tracking-wide text-mid">
                   <span>{k}</span>
                   <span>
                     {scores[k] || 0}/5
@@ -253,7 +253,7 @@ export function ReviewStudioPage() {
                   aria-label={`${k} score`}
                   value={scores[k] || 0}
                   onChange={(e) => setScores((s) => ({ ...s, [k]: Number(e.target.value) }))}
-                  className="w-full accent-iris"
+                  className="w-full accent-ink"
                 />
               </div>
             ))}
@@ -353,12 +353,12 @@ export function ReviewStudioPage() {
           </div>
 
           <div className="mt-4 border-t pt-3">
-            <h3 className="text-xs font-bold uppercase tracking-wide text-stone-500">Review history</h3>
-            <ul className="mt-2 space-y-2 text-xs text-stone-600">
+            <h3 className="text-xs font-bold uppercase tracking-wide text-mid">Review history</h3>
+            <ul className="mt-2 space-y-2 text-xs text-mid">
               {data.reviews?.map((r: any) => {
                 const avg = averageScores(r.scores);
                 return (
-                  <li key={r.id} className="rounded-lg bg-stone-50 p-3">
+                  <li key={r.id} className="rounded-lg bg-soft p-3">
                     <div className="flex flex-wrap items-center gap-2">
                       <b className="uppercase">{r.round}</b>
                       <StatusBadge status={r.status} />
@@ -376,14 +376,14 @@ export function ReviewStudioPage() {
                         ))}
                       </div>
                     ) : (
-                      <div className="mt-1 text-stone-400">No scores yet</div>
+                      <div className="mt-1 text-mid">No scores yet</div>
                     )}
-                    {r.notes ? <p className="mt-2 text-stone-600">{r.notes}</p> : null}
+                    {r.notes ? <p className="mt-2 text-mid">{r.notes}</p> : null}
                   </li>
                 );
               })}
               {!data.reviews?.length ? (
-                <li className="text-stone-500">No reviews assigned yet.</li>
+                <li className="text-mid">No reviews assigned yet.</li>
               ) : null}
             </ul>
           </div>
