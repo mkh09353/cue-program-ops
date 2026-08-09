@@ -146,7 +146,21 @@ export function PortalTalksPage() {
   if (err) return <Notice tone="danger">{err}</Notice>;
   return (
     <div>
-      <PageHeader title="My submissions" description="Proposal status and schedule placement." actions={<Button asChild><a href="/e/ai-engineer-summit/cfp">Start another proposal</a></Button>} />
+      <PageHeader
+        title="My submissions"
+        description="Proposal status and schedule placement."
+        actions={
+          data.cfpOpen === false ? (
+            <Button disabled variant="secondary" title={data.cfpClosedReason || "CFP is closed"}>
+              CFP closed
+            </Button>
+          ) : (
+            <Button asChild>
+              <a href="/e/ai-engineer-summit/cfp">Start another proposal</a>
+            </Button>
+          )
+        }
+      />
       <div className="space-y-3">
         {data.submissions.map((s: any) => (
           <Card key={s.id} className="p-4">
@@ -184,7 +198,10 @@ export function PortalTasksPage() {
           >
             <div>
               <div className="font-semibold">{t.title}</div>
-              <div className="text-xs text-mid">{taskTypeLabel(t.type)}</div>
+              <div className="text-xs text-mid">
+                {taskTypeLabel(t.type)}
+                {t.dueAt ? ` · due ${String(t.dueAt).slice(0, 10)}` : ""}
+              </div>
             </div>
             <StatusBadge status={t.status} />
           </Link>
@@ -578,34 +595,38 @@ export function PortalProfilePage() {
         <Field label="Dietary">
           <Input value={profile.dietary || ""} onChange={(e) => setProfile({ ...profile, dietary: e.target.value })} />
         </Field>
-        <Field label="Headshot" hint="Well-lit, neutral background. PNG or JPEG.">
+        <Field label="Headshot" hint="Well-lit, neutral background. PNG or JPEG. Included when you click Save profile.">
           <input
             type="file"
             accept="image/png,image/jpeg"
             className="block w-full text-sm"
-            onChange={async (e) => {
-              const f = e.target.files?.[0];
-              if (!f) return;
+            onChange={(e) => {
+              const f = e.target.files?.[0] || null;
+              setProfile((p: any) => ({ ...p, _headshotFile: f }));
+            }}
+          />
+          {profile._headshotFile ? (
+            <p className="mt-1 text-xs text-mid">Selected: {profile._headshotFile.name} (saves with profile)</p>
+          ) : null}
+        </Field>
+        <Button
+          onClick={async () => {
+            const { _headshotFile, ...fields } = profile;
+            if (_headshotFile instanceof File) {
               const dataUrl = await new Promise<string>((resolve, reject) => {
                 const r = new FileReader();
                 r.onload = () => resolve(String(r.result || ""));
                 r.onerror = reject;
-                r.readAsDataURL(f);
+                r.readAsDataURL(_headshotFile);
               });
-              await api.uploadHeadshot({ name: f.name, dataUrl, mime: f.type });
-              toast("Headshot uploaded");
-              load();
-            }}
-          />
-        </Field>
-        <Button
-          onClick={async () => {
-            await api.saveProfile(profile);
+              await api.uploadHeadshot({ name: _headshotFile.name, dataUrl, mime: _headshotFile.type });
+            }
+            await api.saveProfile(fields);
             toast("Profile saved");
             load();
           }}
         >
-          Save
+          Save profile
         </Button>
       </Card>
     </div>

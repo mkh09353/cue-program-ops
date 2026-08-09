@@ -99,14 +99,15 @@ export function createApp(deps: AppDeps = {}) {
   const sync = new SyncService(repo, client);
   const app = new Hono();
   /** Save after mutations. Failures are observable but never roll back valid in-memory work. */
+  let persistTail: Promise<void> = Promise.resolve();
   const persist = async () => {
     const memory = repo as MemoryRepository & { exportSyncState?: () => CompetitionSnapshot["sync"]; getSchedule?: (id:string) => Promise<any> };
-    try {
+    persistTail=persistTail.then(async()=>{try {
       // Keep optional snapshot-export failures from changing an otherwise valid request result.
       const syncState = memory.exportSyncState?.() as CompetitionSnapshot["sync"] | undefined;
       await persistence.save({version:1,eventId:EVENT_ID,savedAt:new Date().toISOString(),lifecycle:structuredClone(store),schedule:await memory.getSchedule?.(EVENT_ID),sync:syncState || {links:[],runs:[],items:[]}});
-    }
-    catch (error) { console.error("CUE snapshot persistence failed", error instanceof Error ? error.message : "unknown error"); }
+    } catch (error) { console.error("CUE snapshot persistence failed", error instanceof Error ? error.message : "unknown error"); }});
+    await persistTail;
   };
   const deliver = async (row: ReturnType<typeof sendTemplate>) => {
     const to=store.profiles.find(p=>p.speakerId===row.speakerId)?.email || store.submissions.find(s=>s.speakerId===row.speakerId)?.email;
@@ -266,6 +267,7 @@ export function createApp(deps: AppDeps = {}) {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       editToken: crypto.randomUUID(),
+      additionalSpeakers: normalizeAdditionalSpeakers(answers.additionalSpeakers),
     };
     store.submissions.unshift(submission);
     if (!existingProfile) store.profiles.push({ speakerId, name, email: normalizedEmail, bio: String(answers.speaker_bio || "") });
@@ -302,7 +304,7 @@ export function createApp(deps: AppDeps = {}) {
     const nextStatus = b.status === "draft" ? "draft" : "submitted";
     if (!String(answers.title || "").trim()) return fail(c, "Session title is required");
     if (nextStatus === "submitted") { const check = validateCfpSubmission(answers, submission.email); if (!check.ok) return fail(c, check.error); submission.reviewBoard = cfpRouteForCategory(String(answers.category)).boardId; }
-    Object.assign(submission, { title: String(answers.title), abstract: String(answers.abstract || ""), category: String(answers.category || ""), format: String(answers.format || ""), answers, status: nextStatus, updatedAt: new Date().toISOString() });
+    Object.assign(submission, { title: String(answers.title), abstract: String(answers.abstract || ""), category: String(answers.category || ""), format: String(answers.format || ""), answers, additionalSpeakers:normalizeAdditionalSpeakers(answers.additionalSpeakers,submission.additionalSpeakers), status: nextStatus, updatedAt: new Date().toISOString() });
     if (nextStatus === "submitted" && !store.reviews.some((review) => review.submissionId === submission.id)) store.reviews.push({ id:`rev-${submission.id}-r1`,submissionId:submission.id,reviewerId:"rev-ada",round:"r1",scores:{ relevance:0,novelty:0,clarity:0,depth:0 },notes:"",status:"assigned" });
     await persist(); return c.json({ data: { ...submission, editable: true, editUrl: `/e/${EVENT_SLUG}/cfp?submission=${submission.id}&token=${submission.editToken}` } });
   });
@@ -313,7 +315,7 @@ export function createApp(deps: AppDeps = {}) {
     if (!speakerId || !submission || submission.speakerId !== speakerId) return fail(c, "submission not found", 404);
     const b = await c.req.json().catch(() => null) as any; if (!b) return fail(c, "JSON body required");
     const answers = { ...submission.answers, ...(b.answers || {}) }; const check = validateCfpSubmission(answers, submission.email); if (!check.ok) return fail(c, check.error);
-    Object.assign(submission, { title:String(answers.title),abstract:String(answers.abstract),category:String(answers.category),format:String(answers.format),answers,reviewBoard:cfpRouteForCategory(String(answers.category)).boardId,updatedAt:new Date().toISOString() });
+    Object.assign(submission, { title:String(answers.title),abstract:String(answers.abstract),category:String(answers.category),format:String(answers.format),answers,additionalSpeakers:normalizeAdditionalSpeakers(answers.additionalSpeakers,submission.additionalSpeakers),reviewBoard:cfpRouteForCategory(String(answers.category)).boardId,updatedAt:new Date().toISOString() });
     await persist(); return c.json({ data: submission });
   });
 
@@ -465,6 +467,7 @@ export function createApp(deps: AppDeps = {}) {
     const files = store.files.filter((f) => f.speakerId === speakerId);
     const sessions = store.sessions.filter((s) => s.speakerId === speakerId);
     const comms = store.communications.filter((x) => x.speakerId === speakerId);
+    const window = cfpWindow();
     return c.json({
       data: {
         speakerId,
@@ -476,6 +479,8 @@ export function createApp(deps: AppDeps = {}) {
         communications: comms,
         readiness: readiness(speakerId),
         resources: store.resources.filter((r) => r.published).map((r) => ({ ...r, embedUrl: safeEmbed(r.embedUrl) })),
+        cfpOpen: window.open,
+        cfpClosedReason: window.open ? undefined : window.reason,
       },
     });
   });
@@ -602,15 +607,47 @@ export function createApp(deps: AppDeps = {}) {
       templateKey?: string;
       speakerId?: string;
       speakerIds?: string[];
+      subject?: string;
+      body?: string;
+      includeCalendarLinks?: boolean;
     } | null;
-    if (!b?.templateKey) return fail(c, "templateKey required");
+    if (!b) return fail(c, "JSON body required");
     const ids = b.speakerIds || (b.speakerId ? [b.speakerId] : []);
     if (!ids.length) return fail(c, "speakerId or speakerIds required");
-    const sent = ids.map((speakerId) => {
+    const hasCompose = typeof b.subject === "string" || typeof b.body === "string";
+    if (!b.templateKey && !hasCompose) return fail(c, "templateKey or subject/body required");
+    const { renderMergePreview } = await import("./speakerMgmt.js");
+    const sent = [];
+    for (const speakerId of ids) {
       const sub = store.submissions.find((s) => s.speakerId === speakerId && s.status === "accepted");
       const title = sub?.title || "your session";
-      return sendTemplate(b.templateKey!, speakerId, title, b.templateKey === "task_reminder" ? "reminder" : "custom");
-    });
+      if (hasCompose) {
+        const tpl = b.templateKey ? store.templates.find((t) => t.key === b.templateKey || t.id === b.templateKey) : undefined;
+        const preview = renderMergePreview(
+          {
+            subject: typeof b.subject === "string" ? b.subject : tpl?.subject || "Message from CUE",
+            body: typeof b.body === "string" ? b.body : tpl?.body || "",
+            includeCalendarLinks: Boolean(b.includeCalendarLinks ?? tpl?.includeCalendarLinks),
+          },
+          speakerId,
+          store,
+        );
+        const row = {
+          id: `comm-${crypto.randomUUID()}`,
+          speakerId,
+          subject: preview.subject,
+          body: preview.body,
+          kind: (b.templateKey === "task_reminder" ? "reminder" : "custom") as "reminder" | "custom",
+          status: "mock_sent" as "mock_sent",
+          ics: "",
+          createdAt: new Date().toISOString(),
+        };
+        store.communications.unshift(row);
+        sent.push(row);
+      } else {
+        sent.push(sendTemplate(b.templateKey!, speakerId, title, b.templateKey === "task_reminder" ? "reminder" : "custom"));
+      }
+    }
     await Promise.all(sent.map(deliver)); await persist();
     return c.json({ data: sent }, 201);
   });
@@ -641,6 +678,7 @@ export function createApp(deps: AppDeps = {}) {
 
   // —— Schedule (preserve engines) ——
   app.get("/api/events/:eventId/schedule", async (c) => {
+    for (const accepted of store.submissions.filter((x) => x.status === "accepted")) await mirrorAcceptedToSchedule(repo, accepted);
     const r = repo as Repository & { getSchedule?: (id: string) => Promise<any> };
     const s = await r.getSchedule?.(c.req.param("eventId"));
     return s ? c.json({ ...s, warnings: scheduleWarnings(s) }) : c.json({ error: "event not found" }, 404);
@@ -849,17 +887,21 @@ async function mirrorAcceptedToSchedule(repo: Repository, s: Submission) {
   const sched = await r.getSchedule(EVENT_ID);
   if (!sched) return;
   const sessionId = `ses-${s.id}`;
-  if (!sched.sessions.some((x: any) => x.id === sessionId || x.id === s.id)) {
-    const track =
-      sched.tracks.find((t: any) => t.name.toLowerCase() === s.category.toLowerCase())?.id ||
-      sched.tracks[0]?.id;
+  if (!sched.sessions.some((x: any) => x.id === sessionId || x.id === s.id || x.acceptedSubmissionId === s.id)) {
+    let track = sched.tracks.find((t: any) => t.name.trim().toLowerCase() === s.category.trim().toLowerCase())?.id;
+    if (!track && s.category.trim()) {
+      const base=`track-${s.category.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/(^-|-$)/g,"")||"general"}`;
+      track=sched.tracks.some((t:any)=>t.id===base)?`${base}-${crypto.randomUUID().slice(0,6)}`:base;
+      sched.tracks.push({id:track,name:s.category.trim(),color:"#64748b"});
+    }
     sched.speakers = sched.speakers || [];
-    if (!sched.speakers.some((sp: any) => sp.id === s.speakerId)) {
-      const profile = store.profiles.find((p) => p.speakerId === s.speakerId);
+    const allSpeakers=[{id:s.speakerId,name:s.name,email:s.email},...(s.additionalSpeakers||[])];
+    for(const person of allSpeakers) if (!sched.speakers.some((sp: any) => sp.id === person.id)) {
+      const profile = store.profiles.find((p) => p.speakerId === person.id);
       sched.speakers.push({
-        id: s.speakerId,
-        name: s.name,
-        email: profile?.email || s.email,
+        id: person.id,
+        name: person.name,
+        email: profile?.email || person.email,
         bio: profile?.bio || s.abstract,
         company: profile?.company,
         isPublic: true,
@@ -871,7 +913,7 @@ async function mirrorAcceptedToSchedule(repo: Repository, s: Submission) {
       acceptedSubmissionId:s.id,
       title: s.title,
       abstract: s.abstract,
-      speakerIds: [s.speakerId],
+      speakerIds: allSpeakers.map((x)=>x.id),
       trackIds: track ? [track] : [],
       durationMinutes: s.format === "Workshop" ? 60 : 45,
       status: "accepted",
@@ -883,6 +925,10 @@ async function mirrorAcceptedToSchedule(repo: Repository, s: Submission) {
     if (life) life.id = sessionId;
     await r.putSchedule(EVENT_ID, sched);
   }
+}
+
+function normalizeAdditionalSpeakers(value:unknown,previous:Submission["additionalSpeakers"]=[]) {
+  return (Array.isArray(value)?value:[]).map((x:any,i)=>({id:previous[i]?.id||`spk-co-${crypto.randomUUID().slice(0,8)}`,name:String(x?.name||"").trim(),email:String(x?.email||"").trim().toLowerCase()})).filter(x=>x.name&&/^\S+@\S+\.\S+$/.test(x.email));
 }
 
 export function configuredClient(env: Record<string, string | undefined>): AcceleventsClient {

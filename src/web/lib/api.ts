@@ -26,6 +26,7 @@ export function setPersona(p: Persona) {
   persona = p;
   try {
     sessionStorage.setItem("cue-persona-id", p.id);
+    localStorage.setItem("cue-persona-id", p.id);
   } catch {
     /* ignore */
   }
@@ -51,7 +52,11 @@ export function subscribeData(fn: () => void): () => void {
   };
 }
 
-/** Ensure persona matches the shell the judge is in. */
+/**
+ * Soft-align persona only when the current persona already matches the shell role
+ * (e.g. pick a preferred speaker). Never auto-promote a speaker/reviewer into an
+ * organizer persona — shells must deny access instead of silent switching.
+ */
 export function ensurePersonaForRole(role: Role, preferredSpeakerId?: string) {
   if (persona.role === role) {
     if (role === "speaker" && preferredSpeakerId && persona.speakerId !== preferredSpeakerId) {
@@ -60,6 +65,12 @@ export function ensurePersonaForRole(role: Role, preferredSpeakerId?: string) {
     }
     return getPersona();
   }
+  // Do not auto-switch roles. Caller (shell) is responsible for access-denied UI.
+  return getPersona();
+}
+
+/** Soft switch used only by persona picker / landing — not by shell mount. */
+export function switchToRole(role: Role, preferredSpeakerId?: string) {
   let next: Persona | undefined;
   if (role === "speaker") {
     next =
@@ -75,7 +86,7 @@ export function ensurePersonaForRole(role: Role, preferredSpeakerId?: string) {
 
 export function restorePersonaFromSession() {
   try {
-    const id = sessionStorage.getItem("cue-persona-id");
+    const id = sessionStorage.getItem("cue-persona-id") || localStorage.getItem("cue-persona-id");
     const found = personaCatalog.find((p) => p.id === id);
     if (found) persona = found;
   } catch {
@@ -131,6 +142,8 @@ export const api = {
   reviews: () => req<{ data: any[] }>(`/api/events/${EVENT_ID}/reviews`),
   reviewRounds: () => req<{ data: any[] }>(`/api/events/${EVENT_ID}/review-rounds`),
   createReviewRound: (body: any) => mut(`/api/events/${EVENT_ID}/review-rounds`, { method: "POST", body: JSON.stringify(body) }),
+  updateReviewRound: (id:string,body:any) => mut(`/api/events/${EVENT_ID}/review-rounds/${id}`,{method:"PUT",body:JSON.stringify(body)}),
+  inviteReviewer: (id:string,body:any) => mut(`/api/events/${EVENT_ID}/review-rounds/${id}/reviewers`,{method:"POST",body:JSON.stringify(body)}),
   assignReviews: (body: any) => mut<{data:any[]}>(`/api/events/${EVENT_ID}/review-assignments`, { method: "POST", body: JSON.stringify(body) }),
   reviewerQueue: () => req<{data:any[]}>(`/api/events/${EVENT_ID}/reviewer-queue`),
   reviewerAssignment: (id: string) => req<{data:any}>(`/api/events/${EVENT_ID}/reviewer-queue/${id}`),

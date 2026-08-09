@@ -55,6 +55,7 @@ export interface Submission {
   createdAt: string;
   updatedAt?: string;
   editToken?: string;
+  additionalSpeakers?: { id: string; name: string; email: string }[];
 }
 
 export interface Review {
@@ -954,6 +955,10 @@ export function ensureOnboarding(submission: Submission) {
       status: "draft",
       trackId: track,
     });
+  }
+  for (const speaker of submission.additionalSpeakers || []) {
+    if (!store.profiles.some((p) => p.speakerId === speaker.id)) store.profiles.push({ speakerId: speaker.id, name: speaker.name, email: speaker.email, bio: "" });
+    if (!store.personas.some((p) => p.id === speaker.id)) store.personas.push({ id: speaker.id, role: "speaker", name: speaker.name, email: speaker.email, speakerId: speaker.id });
   }
 }
 

@@ -38,7 +38,8 @@ function fmtTimeRange(startsAt: string, endsAt: string, timeZone: string) {
   const d = fmtWhen(startsAt, timeZone, { weekday: "short", month: "short", day: "numeric" });
   const a = fmtWhen(startsAt, timeZone, { hour: "numeric", minute: "2-digit" });
   const b = fmtWhen(endsAt, timeZone, { hour: "numeric", minute: "2-digit" });
-  return `${d} · ${a} – ${b}`;
+  const tzShort = timeZone.includes("/") ? timeZone.split("/").pop()!.replace(/_/g, " ") : timeZone;
+  return `${d} · ${a} – ${b} ${tzShort}`;
 }
 
 function fmtClock(iso: string, timeZone: string) {
@@ -314,6 +315,16 @@ const MY_SCHEDULE_JS = `
       if(c) c.textContent = shown + ' of ' + ids.size + ' in My Schedule';
       var empty=document.querySelector('[data-empty-filter]');
       if(empty) empty.style.display = shown ? 'none' : 'block';
+      // Hide day sections that have no visible sessions after My Schedule filter
+      document.querySelectorAll('[data-day-section]').forEach(function(sec){
+        var any=false;
+        sec.querySelectorAll('[data-session-id]').forEach(function(card){
+          if(card.style.display !== 'none') any=true;
+        });
+        sec.style.display = any ? '' : 'none';
+      });
+    } else {
+      document.querySelectorAll('[data-day-section]').forEach(function(sec){ sec.style.display=''; });
     }
     var exportBtn=document.querySelector('[data-export-ics]');
     if(exportBtn){
@@ -414,7 +425,7 @@ function renderItinerary(program: PublicProgram, base: string) {
       })
       .join("");
     return `<section data-day-section="${esc(day)}" class="day-section">
-      <h2 style="font-size:1.1rem;margin:18px 0 8px">${esc(fmtDayLabel(day, program.event.timezone))}</h2>
+      <h2 style="font-size:1.1rem;margin:18px 0 8px">${esc(fmtDayLabel(day, program.event.timezone))} <span class="meta">· ${esc(program.event.timezone)}</span></h2>
       ${blocks || emptyState("No sessions this day.")}
     </section>`;
   });
@@ -483,9 +494,11 @@ function renderSessionsPage(program: PublicProgram, base: string) {
   return shell(program, { title: "Sessions", active: "sessions", body, base });
 }
 
-function renderSessionDetail(program: PublicProgram, session: PublicSessionView, base: string) {
+function renderSessionDetail(program: PublicProgram, session: PublicSessionView, base: string, back?: { href: string; label: string }) {
+  const backHref = back?.href || `${base}/sessions`;
+  const backLabel = back?.label || "Back to sessions";
   const body = `
-  <a class="back" href="${esc(base)}/sessions">← Back to sessions</a>
+  <a class="back" href="${esc(backHref)}">← ${esc(backLabel)}</a>
   <article class="card">
     <div class="pills">${session.trackNames.map((t) => `<span class="pill track">${esc(t)}</span>`).join("")}<span class="pill format">${esc(session.format)}</span><span class="pill room">${esc(session.room)}</span></div>
     <h1>${esc(session.title)}</h1>
@@ -629,7 +642,7 @@ function renderAgenda(program: PublicProgram, base: string, dayKey?: string) {
       .join("")}
     <a class="btn secondary sm" href="${esc(base)}/agenda${next ? `?day=${encodeURIComponent(next)}` : ""}" ${next ? "" : 'aria-disabled="true" style="opacity:.4;pointer-events:none"'}>Next day →</a>
   </div>
-  <p class="meta" style="margin-bottom:10px"><strong>Showing:</strong> ${esc(day ? fmtDayLabel(day, program.event.timezone) : "No days")}</p>
+  <p class="meta" style="margin-bottom:10px"><strong>Showing:</strong> ${esc(day ? fmtDayLabel(day, program.event.timezone) : "No days")} · <strong>Timezone:</strong> ${esc(program.event.timezone)}</p>
   ${
     times.length && rooms.length
       ? `<div class="agenda-wrap"><table class="agenda"><thead><tr><th>Time</th>${head}</tr></thead><tbody>${rows || `<tr><td colspan="${rooms.length + 1}">No sessions</td></tr>`}</tbody></table></div>`
@@ -700,13 +713,14 @@ export function createPublicSite(deps: PublicSiteDeps) {
     if (!session) return c.html(notFoundHtml("Session not found"), 404);
     const from = c.req.query("from");
     if (from === "agenda") {
-      // detail with back to agenda
-      const day = c.req.query("day") || session.dayKey;
-      const html = renderSessionDetail(loaded.program, session, baseFor(loaded.slug)).replace(
-        `href="${baseFor(loaded.slug)}/sessions"`,
-        `href="${baseFor(loaded.slug)}/agenda?day=${encodeURIComponent(day)}"`,
-      ).replace("Back to sessions", "Back to agenda");
-      return c.html(html);
+      const day = c.req.query("day") || (session as any).dayKey || "";
+      const agendaHref = `${baseFor(loaded.slug)}/agenda${day ? `?day=${encodeURIComponent(day)}` : ""}`;
+      return c.html(
+        renderSessionDetail(loaded.program, session, baseFor(loaded.slug), {
+          href: agendaHref,
+          label: "Back to agenda",
+        }),
+      );
     }
     return c.html(renderSessionDetail(loaded.program, session, baseFor(loaded.slug)));
   });

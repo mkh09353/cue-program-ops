@@ -497,6 +497,18 @@ export function SpeakerDetailPage() {
                   <div className="text-xs text-mid">
                     {f.kind} · {f.createdAt?.slice(0, 19)} · {f.visibility}
                   </div>
+                  {f.kind === "headshot" && (row.headshotUrl || row.profile?.headshotUrl) ? (
+                    <a
+                      className="mt-1 inline-block text-xs font-semibold text-ink underline"
+                      href={row.headshotUrl || row.profile?.headshotUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      View / download headshot
+                    </a>
+                  ) : f.kind === "headshot" && (row.headshotName || f.name) ? (
+                    <span className="mt-1 block text-xs text-mid">Metadata only (no binary stored for seed file)</span>
+                  ) : null}
                 </li>
               ))}
               {(row.contentFiles || []).map((f: any) => (
@@ -512,7 +524,23 @@ export function SpeakerDetailPage() {
                   ) : null}
                 </li>
               ))}
-              {!row.files?.length && !row.contentFiles?.length ? <li className="text-mid">No files yet.</li> : null}
+              {!row.files?.length && !row.contentFiles?.length && !(row.headshotUrl || row.profile?.headshotUrl) ? (
+                <li className="text-mid">No files yet.</li>
+              ) : null}
+              {!row.files?.some((f: any) => f.kind === "headshot") && (row.headshotUrl || row.profile?.headshotUrl) ? (
+                <li className="rounded border border-line p-2">
+                  <b>{row.headshotName || "headshot.png"}</b>
+                  <div className="text-xs text-mid">headshot · profile</div>
+                  <a
+                    className="mt-1 inline-block text-xs font-semibold text-ink underline"
+                    href={row.headshotUrl || row.profile?.headshotUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    View / download headshot
+                  </a>
+                </li>
+              ) : null}
             </ul>
           </Card>
         </div>
@@ -664,7 +692,13 @@ export function CommsPage() {
                   variant="secondary"
                   disabled={!selected.length}
                   onClick={async () => {
-                    const r = await api.sendComms({ templateKey: active.key, speakerIds: selected });
+                    const r = await api.sendComms({
+                      templateKey: active.key,
+                      speakerIds: selected,
+                      subject: active.subject,
+                      body: active.body,
+                      includeCalendarLinks: active.includeCalendarLinks,
+                    });
                     const n = Array.isArray(r.data) ? r.data.length : r.data?.count || selected.length;
                     toast(`Logged ${n} send(s)`);
                     load();

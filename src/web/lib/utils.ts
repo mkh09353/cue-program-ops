@@ -56,21 +56,28 @@ export function daysUntil(iso: string) {
   return Math.max(0, Math.ceil(ms / 86400000));
 }
 
-export function fmtTime(iso: string) {
+/** Event timezone used for organizer schedule + public widgets. */
+export const EVENT_TZ = "America/Los_Angeles";
+
+export function fmtTime(iso: string, timeZone: string = EVENT_TZ) {
   return new Date(iso).toLocaleTimeString([], {
     hour: "numeric",
     minute: "2-digit",
-    timeZone: "UTC",
+    timeZone,
   });
 }
 
-export function fmtDate(iso: string) {
+export function fmtDate(iso: string, timeZone: string = EVENT_TZ) {
   return new Date(iso).toLocaleDateString([], {
     month: "short",
     day: "numeric",
     year: "numeric",
-    timeZone: "UTC",
+    timeZone,
   });
+}
+
+export function fmtTzLabel(timeZone: string = EVENT_TZ) {
+  return timeZone.includes("/") ? timeZone.split("/").pop()!.replace(/_/g, " ") : timeZone;
 }
 
 export function calendarLinks(title: string, startsAt: string, endsAt: string) {

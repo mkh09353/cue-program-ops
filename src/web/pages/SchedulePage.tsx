@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, subscribeData } from "../lib/api";
-import { EVENT_ID, PROGRAM_DAYS, fmtDate, fmtTime, formatStatus } from "../lib/utils";
+import { EVENT_ID, EVENT_TZ, PROGRAM_DAYS, fmtDate, fmtTime, fmtTzLabel, formatStatus } from "../lib/utils";
 import {
   Badge,
   Button,
@@ -122,6 +122,7 @@ export function SchedulePage() {
 
   return (
     <div>
+      <Notice tone="info">All times shown in <b>{EVENT_TZ}</b> ({fmtTzLabel()}).</Notice>
       <PageHeader
         title="Schedule"
         description="Drag accepted sessions onto rooms. Hard room/speaker conflicts are blocked server-side."
@@ -155,11 +156,11 @@ export function SchedulePage() {
           </Button>
         ))}
         <label className="ml-auto flex items-center gap-2 text-xs font-semibold text-mid">
-          Drop hour (UTC)
+          Drop hour (event tz)
           <select
             className="h-8 rounded-md border border-line px-2"
             value={hour}
-            aria-label="Drop hour UTC"
+            aria-label="Drop hour in event timezone"
             onChange={(e) => setHour(Number(e.target.value))}
           >
             {[14, 15, 16, 17, 18, 19, 20, 21].map((h) => (
@@ -293,7 +294,7 @@ export function SchedulePage() {
                     }}
                   >
                     <h3 className="text-sm font-bold">{day.label}</h3>
-                    <p className="text-[11px] text-mid">{day.dateLabel} · UTC grid</p>
+                    <p className="text-[11px] text-mid">{day.dateLabel} · event timezone</p>
                     <div className="mt-2 min-h-28 rounded-lg border border-dashed border-line p-2">
                       {daySlots.length ? (
                         daySlots.map((slot: any) => {
@@ -337,7 +338,7 @@ export function SchedulePage() {
                 >
                   <div className="mb-2 flex items-center justify-between">
                     <h3 className="text-sm font-bold">{lane.name}</h3>
-                    <span className="text-[11px] text-mid">Drop → {hour}:00 UTC</span>
+                    <span className="text-[11px] text-mid">Drop → {hour}:00 · {fmtTzLabel()}</span>
                   </div>
                   <div className="min-h-16 rounded-lg border border-dashed border-line bg-soft/50 p-2">
                     {items

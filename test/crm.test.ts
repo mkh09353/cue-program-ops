@@ -180,6 +180,8 @@ test("segment filtering", () => {
   assert.equal(filterContacts(seg.segment.filters)[0]!.email, "c@example.test");
 });
 
+test("CRM add-to-event reviewer role creates reviewer rather than speaker",async()=>{freshCrm();const made=createContact({name:"Review Contact",email:`crm-review-${Date.now()}@example.test`});assert.ok(made.ok);if(!made.ok)return;const app=createApp();const before=store.submissions.length;const res=await app.request(`/api/crm/contacts/${made.contact.id}/add-to-event`,{method:"POST",headers:{...org,"content-type":"application/json"},body:JSON.stringify({role:"reviewer",roundId:"round-initial"})});assert.equal(res.status,201);const data=await res.json();assert.equal(data.data.role,"reviewer");assert.equal(store.submissions.length,before);assert.ok(store.personas.some(p=>p.id===data.data.reviewerId&&p.role==="reviewer"));assert.ok(store.reviewRounds.find(r=>r.id==="round-initial")?.reviewerIds.includes(data.data.reviewerId))});
+
 test("add-to-event handoff creates an event speaker", () => {
   freshCrm();
   const made = createContact({

@@ -280,16 +280,18 @@ export function createSpeakerRoutes(deps: {
       const sub = deps.store.submissions.find((s) => s.speakerId === speakerId && s.status === "accepted");
       const title = sub?.title || "your session";
       let row;
-      if (b.templateKey) {
-        row = sendTemplate(
-          b.templateKey,
-          speakerId,
-          title,
-          b.templateKey === "task_reminder" ? "reminder" : b.templateKey === "accepted" ? "acceptance" : "custom",
-        );
-      } else {
+      // Prefer explicit compose-field subject/body (edited in UI) over stored template content.
+      const hasCompose = typeof b.subject === "string" || typeof b.body === "string";
+      if (hasCompose) {
+        const tpl = b.templateKey
+          ? deps.store.templates.find((t) => t.key === b.templateKey || t.id === b.templateKey)
+          : undefined;
         const preview = renderMergePreview(
-          { subject: b.subject || "Message from CUE", body: b.body || "", includeCalendarLinks: false },
+          {
+            subject: typeof b.subject === "string" ? b.subject : tpl?.subject || "Message from CUE",
+            body: typeof b.body === "string" ? b.body : tpl?.body || "",
+            includeCalendarLinks: Boolean((b as any).includeCalendarLinks ?? tpl?.includeCalendarLinks),
+          },
           speakerId,
           deps.store,
         );
@@ -298,12 +300,25 @@ export function createSpeakerRoutes(deps: {
           speakerId,
           subject: preview.subject,
           body: preview.body,
-          kind: "custom" as const,
-          status: "mock_sent" as const,
+          kind: (b.templateKey === "task_reminder"
+            ? "reminder"
+            : b.templateKey === "accepted"
+              ? "acceptance"
+              : "custom") as "reminder" | "acceptance" | "custom",
+          status: "mock_sent" as "mock_sent",
           ics: "",
           createdAt: new Date().toISOString(),
         };
         deps.store.communications.unshift(row);
+      } else if (b.templateKey) {
+        row = sendTemplate(
+          b.templateKey,
+          speakerId,
+          title,
+          b.templateKey === "task_reminder" ? "reminder" : b.templateKey === "accepted" ? "acceptance" : "custom",
+        );
+      } else {
+        return fail(c, "templateKey or subject/body required");
       }
       if (profile?.email) {
         try {

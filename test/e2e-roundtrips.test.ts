@@ -368,3 +368,127 @@ test("public widgets + feeds + legacy aliases return populated HTML/JSON/ICS", a
   assert.equal(ics.status, 200);
   assert.ok(ics.text.includes("BEGIN:VCALENDAR"));
 });
+
+test("defect: comms send prefers edited subject/body over template", async () => {
+  const { app } = appWithSchedule();
+  // Seed speaker id is stable across demos; list shape may use speakerId or id.
+  const speakers = await json(app, `/api/events/${E}/speakers`, { headers: org });
+  assert.equal(speakers.status, 200);
+  const first = speakers.body?.data?.[0];
+  const speakerId = first?.speakerId || first?.id || "spk-ada";
+  assert.ok(speakerId, "need a speaker recipient");
+
+  const unique = `JUDGE-EDITED-${stamp()}`;
+  const send = await json(app, `/api/events/${E}/comms/send`, {
+    method: "POST",
+    headers: org,
+    body: JSON.stringify({
+      templateKey: "acceptance",
+      speakerIds: [speakerId],
+      subject: `${unique} subject`,
+      body: `Hello {{firstName}},\n\n${unique} body content for judge defect fix.\n`,
+      includeCalendarLinks: false,
+    }),
+  });
+  assert.ok([200, 201].includes(send.status), JSON.stringify(send.body));
+  const blob = JSON.stringify(send.body);
+  assert.ok(blob.includes(unique), `edited subject/body missing from send response: ${blob.slice(0, 400)}`);
+});
+
+test("defect: speaker persona cannot mutate organizer-only endpoints", async () => {
+  const { app } = appWithSchedule();
+  const denied = await json(app, `/api/events/${E}/comms/send`, {
+    method: "POST",
+    headers: spkAda,
+    body: JSON.stringify({
+      speakerIds: ["spk-ada"],
+      subject: "nope",
+      body: "speaker should not send organizer bulk comms",
+    }),
+  });
+  assert.equal(denied.status, 403, JSON.stringify(denied.body));
+
+  const crmDenied = await json(app, `/api/crm/contacts`, { headers: spkAda });
+  assert.ok([401, 403].includes(crmDenied.status), `speaker CRM list status ${crmDenied.status}`);
+});
+
+test("defect: public agenda session detail back link returns to agenda day", async () => {
+  const { app } = appWithSchedule();
+  const agenda = await json(app, `/e/${SLUG}/public/agenda`);
+  assert.equal(agenda.status, 200);
+  assert.ok(agenda.text.includes("Timezone:") || agenda.text.includes("America/Los_Angeles") || agenda.text.includes("Los Angeles"), "agenda should label event timezone");
+  // find a session detail link with from=agenda
+  const m = agenda.text.match(/\/e\/[^"']+\/sessions\/([^"'?]+)\?from=agenda&day=([^"'&]+)/);
+  assert.ok(m, "agenda should link to session detail with from=agenda&day=");
+  const sessionId = m![1];
+  const day = decodeURIComponent(m![2]);
+  const detail = await json(app, `/e/${SLUG}/public/sessions/${sessionId}?from=agenda&day=${encodeURIComponent(day)}`);
+  assert.equal(detail.status, 200);
+  assert.ok(detail.text.includes("Back to agenda"), "detail should say Back to agenda");
+  assert.ok(
+    detail.text.includes(`/agenda?day=${encodeURIComponent(day)}`) || detail.text.includes(`/agenda?day=${day}`),
+    `back href should target agenda day=${day}`,
+  );
+});
+
+test("defect: itinerary marks day sections for My Schedule empty-day hide", async () => {
+  const { app } = appWithSchedule();
+  const it = await json(app, `/e/${SLUG}/public/itinerary`);
+  assert.equal(it.status, 200);
+  assert.ok(it.text.includes("data-day-section"), "itinerary needs data-day-section wrappers");
+  assert.ok(it.text.includes("data-day-section") && it.text.includes("My Schedule"), "my schedule toggle present");
+  // JS should hide empty sections
+  assert.ok(it.text.includes("querySelectorAll('[data-day-section]')"), "filter JS hides empty day sections");
+});
+
+test("defect: speaker home exposes cfpOpen for closed-CTA gating", async () => {
+  const { app } = appWithSchedule();
+  const home = await json(app, `/api/speaker/events/${E}/home`, { headers: spkAda });
+  assert.equal(home.status, 200, JSON.stringify(home.body));
+  assert.equal(typeof home.body?.data?.cfpOpen, "boolean");
+});
+
+test("defect: CRM merge API collapses secondary into primary", async () => {
+  const { app } = appWithSchedule();
+  const a = await json(app, `/api/crm/contacts`, {
+    method: "POST",
+    headers: org,
+    body: JSON.stringify({ name: "Merge Primary", email: `merge.primary.${stamp()}@example.test`, company: "A" }),
+  });
+  assert.ok([200, 201].includes(a.status), JSON.stringify(a.body));
+  const b = await json(app, `/api/crm/contacts`, {
+    method: "POST",
+    headers: org,
+    body: JSON.stringify({ name: "Merge Secondary", email: `merge.secondary.${stamp()}@example.test`, company: "B" }),
+  });
+  assert.ok([200, 201].includes(b.status), JSON.stringify(b.body));
+  const primaryId = a.body.data.id;
+  const secondaryId = b.body.data.id;
+  await json(app, `/api/crm/contacts/${secondaryId}/notes`, {
+    method: "POST",
+    headers: org,
+    body: JSON.stringify({ body: "note-from-secondary" }),
+  });
+  const merge = await json(app, `/api/crm/contacts/merge`, {
+    method: "POST",
+    headers: org,
+    body: JSON.stringify({ primaryId, secondaryId }),
+  });
+  assert.ok([200, 201].includes(merge.status), JSON.stringify(merge.body));
+  const primary = await json(app, `/api/crm/contacts/${primaryId}`, { headers: org });
+  assert.equal(primary.status, 200);
+  assert.ok(
+    JSON.stringify(primary.body).includes("note-from-secondary") ||
+      (primary.body.data.notes || []).some((n: any) => String(n.body).includes("note-from-secondary") || String(n.body).includes("Merged")),
+    "merged notes should land on primary",
+  );
+  const gone = await json(app, `/api/crm/contacts/${secondaryId}`, { headers: org });
+  assert.ok([404, 400].includes(gone.status), `secondary should be gone, got ${gone.status}`);
+});
+
+test("defect: CRM campaigns list endpoint works", async () => {
+  const { app } = appWithSchedule();
+  const r = await json(app, `/api/crm/campaigns`, { headers: org });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.ok(Array.isArray(r.body?.data));
+});

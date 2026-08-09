@@ -31,6 +31,7 @@ import { restorePersonaFromSession } from "./lib/api";
 import { AssignmentsPage, EvaluationPlanPage, ResultsPage, ReviewProgressPage } from "./pages/ReviewManagementPages";
 import { ContentPage } from "./pages/ContentPages";
 import {
+  CrmCampaignsPage,
   CrmContactPage,
   CrmDirectoryPage,
   CrmImportPage,
@@ -63,6 +64,7 @@ function App() {
           <Route path="crm/pipeline" element={<CrmPipelinePage />} />
           <Route path="crm/segments" element={<CrmSegmentsPage />} />
           <Route path="crm/import" element={<CrmImportPage />} />
+          <Route path="crm/campaigns" element={<CrmCampaignsPage />} />
           <Route path="crm/contacts/:id" element={<CrmContactPage />} />
           <Route path="content" element={<ContentPage />} />
           <Route path="comms" element={<CommsPage />} />

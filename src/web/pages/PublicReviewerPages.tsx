@@ -187,11 +187,7 @@ export function DemoLandingPage() {
 
 export function PublicCfpPage() {
   const [data, setData] = useState<any>(null);
-  const [answers, setAnswers] = useState<Record<string, string>>({
-    format: "Talk (30 min)",
-    category: "Engineering",
-    experience: "intermediate",
-  });
+  const [answers, setAnswers] = useState<Record<string, any>>({});
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [step, setStep] = useState(0);
@@ -301,6 +297,16 @@ export function PublicCfpPage() {
       <div className="mt-3">
         <Markdown text={data.form.welcomeMd || ""} />
       </div>
+      {(() => {
+        const trackField = data.form.fields?.find((f: any) => f.key === "category");
+        const tracks = trackField?.options || data.form.routes?.map((r: any) => r.category) || [];
+        return tracks.length ? (
+          <p className="mt-2 text-sm text-mid">
+            <span className="font-medium text-ink">Tracks: </span>
+            {tracks.join(" · ")}
+          </p>
+        ) : null;
+      })()}
 
       {!data.window?.open ? <Card className="my-6 border-line p-8 text-center"><Badge tone="warn">Closed</Badge><h2 className="mt-3 text-2xl font-bold">Submissions closed</h2><p className="mt-2 text-mid">{data.window?.reason}. The deadline was {new Date(data.form.closeAt).toLocaleString()}.</p></Card> : null}
       {data.window?.open ? <><div className="my-6 flex flex-wrap gap-2 text-xs font-bold uppercase tracking-wide" aria-label="Steps">
@@ -328,6 +334,9 @@ export function PublicCfpPage() {
               <Field label="Email">
                 <Input required type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
               </Field>
+              <div className="mb-4 rounded-[18px] border border-line bg-paper p-4"><div className="flex items-center justify-between"><b>Co-authors / co-presenters</b><Button type="button" size="sm" variant="outline" onClick={()=>setAnswers(a=>({...a,additionalSpeakers:[...(a.additionalSpeakers||[]),{name:"",email:""}]}))}>Add co-author</Button></div>
+                {(answers.additionalSpeakers||[]).map((person:any,i:number)=><div key={i} className="mt-3 grid gap-2 sm:grid-cols-[1fr_1fr_auto]"><Input aria-label={`Co-author ${i+1} name`} placeholder="Name" value={person.name} onChange={e=>setAnswers(a=>({...a,additionalSpeakers:a.additionalSpeakers.map((x:any,n:number)=>n===i?{...x,name:e.target.value}:x)}))}/><Input aria-label={`Co-author ${i+1} email`} type="email" placeholder="Email" value={person.email} onChange={e=>setAnswers(a=>({...a,additionalSpeakers:a.additionalSpeakers.map((x:any,n:number)=>n===i?{...x,email:e.target.value}:x)}))}/><Button type="button" variant="outline" onClick={()=>setAnswers(a=>({...a,additionalSpeakers:a.additionalSpeakers.filter((_:any,n:number)=>n!==i)}))}>Remove</Button></div>)}
+              </div>
               <Button type="button" onClick={() => setStep(1)} disabled={!name || !email}>
                 Continue
               </Button>
@@ -373,7 +382,21 @@ export function PublicCfpPage() {
                 <Button type="button" variant="outline" onClick={() => setStep(0)}>
                   Back
                 </Button>
-                <Button type="button" onClick={() => setStep(2)}>
+                <Button
+                  type="button"
+                  onClick={() => {
+                    const missing = visibleFields
+                      .filter((f: any) => f.required && !(String(answers[f.key] ?? "").trim()))
+                      .map((f: any) => f.label);
+                    if (missing.length) {
+                      setErr(`Complete required fields before review: ${missing.join(", ")}`);
+                      toast(`Missing: ${missing.join(", ")}`, "danger");
+                      return;
+                    }
+                    setErr("");
+                    setStep(2);
+                  }}
+                >
                   Review
                 </Button>
                 <Button type="button" variant="secondary" disabled={!name||!email||!answers.title||result?.editable===false} onClick={saveDraft}>Save as draft</Button>
@@ -390,12 +413,24 @@ export function PublicCfpPage() {
                     {name} · {email}
                   </dd>
                 </div>
-                {visibleFields.map((f: any) => (
-                  <div key={f.key}>
-                    <dt className="text-xs text-mid">{f.label}</dt>
-                    <dd className="font-medium">{answers[f.key]}</dd>
-                  </div>
-                ))}
+                {(answers.additionalSpeakers||[]).map((person:any,i:number)=><div key={i}><dt className="text-xs text-mid">Co-author</dt><dd className="font-semibold">{person.name} · {person.email}</dd></div>)}
+                {visibleFields.map((f: any) => {
+                  const raw = answers[f.key];
+                  const display =
+                    raw == null || String(raw).trim() === ""
+                      ? f.required
+                        ? "— not selected (required)"
+                        : "— not selected"
+                      : String(raw);
+                  return (
+                    <div key={f.key}>
+                      <dt className="text-xs text-mid">{f.label}{f.required ? " *" : ""}</dt>
+                      <dd className={`font-medium ${raw == null || String(raw).trim() === "" ? "text-mid" : ""}`}>
+                        {display}
+                      </dd>
+                    </div>
+                  );
+                })}
                 <div>
                   <dt className="text-xs text-mid">Review board routing</dt>
                   <dd className="font-semibold">
@@ -407,7 +442,17 @@ export function PublicCfpPage() {
                 <Button type="button" variant="outline" onClick={() => setStep(1)}>
                   Back
                 </Button>
-                <Button type="submit" disabled={result?.editable===false}>Submit proposal</Button>
+                <Button
+                  type="submit"
+                  disabled={
+                    result?.editable === false ||
+                    visibleFields.some(
+                      (f: any) => f.required && !(String(answers[f.key] ?? "").trim()),
+                    )
+                  }
+                >
+                  Submit proposal
+                </Button>
               </div>
             </>
           ) : null}

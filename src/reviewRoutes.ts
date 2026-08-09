@@ -19,13 +19,23 @@ export function createReviewRoutes(deps: {
   app.post("/:eventId/review-rounds", async (c) => {
     if (!event(c)) return error(c, "event not found", 404); if (!organizer(c)) return error(c, "organizer role required", 403);
     const b = await c.req.json();
+    if (deps.store.reviewRounds.some((r) => r.name.trim().toLowerCase() === String(b.name || "Untitled round").trim().toLowerCase())) return error(c, "round name already exists", 409);
     const row: ReviewRound = { id: b.id || `round-${crypto.randomUUID().slice(0, 8)}`, name: b.name || "Untitled round", opensAt: b.opensAt || new Date().toISOString(), closesAt: b.closesAt || new Date().toISOString(), status: b.status || "draft", blind: Boolean(b.blind), reviewerIds: b.reviewerIds || [], criteria: b.criteria || [] };
     deps.store.reviewRounds.push(row); await deps.persist(); return c.json({ data: row }, 201);
   });
   app.put("/:eventId/review-rounds/:id", async (c) => {
     if (!event(c)) return error(c, "event not found", 404); if (!organizer(c)) return error(c, "organizer role required", 403);
     const row = round(c.req.param("id")); if (!row) return error(c, "round not found", 404);
-    Object.assign(row, await c.req.json(), { id: row.id }); await deps.persist(); return c.json({ data: row });
+    const b=await c.req.json();
+    if(b.name&&deps.store.reviewRounds.some((r)=>r.id!==row.id&&r.name.trim().toLowerCase()===String(b.name).trim().toLowerCase()))return error(c,"round name already exists",409);
+    const reviewerIds=b.reviewerIds===undefined?row.reviewerIds:[...new Set((b.reviewerIds as string[]).filter(id=>deps.store.personas.some(p=>p.id===id&&p.role==="reviewer")))];
+    const criteria=b.criteria===undefined?row.criteria:(b.criteria as any[]).map(x=>({id:String(x.id||`criterion-${crypto.randomUUID().slice(0,6)}`),label:String(x.label||"").trim(),type:x.type,weight:Number(x.weight||0),options:x.options})).filter(x=>x.label&&["rating","select","text"].includes(x.type));
+    Object.assign(row,b,{id:row.id,reviewerIds,criteria}); await deps.persist(); return c.json({ data: row });
+  });
+  app.post("/:eventId/review-rounds/:id/reviewers",async(c)=>{
+    if(!event(c))return error(c,"event not found",404);if(!organizer(c))return error(c,"organizer role required",403);const r=round(c.req.param("id"));if(!r)return error(c,"round not found",404);
+    const b=await c.req.json(),email=String(b.email||"").trim().toLowerCase(),name=String(b.name||"").trim();if(!name||!/^\S+@\S+\.\S+$/.test(email))return error(c,"valid name and email required");
+    let p=deps.store.personas.find(x=>x.email.toLowerCase()===email);if(p&&p.role!=="reviewer")return error(c,"email belongs to another role",409);if(!p){p={id:`rev-${crypto.randomUUID().slice(0,8)}`,role:"reviewer",name,email};deps.store.personas.push(p)}if(!r.reviewerIds.includes(p.id))r.reviewerIds.push(p.id);await deps.persist();return c.json({data:{reviewer:p,round:r}},201);
   });
   app.delete("/:eventId/review-rounds/:id", async (c) => {
     if (!event(c)) return error(c, "event not found", 404); if (!organizer(c)) return error(c, "organizer role required", 403);

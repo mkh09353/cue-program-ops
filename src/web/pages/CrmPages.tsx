@@ -10,6 +10,7 @@ import {
   Input,
   Notice,
   PageHeader,
+  Select,
   Spinner,
   Textarea,
   toast,
@@ -31,6 +32,9 @@ function CrmSubnav() {
       </NavLink>
       <NavLink to="/app/crm/import" className={({ isActive }) => `${link} ${isActive ? active : ""}`}>
         Import
+      </NavLink>
+      <NavLink to="/app/crm/campaigns" className={({ isActive }) => `${link} ${isActive ? active : ""}`}>
+        Campaigns
       </NavLink>
     </div>
   );
@@ -131,10 +135,13 @@ export function CrmDirectoryPage() {
             <p className="text-xs font-semibold uppercase tracking-wide text-mid">Segments</p>
             <p className="mt-1 text-2xl font-bold">{dash.segments}</p>
           </Card>
-          <Card className="p-4">
-            <p className="text-xs font-semibold uppercase tracking-wide text-mid">Campaigns</p>
-            <p className="mt-1 text-2xl font-bold">{dash.campaigns}</p>
-          </Card>
+          <Link to="/app/crm/campaigns" className="block">
+            <Card className="p-4 transition hover:border-ink/20">
+              <p className="text-xs font-semibold uppercase tracking-wide text-mid">Campaigns</p>
+              <p className="mt-1 text-2xl font-bold">{dash.campaigns}</p>
+              <p className="mt-1 text-xs text-mid">View history →</p>
+            </Card>
+          </Link>
           <Card className="p-4">
             <p className="text-xs font-semibold uppercase tracking-wide text-mid">Top tag</p>
             <p className="mt-1 text-lg font-bold">{dash.topTags?.[0]?.name || "—"}</p>
@@ -301,12 +308,28 @@ export function CrmContactPage() {
   const [note, setNote] = useState("");
   const [tagInput, setTagInput] = useState("");
   const [loaded, setLoaded] = useState(false);
+  const [eventRole,setEventRole]=useState("speaker");
+  const [noteBusy, setNoteBusy] = useState(false);
+  const [dupes, setDupes] = useState<any[]>([]);
+  const [cfKey, setCfKey] = useState("");
+  const [cfVal, setCfVal] = useState("");
+  const [editFields, setEditFields] = useState<Record<string, string>>({});
 
   const load = () =>
-    api
-      .crmContact(id!)
-      .then((r) => {
+    Promise.all([api.crmContact(id!), api.crmContacts().catch(() => ({ data: [] }))])
+      .then(([r, list]) => {
         setContact(r.data);
+        setEditFields(r.data.customFields || {});
+        const email = String(r.data.email || "").toLowerCase();
+        const name = String(r.data.name || "").toLowerCase();
+        setDupes(
+          (list.data || []).filter(
+            (c: any) =>
+              c.id !== r.data.id &&
+              ((email && String(c.email || "").toLowerCase() === email) ||
+                (name && String(c.name || "").toLowerCase() === name)),
+          ),
+        );
         setLoaded(true);
       })
       .catch((e) => {
@@ -323,7 +346,6 @@ export function CrmContactPage() {
   if (!contact) return <Notice tone="danger">{err || "Contact not found"}</Notice>;
 
   const nextStages = ["prospect", "contacted", "invited", "confirmed", "alumni", "declined"];
-
   return (
     <div>
       <PageHeader
@@ -334,11 +356,12 @@ export function CrmContactPage() {
             <Button variant="secondary" onClick={() => navigate("/app/crm")}>
               Back to directory
             </Button>
+            <Select value={eventRole} onChange={e=>setEventRole(e.target.value)} aria-label="Event role"><option value="speaker">Speaker</option><option value="reviewer">Reviewer</option></Select>
             <Button
               onClick={async () => {
                 try {
-                  const r = await api.crmAddToEvent(contact.id);
-                  toast(r.data.created ? "Added to event as speaker" : "Already linked to event");
+                  const r = await api.crmAddToEvent(contact.id,{role:eventRole});
+                  toast(r.data.created ? `Added to event as ${eventRole}` : "Already linked to event");
                   load();
                 } catch (e: any) {
                   toast(e.message || "Handoff failed", "danger");
@@ -413,18 +436,23 @@ export function CrmContactPage() {
           <div className="mt-2 flex gap-2">
             <Textarea className="flex-1" rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Internal note…" />
             <Button
+              disabled={noteBusy || !note.trim()}
               onClick={async () => {
+                if (noteBusy || !note.trim()) return;
+                setNoteBusy(true);
                 try {
-                  await api.crmAddNote(contact.id, note);
+                  await api.crmAddNote(contact.id, note.trim());
                   setNote("");
                   toast("Note saved");
-                  load();
+                  await load();
                 } catch (e: any) {
                   toast(e.message || "Note failed", "danger");
+                } finally {
+                  setNoteBusy(false);
                 }
               }}
             >
-              Add
+              {noteBusy ? "Saving…" : "Add"}
             </Button>
           </div>
           <ul className="mt-3 space-y-2">
@@ -478,17 +506,102 @@ export function CrmContactPage() {
                 ))}
             </ul>
           </Card>
-          {contact.customFields && Object.keys(contact.customFields).length ? (
-            <Card className="p-4">
-              <h3 className="text-sm font-bold uppercase tracking-wide text-mid">Custom fields</h3>
-              <dl className="mt-2 space-y-1 text-sm">
-                {Object.entries(contact.customFields).map(([k, v]) => (
-                  <div key={k} className="flex justify-between gap-2">
-                    <dt className="text-mid">{k}</dt>
-                    <dd className="font-medium">{String(v)}</dd>
+          <Card className="p-4">
+            <h3 className="text-sm font-bold uppercase tracking-wide text-mid">Custom fields</h3>
+            <dl className="mt-2 space-y-2 text-sm">
+              {Object.entries(editFields).map(([k, v]) => (
+                <div key={k} className="grid gap-1">
+                  <dt className="text-xs text-mid">{k}</dt>
+                  <div className="flex gap-2">
+                    <Input
+                      value={String(v)}
+                      onChange={(e) => setEditFields((f) => ({ ...f, [k]: e.target.value }))}
+                    />
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={async () => {
+                        const next = { ...editFields };
+                        delete next[k];
+                        await api.crmUpdateContact(contact.id, { customFields: next });
+                        setEditFields(next);
+                        toast("Field removed");
+                        load();
+                      }}
+                    >
+                      Remove
+                    </Button>
                   </div>
+                </div>
+              ))}
+              {!Object.keys(editFields).length ? <p className="text-mid">No custom fields yet.</p> : null}
+            </dl>
+            <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
+              <Input placeholder="Field name" value={cfKey} onChange={(e) => setCfKey(e.target.value)} />
+              <Input placeholder="Value" value={cfVal} onChange={(e) => setCfVal(e.target.value)} />
+              <Button
+                size="sm"
+                onClick={async () => {
+                  if (!cfKey.trim()) return;
+                  const next = { ...editFields, [cfKey.trim()]: cfVal };
+                  await api.crmUpdateContact(contact.id, { customFields: next });
+                  setEditFields(next);
+                  setCfKey("");
+                  setCfVal("");
+                  toast("Custom field saved");
+                  load();
+                }}
+              >
+                Add
+              </Button>
+            </div>
+            {Object.keys(editFields).length ? (
+              <Button
+                className="mt-3"
+                variant="secondary"
+                size="sm"
+                onClick={async () => {
+                  await api.crmUpdateContact(contact.id, { customFields: editFields });
+                  toast("Custom fields saved");
+                  load();
+                }}
+              >
+                Save field values
+              </Button>
+            ) : null}
+          </Card>
+
+          {dupes.length ? (
+            <Card className="p-4 border-line">
+              <h3 className="text-sm font-bold uppercase tracking-wide text-mid">Possible duplicates</h3>
+              <p className="mt-1 text-xs text-mid">Same name or email as this contact.</p>
+              <ul className="mt-3 space-y-2 text-sm">
+                {dupes.map((d) => (
+                  <li key={d.id} className="rounded-lg border border-line p-2">
+                    <div className="font-semibold">{d.name}</div>
+                    <div className="text-xs text-mid">{d.email}</div>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <Button asChild size="sm" variant="secondary">
+                        <Link to={`/app/crm/contacts/${d.id}`}>Open</Link>
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={async () => {
+                          try {
+                            await api.crmMerge(contact.id, d.id);
+                            toast(`Merged ${d.name} into this contact`);
+                            load();
+                          } catch (e: any) {
+                            toast(e.message || "Merge failed", "danger");
+                          }
+                        }}
+                      >
+                        Merge into this
+                      </Button>
+                    </div>
+                  </li>
                 ))}
-              </dl>
+              </ul>
             </Card>
           ) : null}
         </div>
@@ -711,7 +824,21 @@ export function CrmImportPage() {
       {err ? <Notice tone="danger">{err}</Notice> : null}
 
       <Card className="p-4">
-        <Field label="CSV">
+        <Field label="Upload CSV file">
+          <input
+            type="file"
+            accept=".csv,text/csv"
+            className="block w-full text-sm"
+            onChange={async (e) => {
+              const f = e.target.files?.[0];
+              if (!f) return;
+              const text = await f.text();
+              setCsv(text);
+              toast(`Loaded ${f.name}`);
+            }}
+          />
+        </Field>
+        <Field label="CSV (paste or edit)">
           <Textarea rows={10} value={csv} onChange={(e) => setCsv(e.target.value)} className="font-mono text-xs" />
         </Field>
         <label className="mt-3 flex items-center gap-2 text-sm">
@@ -786,6 +913,58 @@ export function CrmImportPage() {
           </table>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+
+export function CrmCampaignsPage() {
+  const [rows, setRows] = useState<any[]>([]);
+  const [err, setErr] = useState("");
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => {
+    api
+      .crmCampaigns()
+      .then((r) => {
+        setRows(r.data || []);
+        setLoaded(true);
+      })
+      .catch((e) => {
+        setErr(e.message);
+        setLoaded(true);
+      });
+  }, []);
+  if (!loaded) return <Spinner />;
+  return (
+    <div>
+      <PageHeader
+        title="Campaign history"
+        description="Outbound CRM campaigns and bulk communications logged for this organization."
+      />
+      <CrmSubnav />
+      {err ? <Notice tone="danger">{err}</Notice> : null}
+      <div className="space-y-3">
+        {rows.map((c) => (
+          <Card key={c.id} className="p-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h3 className="font-semibold">{c.name || c.subject || c.id}</h3>
+                <p className="text-xs text-mid">
+                  {c.createdAt ? new Date(c.createdAt).toLocaleString() : ""}
+                  {c.recipientCount != null ? ` · ${c.recipientCount} recipient(s)` : ""}
+                  {c.status ? ` · ${c.status}` : ""}
+                </p>
+              </div>
+              {c.status ? <Badge>{c.status}</Badge> : null}
+            </div>
+            {c.subject ? <p className="mt-2 text-sm font-medium">{c.subject}</p> : null}
+            {c.body ? <p className="mt-1 line-clamp-3 whitespace-pre-wrap text-xs text-mid">{c.body}</p> : null}
+          </Card>
+        ))}
+        {!rows.length ? (
+          <EmptyState title="No campaigns yet" description="Send a CRM communicate action to populate history." />
+        ) : null}
+      </div>
     </div>
   );
 }

@@ -203,6 +203,7 @@ export function ReviewStudioPage() {
           <p className="mt-1 text-sm text-mid">
             {data.name} · {data.email}
           </p>
+          {data.additionalSpeakers?.length ? <div className="mt-2 rounded-[18px] border border-line p-3 text-sm"><b>Co-authors / co-presenters</b><ul className="mt-1 list-disc pl-5">{data.additionalSpeakers.map((p:any)=><li key={p.id}>{p.name} · {p.email}</li>)}</ul></div> : null}
           <p className="mt-4 whitespace-pre-wrap text-sm leading-relaxed text-ink-soft">{data.abstract}</p>
           {data.answers?.workshopPlan ? (
             <div className="mt-4 rounded-[18px] bg-canvas p-3 text-sm">
@@ -216,7 +217,7 @@ export function ReviewStudioPage() {
           <div className="mt-4 rounded-[18px] border border-line p-3">
             <h3 className="text-xs font-bold uppercase tracking-wide text-mid">Submission answers</h3>
             <dl className="mt-2 grid gap-2 text-sm sm:grid-cols-2">
-              {Object.entries(data.answers || {}).filter(([key]) => !["title","abstract","category","format","workshopPlan","duration"].includes(key)).map(([key,value]) => <div key={key}><dt className="text-xs font-semibold text-mid">{key.replaceAll("_"," ")}</dt><dd className="whitespace-pre-wrap">{String(value ?? "—")}</dd></div>)}
+              {Object.entries(data.answers || {}).filter(([key]) => !["title","abstract","category","format","workshopPlan","duration","additionalSpeakers"].includes(key)).map(([key,value]) => <div key={key}><dt className="text-xs font-semibold text-mid">{key.replaceAll("_"," ")}</dt><dd className="whitespace-pre-wrap">{String(value ?? "—")}</dd></div>)}
             </dl>
           </div>
           <div className="mt-4 text-xs text-mid">

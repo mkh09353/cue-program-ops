@@ -23,6 +23,7 @@ import {
   setPersona,
   setPersonaCatalog,
   subscribePersona,
+  switchToRole,
 } from "../lib/api";
 import { cn, EVENT_NAME, type Persona, type Role } from "../lib/utils";
 import { Button } from "./ui";
@@ -141,8 +142,34 @@ const orgNav = [
 
 export function OrganizerShell() {
   const currentPersona = usePersona();
+  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
-  if (currentPersona.role !== "organizer") return <div className="grid min-h-screen place-items-center bg-canvas p-6"><div className="max-w-md rounded-[24px] border border-line bg-paper p-6 text-center shadow-card"><h1 className="text-xl font-semibold">Organizer access required</h1><p className="mt-2 text-sm text-mid">Speaker and reviewer personas cannot open organizer content or administration views.</p><Button asChild className="mt-4"><a href={roleHome(currentPersona.role)}>Return to your portal</a></Button></div></div>;
+  if (currentPersona.role !== "organizer") {
+    return (
+      <div className="grid min-h-screen place-items-center bg-canvas p-6">
+        <div className="max-w-md rounded-[24px] border border-line bg-paper p-6 text-center shadow-card">
+          <h1 className="text-xl font-semibold">Organizer access required</h1>
+          <p className="mt-2 text-sm text-mid">
+            You are signed in as <b>{currentPersona.name}</b> ({currentPersona.role}). Persona simulation does not
+            auto-promote non-organizers into organizer mode — switch persona explicitly or return to your portal.
+          </p>
+          <div className="mt-4 flex flex-wrap justify-center gap-2">
+            <Button
+              onClick={() => {
+                switchToRole("organizer");
+                navigate("/app");
+              }}
+            >
+              Switch to organizer persona
+            </Button>
+            <Button asChild variant="secondary">
+              <a href={roleHome(currentPersona.role)}>Return to your portal</a>
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
   const nav = (
     <nav className="flex flex-col gap-0.5 p-3" aria-label="Organizer">
       {orgNav.map((item) => (
