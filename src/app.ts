@@ -213,7 +213,24 @@ export function createApp(deps: AppDeps = {}) {
     if (Array.isArray(b.fields)) {
       const allowed = new Set(["text", "textarea", "select", "checkbox", "file", "speaker_block"]);
       const keys = new Set<string>();
-      const fields = b.fields.map((raw: any) => ({ ...raw, key: String(raw.key || "").trim(), label: String(raw.label || "").trim(), type: String(raw.type || "text"), required: Boolean(raw.required), options: Array.isArray(raw.options) ? raw.options.map(String).filter(Boolean) : undefined, section: raw.section ? String(raw.section) : undefined })).filter((field: any) => field.key && field.label && allowed.has(field.type) && !keys.has(field.key) && keys.add(field.key));
+      const fields = b.fields.map((raw: any) => {
+        const field: any = {
+          key: String(raw.key || "").trim(),
+          label: String(raw.label || "").trim(),
+          type: String(raw.type || "text"),
+          required: Boolean(raw.required),
+        };
+        if (Array.isArray(raw.options)) field.options = raw.options.map(String).filter(Boolean);
+        if (raw.section) field.section = String(raw.section);
+        if (raw.helpText != null && String(raw.helpText).trim()) field.helpText = String(raw.helpText);
+        if (raw.visibleWhen && raw.visibleWhen.key) {
+          field.visibleWhen = {
+            key: String(raw.visibleWhen.key),
+            equals: String(raw.visibleWhen.equals ?? ""),
+          };
+        }
+        return field;
+      }).filter((field: any) => field.key && field.label && allowed.has(field.type) && !keys.has(field.key) && keys.add(field.key));
       if (!fields.some((field: any) => field.key === "title")) return fail(c, "title field is required");
       store.form.fields = fields as typeof store.form.fields;
     }
@@ -229,7 +246,18 @@ export function createApp(deps: AppDeps = {}) {
     return c.json({
       data: {
         event: store.event,
-        form: store.form,
+        form: {
+          ...store.form,
+          // Track names have one source of truth: category field options. Older
+          // snapshots may contain a hand-written legacy track line in welcome copy.
+          welcomeMd: store.form.welcomeMd
+            .split("\n")
+            .filter((line) => !/^\s*(tracks?|categories)\s*:/i.test(line))
+            .join("\n"),
+          routes: store.form.routes.filter((route) =>
+            (store.form.fields.find((f) => f.key === "category")?.options || []).includes(route.category),
+          ),
+        },
         categories: store.form.fields.find((f) => f.key === "category")?.options || [],
         window: cfpWindow(),
       },

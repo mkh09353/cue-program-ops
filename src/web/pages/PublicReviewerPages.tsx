@@ -215,6 +215,11 @@ export function PublicCfpPage() {
     );
   }, [data, answers]);
 
+  useEffect(()=>{
+    if(!data)return;
+    setAnswers((current)=>{const next={...current};for(const field of data.form.fields||[]){if(next[field.key]==null&&field.type==="select"&&field.options?.length)next[field.key]=field.options[0]}return next});
+  },[data]);
+
   if (!data && !err) return <Spinner />;
   if (err) return <Notice tone="danger">{err}</Notice>;
 
@@ -576,6 +581,10 @@ export function ReviewerSubmissionPage() {
   if (err) return <Notice tone="danger">{err}</Notice>;
   const submission = data.submission;
   const round = data.round;
+  const scoreCriteria=[...(round.criteria||[])];
+  if(!scoreCriteria.some((x:any)=>x.type==="rating"))scoreCriteria.unshift({id:"overall_rating",label:"Overall rating",type:"rating",weight:1,min:1,max:5});
+  if(!scoreCriteria.some((x:any)=>x.type==="text"))scoreCriteria.push({id:"comments",label:"Comments",type:"text",weight:0});
+  if(!scoreCriteria.some((x:any)=>x.type==="select"))scoreCriteria.push({id:"recommendation",label:"Recommendation",type:"select",weight:0,options:["Accept","Waitlist","Reject"]});
   return (
     <div>
       <PageHeader
@@ -596,7 +605,7 @@ export function ReviewerSubmissionPage() {
         </Card>
         <Card className="p-5">
           <h2 className="mb-4 font-bold">Scorecard</h2>
-          {round.criteria.map((criterion: any) => {
+          {scoreCriteria.map((criterion: any) => {
             const min = criterion.min ?? 1;
             const max = criterion.max ?? 5;
             return (

@@ -1,0 +1,2 @@
+import test from "node:test";import assert from "node:assert/strict";import {getPersona,resolvePortalPersona,switchToRole} from "../src/web/lib/api.js";
+test("portal persona restore gate always resolves to a valid role fallback without browser storage",()=>{switchToRole("organizer");assert.equal(resolvePortalPersona("speaker"),true);assert.equal(getPersona().role,"speaker");assert.equal(resolvePortalPersona("reviewer"),true);assert.equal(getPersona().role,"reviewer")});

@@ -49,16 +49,16 @@ test("roundtrip A: public CFP submit appears in organizer submissions", async ()
         title: `E2E CFP Talk ${idTag}`,
         abstract:
           "A sufficiently long abstract for the e2e CFP submit roundtrip covering organizer list visibility.",
-        category: "Engineering",
+        category: "AI Engineering",
         format: "Talk (30 min)",
-        experience: "advanced",
+        experience: "Advanced",
       },
     }),
   });
   assert.equal(create.status, 201, JSON.stringify(create.body));
   assert.ok(create.body?.data?.id);
   assert.ok(create.body?.data?.editUrl);
-  assert.equal(create.body?.data?.reviewBoard, "engineering");
+  assert.equal(create.body?.data?.reviewBoard, "ai-engineering");
 
   const list = await json(app, `/api/events/${E}/submissions`, { headers: org });
   assert.equal(list.status, 200);
@@ -120,9 +120,9 @@ test("roundtrip C: accept decision → speaker portal talks + unscheduled sessio
         title: `E2E Accept Talk ${idTag}`,
         abstract:
           "A sufficiently long abstract for the accept → portal + schedule unscheduled pool roundtrip.",
-        category: "Product",
+        category: "Developer Experience",
         format: "Talk (30 min)",
-        experience: "intermediate",
+        experience: "Intermediate",
       },
     }),
   });
@@ -177,9 +177,9 @@ test("roundtrip D: schedule place + publish → public sessions and agenda HTML"
         title: `E2E Scheduled Talk ${idTag}`,
         abstract:
           "A sufficiently long abstract for the schedule place and publish → public widgets roundtrip.",
-        category: "Engineering",
+        category: "AI Engineering",
         format: "Talk (30 min)",
-        experience: "advanced",
+        experience: "Advanced",
       },
     }),
   });

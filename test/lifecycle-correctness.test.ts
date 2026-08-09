@@ -9,8 +9,8 @@ const json=async(path:string,init?:RequestInit)=>{const res=await app.request(pa
 test("CFP rejects invalid categories and enforces normalized-email quota",()=>{
   assert.equal(validateCfpSubmission({category:"Nope"},"quota@example.test").ok,false);
   const old=store.form.maxPerUser;store.form.maxPerUser=1;
-  store.submissions.push({id:"quota-a",eventId:store.event.id,speakerId:"spk-quota",name:"Q",email:"Quota@Example.Test",title:"T",abstract:"A",category:"Engineering",format:"Talk",answers:{},status:"submitted",reviewBoard:"engineering",round:"r1",createdAt:"2026-01-01T00:00:00Z"});
-  const result=validateCfpSubmission({title:"T",abstract:"A",category:"Engineering",format:"Talk",experience:"new"}," quota@example.test ");
+  store.submissions.push({id:"quota-a",eventId:store.event.id,speakerId:"spk-quota",name:"Q",email:"Quota@Example.Test",title:"T",abstract:"A",category:"AI Engineering",format:"Talk (30 min)",answers:{},status:"submitted",reviewBoard:"engineering",round:"r1",createdAt:"2026-01-01T00:00:00Z"});
+  const result=validateCfpSubmission({title:"T",abstract:"A",category:"AI Engineering",format:"Talk (30 min)",experience:"Beginner"}," quota@example.test ");
   assert.equal(result.ok,false);if(!result.ok)assert.match(result.error,/limit/);store.form.maxPerUser=old;
 });
 

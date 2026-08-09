@@ -19,7 +19,12 @@ export function getPersonaCatalog() {
 }
 
 export function setPersonaCatalog(list: Persona[]) {
-  if (list?.length) personaCatalog = list;
+  if (list?.length) {
+    personaCatalog = list;
+    // A public CFP confirmation can persist a newly-created persona before the
+    // server catalog is loaded. Re-resolve it immediately when bootstrap arrives.
+    restorePersonaFromSession();
+  }
 }
 
 export function setPersona(p: Persona) {
@@ -92,6 +97,21 @@ export function restorePersonaFromSession() {
   } catch {
     /* ignore */
   }
+}
+
+/** Portal shells use a synchronous best-effort restore and must always unblock. */
+export function resolvePortalPersona(role: Role) {
+  restorePersonaFromSession();
+  // Entering an explicit role portal is the fallback boundary: unlike organizer
+  // route gating, it is safe to select a known demo persona for that portal.
+  // This guarantees API headers are usable even when storage is missing/stale.
+  if (getPersona().role !== role) switchToRole(role);
+  if (getPersona().role !== role) {
+    const fallback = personaCatalog.find((p) => p.role === role) || DEFAULT_PERSONAS.find((p) => p.role === role);
+    if (fallback) setPersona(fallback);
+  }
+  ensurePersonaForRole(role);
+  return true;
 }
 
 function headers(extra?: HeadersInit): HeadersInit {

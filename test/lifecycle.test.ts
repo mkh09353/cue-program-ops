@@ -19,16 +19,16 @@ test("public CFP workshop conditional + board routing", async () => {
       answers: {
         title: "Hands-on Eval Lab",
         abstract: "A long enough abstract about evaluation harnesses for production teams.",
-        category: "Agents",
-        format: "Workshop",
+        category: "AI Engineering",
+        format: "Workshop (120 min)",
         workshopPlan: "Pair programming on harnesses",
         duration: "60",
-        experience: "advanced",
+        experience: "Advanced",
       },
     }),
   });
   assert.equal(res.status, 201);
-  assert.equal(body.data.reviewBoard, "agents");
+  assert.equal(body.data.reviewBoard, "ai-engineering");
 });
 
 test("accept creates tasks and comms", async () => {
@@ -41,9 +41,9 @@ test("accept creates tasks and comms", async () => {
       answers: {
         title: "Accept Me",
         abstract: "Abstract text for acceptance path testing with enough characters.",
-        category: "Engineering",
-        format: "Talk",
-        experience: "new",
+        category: "AI Engineering",
+        format: "Talk (30 min)",
+        experience: "Beginner",
       },
     }),
   });

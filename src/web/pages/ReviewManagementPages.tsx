@@ -282,7 +282,7 @@ export function EvaluationPlanPage() {
 export function AssignmentsPage() {
   const { data: rounds, reload: reloadRounds } = useData(api.reviewRounds);
   const { data: subs } = useData(api.submissions);
-  const { data: boot } = useData(async () => {
+  const { data: boot, reload: reloadBoot } = useData(async () => {
     const x = await api.bootstrap();
     return { data: x.data.personas };
   });
@@ -293,6 +293,7 @@ export function AssignmentsPage() {
   const [selected, setSelected] = useState<string[]>([]);
   const [message, setMessage] = useState("");
   const [assignBusy, setAssignBusy] = useState(false);
+  const [invite,setInvite]=useState({name:"",email:""});
 
   const run = async (method: string) => {
     const ids = method === "specific" ? selected : subs.map((s) => s.id);
@@ -328,6 +329,7 @@ export function AssignmentsPage() {
   return (
     <div>
       <PageHeader title="Assignments" description="Choose abstracts and assign them to a reviewer. Reinstate recused work below." />
+      <Card className="mb-4 p-5"><h2 className="font-bold">Invite reviewer</h2><p className="text-sm text-mid">Add a reviewer directly to the selected round, then assign submissions below.</p><div className="mt-3 grid gap-2 md:grid-cols-[1fr_1fr_auto]"><Input placeholder="Reviewer name" value={invite.name} onChange={e=>setInvite({...invite,name:e.target.value})}/><Input type="email" placeholder="Reviewer email" value={invite.email} onChange={e=>setInvite({...invite,email:e.target.value})}/><Button variant="outline" onClick={async()=>{if(!roundId)return;const r:any=await api.inviteReviewer(roundId,invite);setInvite({name:"",email:""});setReviewer(r.data.reviewer.id);toast("Reviewer invited to this round");reloadRounds();reloadBoot()}}>Invite reviewer</Button></div></Card>
       <Card className="grid gap-4 p-5 md:grid-cols-3">
         <Field label="Round">
           <Select value={roundId} onChange={(e) => setRound(e.target.value)}>

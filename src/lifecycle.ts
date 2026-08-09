@@ -280,7 +280,7 @@ export const store: LifecycleStore = {
     closeAt: "2027-04-30T23:59:00.000Z",
     maxPerUser: 3,
     welcomeMd:
-      "Call for Speakers\n\nOur event welcomes builders shipping real AI systems. Sessions are selected from these submissions.\n\n**Tracks:** Engineering · Product · Workshop · Agents\n\nTip: choose **Workshop** to add a workshop plan field.",
+      "Call for Speakers\n\nOur event welcomes builders shipping real AI systems. Sessions are selected from these submissions.\n\nTip: choose **Workshop** format to reveal workshop-specific fields.",
     successMd:
       "You will receive a confirmation shortly. Next, open your speaker portal to track status and complete onboarding if accepted.",
     fields: [
@@ -291,7 +291,7 @@ export const store: LifecycleStore = {
         label: "Track",
         type: "select",
         required: true,
-        options: ["AI Engineering", "Platform & Infra", "Developer Experience", "Engineering", "Product", "Workshop", "Agents"],
+        options: ["AI Engineering", "Platform & Infra", "Developer Experience"],
         helpText: "Routes your talk to the matching review board.",
       },
       {
@@ -322,7 +322,7 @@ export const store: LifecycleStore = {
         label: "Experience level",
         type: "select",
         required: true,
-        options: ["new", "intermediate", "advanced"],
+        options: ["Beginner", "Intermediate", "Advanced"],
       },
       { key: "speaker_bio", label: "Speaker bio", type: "textarea", required: false, section: "Speaker" },
       { key: "notes_for_reviewers", label: "Notes for reviewers", type: "textarea", required: false, section: "Review" },
@@ -331,6 +331,7 @@ export const store: LifecycleStore = {
       { category: "AI Engineering", boardId: "ai-engineering", boardLabel: "AI Engineering board" },
       { category: "Platform & Infra", boardId: "platform-infra", boardLabel: "Platform & Infra board" },
       { category: "Developer Experience", boardId: "developer-experience", boardLabel: "Developer Experience board" },
+      // Legacy seed submission categories (not shown on public CFP track list)
       { category: "Engineering", boardId: "engineering", boardLabel: "Engineering board" },
       { category: "Product", boardId: "product", boardLabel: "Product board" },
       { category: "Workshop", boardId: "workshop", boardLabel: "Workshop board" },
@@ -454,10 +455,11 @@ export const store: LifecycleStore = {
       blind: true,
       reviewerIds: ["rev-ada", "rev-linus"],
       criteria: [
+        { id: "overall", label: "Overall rating", type: "rating", weight: 3, min: 1, max: 5 },
         { id: "relevance", label: "Program relevance", type: "rating", weight: 2, min: 1, max: 5 },
         { id: "novelty", label: "Novelty", type: "rating", weight: 1, min: 1, max: 5 },
         { id: "recommendation", label: "Recommendation", type: "select", weight: 0, options: ["Strong accept", "Accept", "Borderline", "Reject"] },
-        { id: "comments", label: "Committee comments", type: "text", weight: 0 },
+        { id: "comments", label: "Comments", type: "text", weight: 0 },
       ],
     },
     {

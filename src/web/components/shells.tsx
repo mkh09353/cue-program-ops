@@ -20,6 +20,7 @@ import {
   getPersona,
   getPersonaCatalog,
   restorePersonaFromSession,
+  resolvePortalPersona,
   roleHome,
   setPersona,
   setPersonaCatalog,
@@ -118,8 +119,7 @@ function useRoleSync(role: Role) {
   const location = useLocation();
   const [ready, setReady] = useState(false);
   // Rehydrate stored persona before any role gating so direct URL loads don't flash 403.
-  restorePersonaFromSession();
-  ensurePersonaForRole(role);
+  resolvePortalPersona(role);
   useEffect(() => {
     restorePersonaFromSession();
     ensurePersonaForRole(role);

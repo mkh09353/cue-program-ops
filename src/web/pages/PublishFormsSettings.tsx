@@ -253,16 +253,24 @@ const BOARD_OPTIONS = [
 
 export function FormsPage() {
   const [form, setForm] = useState<any>(null);
+  const [savedSnap, setSavedSnap] = useState("");
   const [err, setErr] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [lastAutoSave, setLastAutoSave] = useState("");
   const [previewAnswers, setPreviewAnswers] = useState<Record<string, string>>({
-    format: "Talk",
-    category: "Engineering",
+    format: "Talk (30 min)",
+    category: "AI Engineering",
   });
+
+  const snapshotOf = (f: any) => JSON.stringify(f || {});
 
   const load = () =>
     api
       .form()
-      .then((r) => setForm(r.data))
+      .then((r) => {
+        setForm(r.data);
+        setSavedSnap(snapshotOf(r.data));
+      })
       .catch((e) => setErr(e.message));
 
   useEffect(() => {
@@ -270,8 +278,16 @@ export function FormsPage() {
     return subscribeData(load);
   }, []);
 
+  useEffect(()=>{
+    if(!form||!savedSnap||snapshotOf(form)===savedSnap||saving)return;
+    const timer=window.setTimeout(async()=>{try{const r=await api.saveForm(form.id,form);setForm(r.data);setSavedSnap(snapshotOf(r.data));setLastAutoSave(new Date().toLocaleTimeString())}catch(e:any){setErr(e?.message||"Auto-save failed")}},700);
+    return()=>window.clearTimeout(timer);
+  },[form,savedSnap,saving]);
+
   if (!form && !err) return <Spinner />;
   if (!form) return <Notice tone="danger">{err}</Notice>;
+
+  const dirty = snapshotOf(form) !== savedSnap;
 
   const updateField = (idx: number, patch: any) => {
     const fields = form.fields.map((f: any, i: number) => (i === idx ? { ...f, ...patch } : f));
@@ -280,20 +296,136 @@ export function FormsPage() {
 
   const fieldKeys = form.fields.map((f: any) => f.key);
   const selectFields = form.fields.filter((f: any) => f.type === "select" || (f.options || []).length);
+  const trackField = form.fields.find((f: any) => f.key === "category");
+  const trackOptions: string[] = trackField?.options || [];
 
-  const save = async () => {
-    await api.saveForm(form.id, form);
-    toast("Form saved — public CFP uses this schema");
-    load();
+  const save = async (opts?: { openPublic?: boolean; silent?: boolean }) => {
+    setSaving(true);
+    setErr("");
+    try {
+      // Keep board routes aligned with current track options so public CFP never drifts.
+      const existing = new Map((form.routes || []).map((r: any) => [r.category, r]));
+      const routes = trackOptions.map((category) => {
+        const prev: any = existing.get(category);
+        if (prev) return prev;
+        const slug = category
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/(^-|-$)/g, "");
+        return {
+          category,
+          boardId: slug || "engineering",
+          boardLabel: `${category} board`,
+        };
+      });
+      // Preserve legacy routes for already-submitted categories not in the current track list.
+      for (const r of form.routes || []) {
+        if (!routes.some((x: any) => x.category === r.category)) routes.push(r);
+      }
+      const payload = { ...form, routes };
+      const r = await api.saveForm(form.id, payload);
+      setForm(r.data);
+      setSavedSnap(snapshotOf(r.data));
+      setLastAutoSave(new Date().toLocaleTimeString());
+      if (!opts?.silent) {
+        toast(
+          opts?.openPublic
+            ? "Saved & published to public CFP"
+            : "Form saved — public CFP uses this schema",
+        );
+      }
+      if (opts?.openPublic) {
+        window.open(`/e/${EVENT_SLUG}/cfp`, "_blank", "noopener,noreferrer");
+      }
+      return r.data;
+    } catch (e: any) {
+      const msg = e?.message || "Save failed";
+      setErr(msg);
+      toast(msg, "danger");
+      throw e;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+
+  const closeNow = async () => {
+    const past = new Date(Date.now() - 60_000).toISOString();
+    setForm({ ...form, closeAt: past, status: "closed" });
+    // save with closed status immediately
+    setSaving(true);
+    try {
+      const r = await api.saveForm(form.id, { ...form, closeAt: past, status: "closed" });
+      setForm(r.data);
+      setSavedSnap(snapshotOf(r.data));
+      toast("CFP closed — public form shows Closed immediately");
+    } catch (e: any) {
+      toast(e?.message || "Close failed", "danger");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const openNow = async () => {
+    const future = new Date(Date.now() + 86400_000 * 30).toISOString();
+    setSaving(true);
+    try {
+      const r = await api.saveForm(form.id, {
+        ...form,
+        status: "open",
+        closeAt: form.closeAt && Date.parse(form.closeAt) > Date.now() ? form.closeAt : future,
+        openAt: form.openAt || new Date(Date.now() - 86400_000).toISOString(),
+      });
+      setForm(r.data);
+      setSavedSnap(snapshotOf(r.data));
+      toast("CFP opened");
+    } catch (e: any) {
+      toast(e?.message || "Open failed", "danger");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const toLocalInput = (iso?: string) => {
+    if (!iso) return "";
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "";
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
   };
 
   return (
     <div>
       <PageHeader
         title="CFP form builder"
-        description="Edit copy, conditional visibility, and category → review-board routing. Changes persist in memory."
+        description="Edit the public call-for-proposals form. Save (or Save & publish) so field changes reach the public CFP."
         actions={
           <>
+            <Button variant="secondary" disabled={saving} onClick={() => save()}>
+              {saving ? "Saving…" : dirty ? "Save form *" : "Save form"}
+            </Button>
+            <Button
+              disabled={saving}
+              onClick={() => save({ openPublic: true })}
+              aria-label="Save and publish CFP"
+            >
+              {saving ? "Publishing…" : "Save & publish CFP"}
+            </Button>
+            <Button
+              variant="outline"
+              onClick={async () => {
+                if (dirty) {
+                  try {
+                    await save({ silent: true });
+                  } catch {
+                    return;
+                  }
+                }
+                window.open(`/e/${EVENT_SLUG}/cfp`, "_blank", "noopener,noreferrer");
+              }}
+            >
+              View public CFP
+            </Button>
             <Button
               variant="secondary"
               onClick={() => {
@@ -303,14 +435,94 @@ export function FormsPage() {
             >
               Copy CFP link
             </Button>
-            <Button asChild variant="outline">
-              <a href={`/e/${EVENT_SLUG}/cfp`} target="_blank" rel="noreferrer">
-                View CFP
-              </a>
-            </Button>
           </>
         }
       />
+
+      {err ? <Notice tone="danger">{err}</Notice> : null}
+      {dirty ? (
+        <Notice tone="warn">
+          Unsaved changes — public CFP still shows the last saved schema. Click <b>Save form</b> or{" "}
+          <b>Save &amp; publish CFP</b>.
+        </Notice>
+      ) : (
+        <Notice tone="ok">All changes saved{lastAutoSave?` at ${lastAutoSave}`:""}. Public CFP matches this builder.</Notice>
+      )}
+
+      {/* Prominent CFP window — agent looked in Settings and missed buried Opens/Closes fields */}
+      <Card className="mb-4 border-line p-5" id="cfp-window" data-testid="cfp-window">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-bold uppercase tracking-wide text-mid">CFP window</h2>
+            <p className="mt-1 text-sm text-mid">
+              Open / close dates control the public form. Closing takes effect as soon as you save.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" variant="secondary" disabled={saving} onClick={openNow}>
+              Open CFP now
+            </Button>
+            <Button size="sm" variant="outline" disabled={saving} onClick={closeNow}>
+              Close CFP now
+            </Button>
+          </div>
+        </div>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <Field label="Status">
+            <Select
+              aria-label="CFP status"
+              value={form.status}
+              onChange={(e) => setForm({ ...form, status: e.target.value })}
+            >
+              <option value="open">Open</option>
+              <option value="closed">Closed</option>
+            </Select>
+          </Field>
+          <Field label="Open date">
+            <Input
+              type="datetime-local"
+              aria-label="CFP open date"
+              value={toLocalInput(form.openAt)}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  openAt: e.target.value ? new Date(e.target.value).toISOString() : form.openAt,
+                })
+              }
+            />
+          </Field>
+          <Field label="Close date">
+            <Input
+              type="datetime-local"
+              aria-label="CFP close date"
+              value={toLocalInput(form.closeAt)}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  closeAt: e.target.value ? new Date(e.target.value).toISOString() : form.closeAt,
+                })
+              }
+            />
+          </Field>
+          <Field label="Max proposals per user">
+            <Input
+              type="number"
+              aria-label="Max proposals per user"
+              value={form.maxPerUser}
+              onChange={(e) => setForm({ ...form, maxPerUser: Number(e.target.value) })}
+            />
+          </Field>
+        </div>
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
+          <Badge tone={form.status === "open" ? "ok" : "warn"}>{form.status === "open" ? "Open" : "Closed"}</Badge>
+          <span className="text-mid">
+            Accepting until {form.closeAt ? new Date(form.closeAt).toLocaleString() : "—"}
+          </span>
+          <Button size="sm" className="ml-auto" disabled={saving || !dirty} onClick={() => save()}>
+            Save window
+          </Button>
+        </div>
+      </Card>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card className="p-5">
@@ -318,7 +530,10 @@ export function FormsPage() {
           <Field label="Internal title">
             <Input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
           </Field>
-          <Field label="Welcome markdown" hint="Supports **bold**, lists, and line breaks.">
+          <Field
+            label="Welcome markdown"
+            hint="Do not hard-code tracks here — the public page lists tracks from the Track field options only."
+          >
             <Textarea
               rows={6}
               value={form.welcomeMd}
@@ -328,6 +543,12 @@ export function FormsPage() {
           <div className="mb-3 rounded-[18px] border border-line bg-soft p-3">
             <div className="mb-1 text-[11px] font-bold uppercase tracking-wide text-mid">Welcome preview</div>
             <Markdown text={form.welcomeMd || ""} />
+            {trackOptions.length ? (
+              <p className="mt-2 text-sm text-mid">
+                <span className="font-medium text-ink">Tracks (from form): </span>
+                {trackOptions.join(" · ")}
+              </p>
+            ) : null}
           </div>
           <Field label="Success markdown">
             <Textarea
@@ -340,27 +561,6 @@ export function FormsPage() {
             <div className="mb-1 text-[11px] font-bold uppercase tracking-wide text-mid">Success preview</div>
             <Markdown text={form.successMd || ""} />
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Status">
-              <Select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
-                <option value="open">Open</option>
-                <option value="closed">Closed</option>
-              </Select>
-            </Field>
-            <Field label="Max per user">
-              <Input
-                type="number"
-                value={form.maxPerUser}
-                onChange={(e) => setForm({ ...form, maxPerUser: Number(e.target.value) })}
-              />
-            </Field>
-            <Field label="Opens at">
-              <Input type="datetime-local" value={form.openAt?.slice(0, 16) || ""} onChange={(e) => setForm({ ...form, openAt: new Date(e.target.value).toISOString() })} />
-            </Field>
-            <Field label="Closes at">
-              <Input type="datetime-local" value={form.closeAt?.slice(0, 16) || ""} onChange={(e) => setForm({ ...form, closeAt: new Date(e.target.value).toISOString() })} />
-            </Field>
-          </div>
         </Card>
 
         <Card className="p-5">
@@ -371,12 +571,49 @@ export function FormsPage() {
               return (
                 <div key={f.key} className="rounded-[18px] border border-line p-3">
                   <div className="grid gap-2 sm:grid-cols-[1fr_150px]">
-                    <Field label="Field label"><Input value={f.label} onChange={(e) => updateField(idx, { label: e.target.value })} /></Field>
-                    <Field label="Type"><Select value={f.type} onChange={(e) => updateField(idx, { type: e.target.value })}>{[["text","Short text"],["textarea","Long text"],["select","Dropdown"],["checkbox","Checkbox"],["file","File upload"]].map(([value,label])=><option key={value} value={value}>{label}</option>)}</Select></Field>
+                    <Field label="Field label">
+                      <Input value={f.label} onChange={(e) => updateField(idx, { label: e.target.value })} />
+                    </Field>
+                    <Field label="Type">
+                      <Select value={f.type} onChange={(e) => updateField(idx, { type: e.target.value })}>
+                        {[
+                          ["text", "Short text"],
+                          ["textarea", "Long text"],
+                          ["select", "Dropdown"],
+                          ["checkbox", "Checkbox"],
+                          ["file", "File upload"],
+                        ].map(([value, label]) => (
+                          <option key={value} value={value}>
+                            {label}
+                          </option>
+                        ))}
+                      </Select>
+                    </Field>
                   </div>
                   <p className="mt-1 text-xs text-mid">key: {f.key}</p>
-                  <Field label="Section"><Input value={f.section || ""} placeholder="Proposal" onChange={(e) => updateField(idx, { section: e.target.value })} /></Field>
-                  {f.type === "select" ? <Field label="Options" hint="One per line"><Textarea rows={3} value={(f.options || []).join("\n")} onChange={(e) => updateField(idx, { options: e.target.value.split("\n").map((x) => x.trim()).filter(Boolean) })} /></Field> : null}
+                  <Field label="Section">
+                    <Input
+                      value={f.section || ""}
+                      placeholder="Proposal"
+                      onChange={(e) => updateField(idx, { section: e.target.value })}
+                    />
+                  </Field>
+                  {f.type === "select" ? (
+                    <Field label="Options" hint="One per line">
+                      <Textarea
+                        rows={3}
+                        value={(f.options || []).join("\n")}
+                        onChange={(e) =>
+                          updateField(idx, {
+                            options: e.target.value
+                              .split("\n")
+                              .map((x) => x.trim())
+                              .filter(Boolean),
+                          })
+                        }
+                      />
+                    </Field>
+                  ) : null}
 
                   <label className="mt-2 flex items-center gap-2 text-xs font-semibold">
                     <input
@@ -385,7 +622,7 @@ export function FormsPage() {
                       onChange={(e) => {
                         if (e.target.checked) {
                           const trigger = selectFields.find((x: any) => x.key !== f.key) || form.fields[0];
-                          const equals = (trigger?.options || ["Workshop"])[0] || "Workshop";
+                          const equals = (trigger?.options || ["Workshop (120 min)"])[0] || "Workshop (120 min)";
                           updateField(idx, {
                             visibleWhen: { key: trigger?.key || "format", equals },
                           });
@@ -465,19 +702,47 @@ export function FormsPage() {
                     />
                     Required when visible
                   </label>
-                  {!['title','abstract','category','format'].includes(f.key) ? <Button size="sm" variant="ghost" className="mt-2" onClick={() => setForm({ ...form, fields: form.fields.filter((_:any,i:number)=>i!==idx) })}>Remove field</Button> : null}
+                  {!["title", "abstract", "category", "format"].includes(f.key) ? (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="mt-2"
+                      onClick={() =>
+                        setForm({ ...form, fields: form.fields.filter((_: any, i: number) => i !== idx) })
+                      }
+                    >
+                      Remove field
+                    </Button>
+                  ) : null}
                 </div>
               );
             })}
           </div>
-          <Button size="sm" variant="secondary" className="mt-3" onClick={() => { const key=`custom_${Date.now()}`; setForm({ ...form, fields:[...form.fields,{ key,label:"New field",type:"text",required:false,section:"Proposal" }] }); }}>Add field</Button>
+          <Button
+            size="sm"
+            variant="secondary"
+            className="mt-3"
+            onClick={() => {
+              const key = `custom_${Date.now()}`;
+              setForm({
+                ...form,
+                fields: [
+                  ...form.fields,
+                  { key, label: "New field", type: "text", required: false, section: "Proposal" },
+                ],
+              });
+              toast("Field added — auto-saving changes");
+            }}
+          >
+            Add field
+          </Button>
 
           <h3 className="mb-2 mt-5 text-sm font-bold uppercase tracking-wide text-mid">
             Category → board routing
           </h3>
           <ul className="space-y-2 text-sm">
             {form.routes.map((r: any, idx: number) => (
-              <li key={r.category} className="grid grid-cols-[1fr_1fr] gap-2 rounded-lg bg-soft p-2">
+              <li key={`${r.category}-${idx}`} className="grid grid-cols-[1fr_1fr] gap-2 rounded-lg bg-soft p-2">
                 <div>
                   <div className="text-[10px] font-bold uppercase text-mid">Category</div>
                   <Input
@@ -578,9 +843,14 @@ export function FormsPage() {
             </p>
           </div>
 
-          <Button className="mt-4" onClick={save}>
-            Save form
-          </Button>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Button disabled={saving} onClick={() => save()}>
+              {dirty ? "Save form *" : "Save form"}
+            </Button>
+            <Button disabled={saving} variant="secondary" onClick={() => save({ openPublic: true })}>
+              Save &amp; publish CFP
+            </Button>
+          </div>
         </Card>
       </div>
     </div>
@@ -591,14 +861,27 @@ export function SettingsPage() {
   const [event, setEvent] = useState<any>(null);
   const [rooms, setRooms] = useState<any[]>([]);
   const [tracks, setTracks] = useState<any[]>([]);
+  const [rounds, setRounds] = useState<any[]>([]);
+  const [invite, setInvite] = useState({ name: "", email: "", roundId: "" });
+  const [inviteMsg, setInviteMsg] = useState("");
 
   useEffect(() => {
-    Promise.all([api.bootstrap(), api.schedule().catch(() => null)]).then(([b, s]) => {
+    Promise.all([
+      api.bootstrap(),
+      api.schedule().catch(() => null),
+      api.reviewRounds().catch(() => ({ data: [] as any[] })),
+    ]).then(([b, s, rr]) => {
       setEvent(b.data.event);
       if (s) {
         setRooms(s.rooms || []);
         setTracks(s.tracks || []);
       }
+      const list = rr?.data || [];
+      setRounds(list);
+      setInvite((inv) => ({
+        ...inv,
+        roundId: inv.roundId || list.find((r: any) => r.status === "open")?.id || list[0]?.id || "",
+      }));
     });
   }, []);
 
@@ -668,6 +951,78 @@ export function SettingsPage() {
               <a href="/app/schedule">Open schedule builder</a>
             </Button>
           </div>
+        </Card>
+
+        <Card className="p-5 lg:col-span-2" id="review-team" data-testid="invite-reviewer-settings">
+          <h2 className="text-sm font-bold uppercase tracking-wide text-mid">Review team</h2>
+          <p className="mt-1 text-sm text-mid">
+            Invite a reviewer by name and email. They appear on Assignments for the selected round (same endpoint as
+            Evaluation Plan).
+          </p>
+          <div className="mt-3 grid gap-2 md:grid-cols-[1fr_1fr_1fr_auto]">
+            <Field label="Round">
+              <Select
+                aria-label="Invite reviewer round"
+                value={invite.roundId}
+                onChange={(e) => setInvite({ ...invite, roundId: e.target.value })}
+              >
+                {rounds.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.name}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <Field label="Reviewer name">
+              <Input
+                aria-label="Reviewer name"
+                placeholder="Sam Whitfield"
+                value={invite.name}
+                onChange={(e) => setInvite({ ...invite, name: e.target.value })}
+              />
+            </Field>
+            <Field label="Reviewer email">
+              <Input
+                aria-label="Reviewer email"
+                type="email"
+                placeholder="sam@example.test"
+                value={invite.email}
+                onChange={(e) => setInvite({ ...invite, email: e.target.value })}
+              />
+            </Field>
+            <div className="flex items-end">
+              <Button
+                disabled={!invite.roundId || !invite.name.trim() || !invite.email.trim()}
+                onClick={async () => {
+                  try {
+                    await api.inviteReviewer(invite.roundId, {
+                      name: invite.name.trim(),
+                      email: invite.email.trim(),
+                    });
+                    setInviteMsg(`Invited ${invite.name.trim()} · ${invite.email.trim()}`);
+                    toast(`Reviewer invited: ${invite.name.trim()}`);
+                    setInvite((x) => ({ ...x, name: "", email: "" }));
+                  } catch (e: any) {
+                    toast(e?.message || "Invite failed", "danger");
+                  }
+                }}
+              >
+                Invite reviewer
+              </Button>
+            </div>
+          </div>
+          {inviteMsg ? (
+            <Notice tone="ok" onClose={() => setInviteMsg("")}>
+              {inviteMsg}
+            </Notice>
+          ) : null}
+          <p className="mt-2 text-xs text-mid">
+            Also available on{" "}
+            <a className="font-semibold underline" href="/app/evaluation-plan">
+              Evaluation Plan
+            </a>{" "}
+            and the Submissions inbox header.
+          </p>
         </Card>
       </div>
     </div>
