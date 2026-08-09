@@ -1,5 +1,6 @@
 import type { CanonicalData, Event, ScheduleProjection } from "./domain.js";
 import type { ScheduleData, ScheduleSession, ScheduleSpeaker } from "./schedule.js";
+import { isPublishedSession } from "./publicProjection.js";
 
 /** The schedule projection is the canonical event-program source for sync and public publishing. */
 export const scheduleEvent = (eventId: string, schedule: ScheduleProjection): Event => ({
@@ -11,10 +12,13 @@ export const scheduleEvent = (eventId: string, schedule: ScheduleProjection): Ev
 const eligibleSession = (session: ScheduleSession) => session.status === "accepted" || session.status === "published";
 const scheduledEligible = (session: ScheduleSession) => eligibleSession(session);
 
+/** Speakers attached to at least one published (+ slotted) session — used by public gallery/feeds. */
 export function publicSpeakerIds(schedule: ScheduleData): Set<string> {
   const ids = new Set<string>();
+  const slotted = new Set((schedule.slots || []).map((s) => s.sessionId));
   for (const session of schedule.sessions) {
-    if (eligibleSession(session)) for (const id of session.speakerIds) ids.add(id);
+    if (!isPublishedSession(session) || !slotted.has(session.id)) continue;
+    for (const id of session.speakerIds) ids.add(id);
   }
   return ids;
 }

@@ -63,6 +63,43 @@ export interface Review {
   status: "assigned" | "submitted";
   aiDraft?: string;
   source?: "human" | "ai_draft";
+  responses?: Record<string, string | number>;
+  recommendation?: string;
+}
+
+export interface ReviewCriterion {
+  id: string;
+  label: string;
+  type: "rating" | "select" | "text";
+  weight: number;
+  options?: string[];
+}
+export interface ReviewRound {
+  id: string;
+  name: string;
+  opensAt: string;
+  closesAt: string;
+  status: "draft" | "open" | "closed";
+  blind: boolean;
+  reviewerIds: string[];
+  criteria: ReviewCriterion[];
+}
+export interface ReviewAssignment {
+  id: string;
+  roundId: string;
+  submissionId: string;
+  reviewerId: string;
+  status: "assigned" | "completed" | "recused";
+  createdAt: string;
+  completedAt?: string;
+}
+export interface ReviewConflict {
+  id: string;
+  assignmentId: string;
+  reviewerId: string;
+  submissionId: string;
+  reason: string;
+  createdAt: string;
 }
 
 export interface SpeakerProfile {
@@ -156,6 +193,9 @@ export interface LifecycleStore {
   form: CfpForm;
   submissions: Submission[];
   reviews: Review[];
+  reviewRounds: ReviewRound[];
+  reviewAssignments: ReviewAssignment[];
+  reviewConflicts: ReviewConflict[];
   profiles: SpeakerProfile[];
   tasks: SpeakerTask[];
   files: FileRecord[];
@@ -355,6 +395,44 @@ export const store: LifecycleStore = {
       status: "assigned",
     },
   ],
+  reviewRounds: [
+    {
+      id: "round-initial",
+      name: "Initial Review",
+      opensAt: "2026-08-01T00:00:00.000Z",
+      closesAt: "2026-08-31T23:59:59.000Z",
+      status: "open",
+      blind: true,
+      reviewerIds: ["rev-ada", "rev-linus"],
+      criteria: [
+        { id: "relevance", label: "Program relevance", type: "rating", weight: 2 },
+        { id: "novelty", label: "Novelty", type: "rating", weight: 1 },
+        { id: "recommendation", label: "Recommendation", type: "select", weight: 0, options: ["Strong accept", "Accept", "Borderline", "Reject"] },
+        { id: "comments", label: "Committee comments", type: "text", weight: 0 },
+      ],
+    },
+    {
+      id: "round-final",
+      name: "Final Committee Review",
+      opensAt: "2026-09-01T00:00:00.000Z",
+      closesAt: "2026-09-10T23:59:59.000Z",
+      status: "draft",
+      blind: false,
+      reviewerIds: ["rev-linus"],
+      criteria: [
+        { id: "clarity", label: "Clarity", type: "rating", weight: 1 },
+        { id: "depth", label: "Technical depth", type: "rating", weight: 2 },
+        { id: "recommendation", label: "Recommendation", type: "select", weight: 0, options: ["Accept", "Waitlist", "Reject"] },
+        { id: "comments", label: "Final notes", type: "text", weight: 0 },
+      ],
+    },
+  ],
+  reviewAssignments: [
+    { id: "assign-grace-ada", roundId: "round-initial", submissionId: "sub-grace", reviewerId: "rev-ada", status: "assigned", createdAt: "2026-08-01T00:00:00.000Z" },
+    { id: "assign-lin-ada", roundId: "round-initial", submissionId: "sub-lin", reviewerId: "rev-ada", status: "assigned", createdAt: "2026-08-01T00:00:00.000Z" },
+    { id: "assign-sam-linus", roundId: "round-initial", submissionId: "sub-sam", reviewerId: "rev-linus", status: "assigned", createdAt: "2026-08-01T00:00:00.000Z" },
+  ],
+  reviewConflicts: [],
   profiles: [
     {
       speakerId: "spk-ada",
@@ -609,6 +687,13 @@ export const store: LifecycleStore = {
       name: "Ada Reviewer",
       email: "reviewer@ai.engineer",
       boardIds: ["product", "agents", "engineering"],
+    },
+    {
+      id: "rev-linus",
+      role: "reviewer",
+      name: "Linus Reviewer",
+      email: "linus.reviewer@example.test",
+      boardIds: ["engineering", "product"],
     },
     {
       id: "spk-sam",

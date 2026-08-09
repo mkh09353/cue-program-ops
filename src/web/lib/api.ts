@@ -128,6 +128,17 @@ export const api = {
     ),
   submission: (id: string) => req<{ data: any }>(`/api/events/${EVENT_ID}/submissions/${id}`),
   reviews: () => req<{ data: any[] }>(`/api/events/${EVENT_ID}/reviews`),
+  reviewRounds: () => req<{ data: any[] }>(`/api/events/${EVENT_ID}/review-rounds`),
+  createReviewRound: (body: any) => mut(`/api/events/${EVENT_ID}/review-rounds`, { method: "POST", body: JSON.stringify(body) }),
+  assignReviews: (body: any) => mut<{data:any[]}>(`/api/events/${EVENT_ID}/review-assignments`, { method: "POST", body: JSON.stringify(body) }),
+  reviewerQueue: () => req<{data:any[]}>(`/api/events/${EVENT_ID}/reviewer-queue`),
+  reviewerAssignment: (id: string) => req<{data:any}>(`/api/events/${EVENT_ID}/reviewer-queue/${id}`),
+  submitAssignment: (id: string, body: any) => mut(`/api/events/${EVENT_ID}/reviewer-queue/${id}/submit`, {method:"POST",body:JSON.stringify(body)}),
+  recuseAssignment: (id: string, reason: string) => mut(`/api/events/${EVENT_ID}/reviewer-queue/${id}/recuse`, {method:"POST",body:JSON.stringify({reason})}),
+  reviewProgress: () => req<{data:any[]}>(`/api/events/${EVENT_ID}/review-progress`),
+  reviewReminders: (reviewerIds: string[]) => mut<{data:any[]}>(`/api/events/${EVENT_ID}/review-reminders`, {method:"POST",body:JSON.stringify({reviewerIds})}),
+  reviewResults: () => req<{data:any[]}>(`/api/events/${EVENT_ID}/review-results`),
+  reviewResultsCsv: () => `/api/events/${EVENT_ID}/review-results.csv`,
   saveReview: (id: string, body: any) =>
     mut(`/api/events/${EVENT_ID}/reviews/${id}`, { method: "POST", body: JSON.stringify(body) }),
   aiAssist: (id: string) =>

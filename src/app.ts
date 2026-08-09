@@ -30,6 +30,9 @@ import { publicSchedule, scheduleWarnings, validateSlot, type AgendaSlot } from 
 import { canonicalScheduleMetrics, publicSpeakers } from "./projection.js";
 import { MemorySnapshotPersistence, type CompetitionSnapshot, type SnapshotPersistence } from "./persistence.js";
 import { MockMailer, type Mailer } from "./mailer.js";
+import { createReviewRoutes } from "./reviewRoutes.js";
+import { createPublicSite } from "./publicSite.js";
+import { blindSubmission } from "./review.js";
 
 export interface AppDeps {
   repo?: Repository;
@@ -105,6 +108,9 @@ export function createApp(deps: AppDeps = {}) {
     try { row.status=(await mailer.send({to,subject:row.subject,text:row.body,attachments:row.ics?[{filename:"invite.ics",content:row.ics,contentType:"text/calendar"}]:undefined})).status; }
     catch (error) { row.status="failed"; console.error("CUE mail delivery failed", error instanceof Error ? error.message : "unknown error"); }
   };
+  app.use("/api/events/:eventId/*", async (c, next) => c.req.param("eventId") === EVENT_ID ? next() : fail(c, "event not found", 404));
+  app.route("/api/events", createReviewRoutes({ store, persist, persona: personaOf, mailer }));
+  app.route("/", createPublicSite({ repo }));
 
   app.get("/health", (c) =>
     c.json({ ok: true, mode: client instanceof MockAcceleventsClient ? "mock" : "configured", product: "CUE" }),
@@ -205,7 +211,8 @@ export function createApp(deps: AppDeps = {}) {
   });
 
   app.post("/api/public/events/:slug/submissions", async (c) => {
-    if (store.form.status === "closed") return fail(c, "CFP is closed");
+    if (c.req.param("slug") !== EVENT_SLUG && c.req.param("slug") !== "ai-engineer-sandbox-event") return fail(c, "event not found", 404);
+    if (store.form.status === "closed" || Date.parse(store.form.closeAt) <= Date.now()) return fail(c, "CFP is closed");
     const b = (await c.req.json().catch(() => null)) as Record<string, unknown> | null;
     if (!b) return fail(c, "JSON body required");
     const answers = (b.answers || {}) as Record<string, unknown>;
@@ -256,8 +263,10 @@ export function createApp(deps: AppDeps = {}) {
 
   // —— Submissions / review ——
   app.get("/api/events/:eventId/submissions", (c) => {
+    if (c.req.param("eventId") !== EVENT_ID) return fail(c, "event not found", 404);
     const filter = c.req.query("filter");
-    let rows = [...store.submissions];
+    const persona = personaOf(c);
+    let rows = persona.role === "reviewer" ? store.submissions.filter((s) => store.reviewAssignments.some((a) => a.submissionId === s.id && a.reviewerId === persona.id && a.status !== "recused")) : [...store.submissions];
     if (filter === "pending") rows = rows.filter((s) => ["submitted", "under_review"].includes(s.status));
     if (filter === "accepted") rows = rows.filter((s) => s.status === "accepted");
     if (filter === "rejected") rows = rows.filter((s) => s.status === "rejected");
@@ -267,7 +276,7 @@ export function createApp(deps: AppDeps = {}) {
     }
     return c.json({
       data: rows.map((s) => ({
-        ...s,
+        ...(persona.role === "reviewer" ? blindSubmission(s, Boolean(store.reviewRounds.find((r) => r.id === store.reviewAssignments.find((a) => a.submissionId === s.id && a.reviewerId === persona.id)?.roundId)?.blind)) : s),
         avgScore: avgScore(s.id),
         reviews: store.reviews.filter((r) => r.submissionId === s.id),
       })),
@@ -275,28 +284,34 @@ export function createApp(deps: AppDeps = {}) {
   });
 
   app.get("/api/events/:eventId/submissions/:id", (c) => {
+    if (c.req.param("eventId") !== EVENT_ID) return fail(c, "event not found", 404);
     const s = store.submissions.find((x) => x.id === c.req.param("id"));
     if (!s) return fail(c, "submission not found", 404);
+    const persona = personaOf(c);
+    if (persona.role === "reviewer" && !store.reviewAssignments.some((a) => a.submissionId === s.id && a.reviewerId === persona.id && a.status !== "recused")) return fail(c, "submission not assigned", 404);
+    if (persona.role === "speaker" && persona.speakerId !== s.speakerId) return fail(c, "submission not found", 404);
+    const assignment = store.reviewAssignments.find((a) => a.submissionId === s.id && a.reviewerId === persona.id && a.status !== "recused");
+    const projected = persona.role === "reviewer" ? blindSubmission(s, Boolean(store.reviewRounds.find((r) => r.id === assignment?.roundId)?.blind)) : s;
     return c.json({
       data: {
-        ...s,
-        reviews: store.reviews.filter((r) => r.submissionId === s.id),
-        profile: store.profiles.find((p) => p.speakerId === s.speakerId),
+        ...projected,
+        reviews: store.reviews.filter((r) => r.submissionId === s.id && (persona.role !== "reviewer" || r.reviewerId === persona.id)),
+        profile: persona.role === "reviewer" ? undefined : store.profiles.find((p) => p.speakerId === s.speakerId),
         avgScore: avgScore(s.id),
       },
     });
   });
 
   app.get("/api/events/:eventId/reviews", (c) => {
-    const role = actor(c);
+    const persona = personaOf(c);
     const rows =
-      role === "organizer"
+      persona.role === "organizer"
         ? store.reviews
-        : store.reviews.filter((r) => r.reviewerId === "rev-ada" || r.reviewerId === "reviewer");
+        : store.reviews.filter((r) => r.reviewerId === persona.id && store.reviewAssignments.some((a) => a.submissionId === r.submissionId && a.reviewerId === persona.id && a.status !== "recused"));
     return c.json({
       data: rows.map((r) => ({
         ...r,
-        submission: store.submissions.find((s) => s.id === r.submissionId),
+        submission: (() => { const s=store.submissions.find((x) => x.id === r.submissionId); const a=store.reviewAssignments.find((x)=>x.submissionId===r.submissionId&&x.reviewerId===persona.id); return s ? blindSubmission(s, persona.role === "reviewer" && Boolean(store.reviewRounds.find((x)=>x.id===a?.roundId)?.blind)) : undefined; })(),
       })),
     });
   });
@@ -306,6 +321,7 @@ export function createApp(deps: AppDeps = {}) {
     if (role !== "reviewer" && role !== "organizer") return fail(c, "reviewer role required", 403);
     const r = store.reviews.find((x) => x.id === c.req.param("id"));
     if (!r) return fail(c, "review not found", 404);
+    if (role === "reviewer" && r.reviewerId !== personaOf(c).id) return fail(c, "review not assigned", 403);
     const b = (await c.req.json()) as { scores?: Record<string, number>; notes?: string; round?: "r1" | "r2" | "final" };
     const target = b.round && b.round !== r.round ? reviewForRound(r.submissionId, r.reviewerId, b.round) : r;
     target.scores = b.scores || target.scores;
@@ -574,6 +590,7 @@ export function createApp(deps: AppDeps = {}) {
     return s ? c.json({ ...s, warnings: scheduleWarnings(s) }) : c.json({ error: "event not found" }, 404);
   });
   app.post("/api/events/:eventId/schedule/validate", async (c) => {
+    if (actor(c) !== "organizer") return fail(c, "organizer role required", 403);
     const r = repo as Repository & { getSchedule?: (id: string) => Promise<any> };
     const s = await r.getSchedule?.(c.req.param("eventId"));
     const slot = await c.req.json<AgendaSlot>().catch(() => null);
@@ -581,6 +598,7 @@ export function createApp(deps: AppDeps = {}) {
     return c.json(validateSlot(s, slot));
   });
   app.post("/api/events/:eventId/schedule/move", async (c) => {
+    if (actor(c) !== "organizer") return fail(c, "organizer role required", 403);
     const r = repo as Repository & {
       getSchedule?: (id: string) => Promise<any>;
       putSchedule?: (id: string, s: any) => Promise<void>;
@@ -837,6 +855,9 @@ export async function restoreSnapshot(deps: { repo: Repository; persistence: Sna
   if (snapshot.schedule && target.putSchedule) await target.putSchedule(EVENT_ID,snapshot.schedule);
   target.importSyncState?.(snapshot.sync);
   // Keep the exported singleton identity so existing lifecycle helpers continue to reference it.
-  for (const key of Object.keys(store) as (keyof typeof store)[]) (store as any)[key]=structuredClone(snapshot.lifecycle[key]);
+  for (const key of Object.keys(store) as (keyof typeof store)[]) {
+    const restored = snapshot.lifecycle[key];
+    if (restored !== undefined) (store as any)[key]=structuredClone(restored);
+  }
   return true;
 }

@@ -26,6 +26,7 @@ import {
   ReviewerSubmissionPage,
 } from "./pages/PublicReviewerPages";
 import { restorePersonaFromSession } from "./lib/api";
+import { AssignmentsPage, EvaluationPlanPage, ResultsPage, ReviewProgressPage } from "./pages/ReviewManagementPages";
 
 restorePersonaFromSession();
 
@@ -41,6 +42,10 @@ function App() {
           <Route index element={<CommandPage />} />
           <Route path="submissions" element={<SubmissionsListPage />} />
           <Route path="submissions/:id" element={<ReviewStudioPage />} />
+          <Route path="evaluation-plan" element={<EvaluationPlanPage />} />
+          <Route path="assignments" element={<AssignmentsPage />} />
+          <Route path="review-progress" element={<ReviewProgressPage />} />
+          <Route path="results" element={<ResultsPage />} />
           <Route path="schedule" element={<SchedulePage />} />
           <Route path="speakers" element={<SpeakersPage />} />
           <Route path="speakers/:id" element={<SpeakerDetailPage />} />

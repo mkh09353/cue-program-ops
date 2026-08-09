@@ -123,6 +123,10 @@ function useRoleSync(role: Role) {
 const orgNav = [
   { to: "/app", label: "Command", icon: Command, end: true },
   { to: "/app/submissions", label: "Submissions", icon: FileText },
+  { to: "/app/evaluation-plan", label: "Evaluation Plan", icon: Sparkles },
+  { to: "/app/assignments", label: "Assignments", icon: Users },
+  { to: "/app/review-progress", label: "Review Progress", icon: LayoutGrid },
+  { to: "/app/results", label: "Results", icon: FileText },
   { to: "/app/schedule", label: "Schedule", icon: CalendarDays },
   { to: "/app/speakers", label: "Speakers", icon: Users },
   { to: "/app/comms", label: "Comms", icon: Megaphone },

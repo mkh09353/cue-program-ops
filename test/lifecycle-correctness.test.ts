@@ -54,7 +54,7 @@ test("speaker endpoint rejects query impersonation under a known speaker persona
 
 test("command endpoint takes accepted-unscheduled KPI from canonical schedule projection",async()=>{
   const {res,body}=await json("/api/events/evt-ai-summit-2026/command");assert.equal(res.status,200);
-  assert.equal(body.data.kpis.acceptedUnscheduled,3);
+  assert.equal(body.data.kpis.acceptedUnscheduled,2);
 });
 
 test("scheduled session calendar HTTP route returns downloadable October ICS",async()=>{

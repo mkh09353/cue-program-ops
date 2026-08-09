@@ -17,7 +17,11 @@ export interface Env {
 const repo = new MemoryRepository();
 let runtime: Promise<ReturnType<typeof createApp>> | undefined;
 const apiPath = (pathname: string) =>
-  pathname === "/health" || pathname === "/demo" || ["/api/", "/public/", "/embed/", "/sync/"].some((prefix) => pathname.startsWith(prefix));
+  pathname === "/health" ||
+  pathname === "/demo" ||
+  ["/api/", "/public/", "/embed/", "/sync/"].some((prefix) => pathname.startsWith(prefix)) ||
+  // Public widgets live under /e/:slug/public/* (SPA CFP remains /e/:slug/cfp on assets).
+  /^\/e\/[^/]+\/public(?:\/|$)/.test(pathname);
 
 async function getApp(env: Env) {
   runtime ??= (async () => {

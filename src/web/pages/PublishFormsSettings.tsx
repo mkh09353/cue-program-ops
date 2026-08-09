@@ -20,12 +20,23 @@ import {
 export function PublishPage() {
   const [sync, setSync] = useState<any>(null);
   const [runs, setRuns] = useState<any[]>([]);
+  const [widget, setWidget] = useState<"sessions" | "speakers" | "agenda" | "itinerary" | "gallery">("sessions");
   const origin = typeof window !== "undefined" ? window.location.origin : "";
 
-  const galleryPath = `/public/events/${EVENT_ID}/gallery`;
-  const itineraryPath = `/public/events/${EVENT_ID}/itinerary`;
-  const gallerySnippet = `<iframe src="${origin}${galleryPath}" title="Speaker gallery" style="width:100%;min-height:480px;border:0;border-radius:12px" loading="lazy"></iframe>`;
-  const itinerarySnippet = `<iframe src="${origin}${itineraryPath}" title="Schedule itinerary" style="width:100%;min-height:640px;border:0;border-radius:12px" loading="lazy"></iframe>`;
+  const widgets = [
+    { id: "sessions" as const, label: "Sessions list", path: `/e/${EVENT_SLUG}/public/sessions`, blurb: "Searchable catalog with track/format/room facets." },
+    { id: "speakers" as const, label: "Speakers list", path: `/e/${EVENT_SLUG}/public/speakers`, blurb: "Directory with bios and per-speaker sessions." },
+    { id: "agenda" as const, label: "Agenda grid", path: `/e/${EVENT_SLUG}/public/agenda`, blurb: "Day tabs with room × time layout." },
+    { id: "itinerary" as const, label: "Schedule itinerary", path: `/e/${EVENT_SLUG}/public/itinerary`, blurb: "Chronological days + My Schedule + ICS." },
+    { id: "gallery" as const, label: "Speaker gallery", path: `/e/${EVENT_SLUG}/public/gallery`, blurb: "Visual photo grid of published speakers." },
+  ];
+  const active = widgets.find((w) => w.id === widget) || widgets[0];
+  const iframeSnippet = `<iframe src="${origin}${active.path}" title="${active.label}" style="width:100%;min-height:640px;border:0;border-radius:12px" loading="lazy"></iframe>`;
+  const jsonFeed = `${origin}/e/${EVENT_SLUG}/public/feed.json`;
+  const sessionsJson = `${origin}/e/${EVENT_SLUG}/public/sessions.json`;
+  const icsFeed = `${origin}/e/${EVENT_SLUG}/public/ics`;
+  const legacyGallery = `/public/events/${EVENT_ID}/gallery`;
+  const legacyItinerary = `/public/events/${EVENT_ID}/itinerary`;
 
   const loadRuns = () => api.syncRuns().then(setRuns).catch(() => {});
 
@@ -38,71 +49,114 @@ export function PublishPage() {
     <div>
       <PageHeader
         title="Publish"
-        description="HTML embeds for your site, plus honest one-way Accelevents sync (mock by default)."
+        description="Embeddable public widgets from the canonical published program, plus honest one-way Accelevents sync (mock by default)."
       />
 
+      <Card className="mb-4 p-5">
+        <div className="mb-2 flex flex-wrap items-center gap-2">
+          <h2 className="text-lg font-bold">Embed manager</h2>
+          <Badge tone="primary">5 widgets</Badge>
+          <Badge tone="muted">published-only</Badge>
+        </div>
+        <p className="text-sm text-stone-500">
+          Pick a surface, copy an iframe snippet, or share JSON / iCal feeds. All widgets read the same canonical projection — no republish step.
+        </p>
+        <div className="mt-4 flex flex-wrap gap-2" role="tablist" aria-label="Widget picker">
+          {widgets.map((w) => (
+            <Button
+              key={w.id}
+              size="sm"
+              variant={widget === w.id ? "dark" : "outline"}
+              onClick={() => setWidget(w.id)}
+              aria-pressed={widget === w.id}
+            >
+              {w.label}
+            </Button>
+          ))}
+        </div>
+        <p className="mt-3 text-sm text-stone-600">{active.blurb}</p>
+        <div className="mt-3 overflow-hidden rounded-xl border">
+          <iframe title={`${active.label} preview`} src={active.path} className="h-80 w-full bg-white" />
+        </div>
+        <div className="mt-3 grid gap-3 lg:grid-cols-2">
+          <div>
+            <div className="mb-1 text-[11px] font-bold uppercase tracking-wide text-stone-500">iframe snippet</div>
+            <pre className="overflow-x-auto rounded-xl bg-ink p-3 text-[11px] text-lime">{iframeSnippet}</pre>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <Button
+                size="sm"
+                onClick={() => {
+                  navigator.clipboard.writeText(iframeSnippet);
+                  toast("Embed snippet copied");
+                }}
+              >
+                Copy iframe
+              </Button>
+              <Button asChild size="sm" variant="outline">
+                <a href={active.path} target="_blank" rel="noreferrer">
+                  Open widget
+                </a>
+              </Button>
+            </div>
+          </div>
+          <div className="space-y-2 text-sm">
+            <div className="rounded-xl border border-stone-200 bg-stone-50 p-3">
+              <div className="text-[11px] font-bold uppercase tracking-wide text-stone-500">JSON feed</div>
+              <code className="mt-1 block break-all text-xs">{jsonFeed}</code>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => {
+                    navigator.clipboard.writeText(jsonFeed);
+                    toast("JSON feed URL copied");
+                  }}
+                >
+                  Copy JSON
+                </Button>
+                <Button asChild size="sm" variant="ghost">
+                  <a href={sessionsJson} target="_blank" rel="noreferrer">
+                    sessions.json
+                  </a>
+                </Button>
+              </div>
+            </div>
+            <div className="rounded-xl border border-stone-200 bg-stone-50 p-3">
+              <div className="text-[11px] font-bold uppercase tracking-wide text-stone-500">iCal feed</div>
+              <code className="mt-1 block break-all text-xs">{icsFeed}</code>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => {
+                    navigator.clipboard.writeText(icsFeed);
+                    toast("iCal URL copied");
+                  }}
+                >
+                  Copy iCal
+                </Button>
+                <Button asChild size="sm" variant="ghost">
+                  <a href={icsFeed} target="_blank" rel="noreferrer">
+                    Download .ics
+                  </a>
+                </Button>
+              </div>
+            </div>
+            <div className="rounded-xl border border-dashed border-stone-300 p-3 text-xs text-stone-500">
+              Legacy aliases still work:{" "}
+              <a className="font-semibold text-iris" href={legacyGallery} target="_blank" rel="noreferrer">
+                /public/.../gallery
+              </a>
+              {" · "}
+              <a className="font-semibold text-iris" href={legacyItinerary} target="_blank" rel="noreferrer">
+                /public/.../itinerary
+              </a>
+            </div>
+          </div>
+        </div>
+      </Card>
+
       <div className="grid gap-4 lg:grid-cols-2">
-        <Card className="p-5">
-          <div className="mb-2 flex items-center gap-2">
-            <h2 className="text-lg font-bold">Speaker gallery embed</h2>
-            <Badge tone="primary">HTML</Badge>
-          </div>
-          <p className="text-sm text-stone-500">Mobile-friendly public page — not a JSON feed.</p>
-          <div className="mt-3 overflow-hidden rounded-xl border">
-            <iframe title="gallery preview" src={galleryPath} className="h-64 w-full bg-white" />
-          </div>
-          <pre className="mt-3 overflow-x-auto rounded-xl bg-ink p-3 text-[11px] text-lime">{gallerySnippet}</pre>
-          <div className="mt-3 flex flex-wrap gap-2">
-            <Button
-              size="sm"
-              onClick={() => {
-                navigator.clipboard.writeText(gallerySnippet);
-                toast("Gallery snippet copied");
-              }}
-            >
-              Copy snippet
-            </Button>
-            <Button asChild size="sm" variant="outline">
-              <a href={galleryPath} target="_blank" rel="noreferrer">
-                Open HTML
-              </a>
-            </Button>
-          </div>
-        </Card>
-
-        <Card className="p-5">
-          <div className="mb-2 flex items-center gap-2">
-            <h2 className="text-lg font-bold">Schedule itinerary embed</h2>
-            <Badge tone="primary">HTML</Badge>
-          </div>
-          <p className="text-sm text-stone-500">Published sessions only, responsive list layout.</p>
-          <div className="mt-3 overflow-hidden rounded-xl border">
-            <iframe title="itinerary preview" src={itineraryPath} className="h-64 w-full bg-white" />
-          </div>
-          <pre className="mt-3 overflow-x-auto rounded-xl bg-ink p-3 text-[11px] text-lime">{itinerarySnippet}</pre>
-          <div className="mt-3 flex flex-wrap gap-2">
-            <Button
-              size="sm"
-              onClick={() => {
-                navigator.clipboard.writeText(itinerarySnippet);
-                toast("Itinerary snippet copied");
-              }}
-            >
-              Copy snippet
-            </Button>
-            <Button asChild size="sm" variant="outline">
-              <a href={itineraryPath} target="_blank" rel="noreferrer">
-                Open HTML
-              </a>
-            </Button>
-            <Button asChild size="sm" variant="ghost">
-              <a href={`${itineraryPath}.json`} target="_blank" rel="noreferrer">
-                JSON feed
-              </a>
-            </Button>
-          </div>
-        </Card>
-
         <Card className="p-5 lg:col-span-2">
           <div className="mb-2 flex flex-wrap items-center gap-2">
             <h2 className="text-lg font-bold">Accelevents one-way sync</h2>
@@ -178,10 +232,7 @@ export function PublishPage() {
             </ul>
           ) : (
             <div className="mt-2">
-              <EmptyState
-                title="No runs yet"
-                description="Preview or push to record a mock sync run."
-              />
+              <EmptyState title="No runs yet" description="Preview or push to record a mock sync run." />
             </div>
           )}
         </Card>

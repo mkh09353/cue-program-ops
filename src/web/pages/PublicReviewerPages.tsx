@@ -285,9 +285,9 @@ export function ReviewerQueuePage({ done = false }: { done?: boolean }) {
   const [loaded, setLoaded] = useState(false);
   useEffect(() => {
     api
-      .reviews()
+      .reviewerQueue()
       .then((r) => {
-        setRows(r.data.filter((x: any) => (done ? x.status === "submitted" : x.status === "assigned")));
+        setRows(r.data.filter((x: any) => (done ? x.status === "completed" : x.status === "assigned")));
         setLoaded(true);
       })
       .catch((e) => {
@@ -315,7 +315,7 @@ export function ReviewerQueuePage({ done = false }: { done?: boolean }) {
             <div>
               <div className="font-bold">{r.submission?.title || r.submissionId}</div>
               <div className="text-xs text-stone-500">
-                {r.submission?.name} · {String(r.round).toUpperCase()} · board {r.submission?.reviewBoard}
+                {r.round?.blind ? "Anonymous speaker · Blind" : r.submission?.name} · {r.round?.name} · board {r.submission?.reviewBoard}
               </div>
             </div>
             <StatusBadge status={r.status} />
@@ -349,140 +349,20 @@ export function ReviewerSubmissionPage() {
   const { submissionId } = useParams();
   const nav = useNavigate();
   const [data, setData] = useState<any>(null);
-  const [scores, setScores] = useState<Record<string, number>>({});
-  const [notes, setNotes] = useState("");
-  const [round, setRound] = useState<"r1" | "r2" | "final">("r1");
+  const [responses, setResponses] = useState<Record<string, string | number>>({});
   const [err, setErr] = useState("");
-  const criteria = ["relevance", "novelty", "clarity", "depth"] as const;
-
-  const load = () =>
-    api
-      .submission(submissionId!)
-      .then((r) => {
-        setData(r.data);
-        const rev = r.data.reviews?.find((x: any) => x.status === "assigned") || r.data.reviews?.[0];
-        if (rev) {
-          setScores(rev.scores || {});
-          setNotes(rev.notes || "");
-          setRound(rev.round || "r1");
-        }
-      })
-      .catch((e: Error) => setErr(e.message));
-
-  useEffect(() => {
-    load();
-  }, [submissionId]);
-
+  const load = () => api.reviewerAssignment(submissionId!).then((r) => { setData(r.data); setResponses(r.data.review?.responses || r.data.review?.scores || {}); }).catch((e: Error) => setErr(e.message));
+  useEffect(() => { load(); }, [submissionId]);
   if (!data && !err) return <Spinner />;
   if (err) return <Notice tone="danger">{err}</Notice>;
-  const review =
-    data.reviews?.find((x: any) => x.status === "assigned" && x.round === round) ||
-    data.reviews?.find((x: any) => x.round === round) ||
-    data.reviews?.[0];
-
-  return (
-    <div>
-      <PageHeader
-        title={data.title}
-        description={`${data.name} · ${data.category} · board ${data.reviewBoard}. AI is advisory only.`}
-      />
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card className="p-5">
-          <StatusBadge status={data.status} />
-          <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed">{data.abstract}</p>
-          {data.reviews?.length ? (
-            <div className="mt-4 border-t pt-3">
-              <h3 className="text-xs font-bold uppercase tracking-wide text-stone-500">History</h3>
-              <ul className="mt-2 space-y-2 text-xs">
-                {data.reviews.map((r: any) => (
-                  <li key={r.id} className="rounded-lg bg-stone-50 p-2">
-                    <b className="uppercase">{r.round}</b> · {formatStatus(r.status)}
-                    {r.scores ? (
-                      <div className="mt-1 flex flex-wrap gap-1">
-                        {Object.entries(r.scores).map(([k, v]) => (
-                          <span key={k} className="rounded bg-white px-1.5 py-0.5 capitalize">
-                            {k} {String(v)}
-                          </span>
-                        ))}
-                      </div>
-                    ) : null}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
-        </Card>
-        <Card className="p-5">
-          <div className="mb-3 flex flex-wrap gap-2">
-            {(["r1", "r2", "final"] as const).map((r) => (
-              <Button key={r} size="sm" variant={round === r ? "dark" : "outline"} onClick={() => setRound(r)}>
-                {r.toUpperCase()}
-              </Button>
-            ))}
-          </div>
-          {criteria.map((k) => (
-            <div key={k} className="mb-3">
-              <div className="mb-1 flex justify-between text-xs font-semibold uppercase text-stone-500">
-                <span>{k}</span>
-                <span>
-                  {scores[k] || 0}/5
-                </span>
-              </div>
-              <input
-                type="range"
-                min={0}
-                max={5}
-                aria-label={`${k} score`}
-                value={scores[k] || 0}
-                onChange={(e) => setScores((s) => ({ ...s, [k]: Number(e.target.value) }))}
-                className="w-full accent-iris"
-              />
-            </div>
-          ))}
-          <Field label="Notes">
-            <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={4} />
-          </Field>
-          <div className="flex flex-wrap gap-2">
-            <Button
-              variant="secondary"
-              disabled={!review}
-              onClick={async () => {
-                const r = await api.aiAssist(review.id);
-                setScores(r.data.scores);
-                setNotes(r.data.notes);
-                toast("AI advisory draft applied — still submit as human", "info");
-                load();
-              }}
-            >
-              AI assist
-            </Button>
-            <Button
-              disabled={!review}
-              onClick={async () => {
-                await api.saveReview(review.id, { scores, notes, round });
-                toast("Scores submitted");
-                load();
-              }}
-            >
-              Score & save
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setPersona({
-                  id: "org-swyx",
-                  role: "organizer",
-                  name: "Swyx",
-                  email: "swyx@ai.engineer",
-                });
-                nav(`/app/submissions/${submissionId}`);
-              }}
-            >
-              Finish as organizer
-            </Button>
-          </div>
-        </Card>
-      </div>
+  const submission=data.submission, round=data.round;
+  return <div>
+    <PageHeader title={submission.title} description={`${round.name} · ${round.blind ? "Blind review — author identity redacted" : submission.name} · AI remains advisory`} />
+    <div className="grid gap-4 lg:grid-cols-2">
+      <Card className="p-5"><div className="flex gap-2"><StatusBadge status={data.assignment.status}/>{round.blind?<Badge tone="primary">Blind</Badge>:null}</div><p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed">{submission.abstract}</p><p className="mt-4 text-xs text-stone-500">Category: {submission.category} · Review board: {submission.reviewBoard}</p></Card>
+      <Card className="p-5"><h2 className="mb-4 font-bold">Scorecard</h2>{round.criteria.map((criterion:any) => <Field key={criterion.id} label={`${criterion.label}${criterion.weight ? ` · ${criterion.weight}× weight` : ""}`}>
+        {criterion.type === "rating" ? <div><input className="w-full accent-iris" type="range" min={1} max={5} value={Number(responses[criterion.id] || 3)} onChange={e=>setResponses(x=>({...x,[criterion.id]:Number(e.target.value)}))}/><div className="text-right text-xs font-bold">{responses[criterion.id] || 3}/5</div></div> : criterion.type === "select" ? <Select value={String(responses[criterion.id]||"")} onChange={e=>setResponses(x=>({...x,[criterion.id]:e.target.value}))}><option value="">Select…</option>{criterion.options?.map((o:string)=><option key={o}>{o}</option>)}</Select> : <Textarea value={String(responses[criterion.id]||"")} onChange={e=>setResponses(x=>({...x,[criterion.id]:e.target.value}))}/>} 
+      </Field>)}<div className="flex flex-wrap gap-2"><Button onClick={async()=>{await api.submitAssignment(data.assignment.id,{responses});toast("Evaluation submitted");nav("/r/done")}}>Submit evaluation</Button><Button variant="danger" onClick={async()=>{await api.recuseAssignment(data.assignment.id,"Reviewer-declared conflict of interest");toast("Conflict logged; assignment removed");nav("/r")}}>Declare conflict / recuse</Button></div></Card>
     </div>
-  );
+  </div>;
 }
