@@ -75,8 +75,8 @@ function App() {
         </Route>
 
         <Route path="/r" element={<ReviewerShell />}>
-          <Route index element={<ReviewerQueuePage />} />
-          <Route path="done" element={<ReviewerQueuePage done />} />
+          <Route index element={<ReviewerQueuePage key="queue" />} />
+          <Route path="done" element={<ReviewerQueuePage key="done" done />} />
           <Route path="guidelines" element={<ReviewerGuidelinesPage />} />
           <Route path=":submissionId" element={<ReviewerSubmissionPage />} />
         </Route>

@@ -17,8 +17,7 @@ script_name = "cue-program-ops"
 tag = "v1"
 new_sqlite_classes = ["CueState"]
 
-# Production persistence seam: bind D1 here after implementing the D1Repository methods.
-# [[d1_databases]]
-# binding = "DB"
-# database_name = "cue-program-ops"
-# database_id = "replace-me"
+[[d1_databases]]
+binding = "DB"
+database_name = "cue-snapshots"
+database_id = "d84c911f-2a0f-438b-b829-77cde1e13ed8"

@@ -99,15 +99,13 @@ export function createApp(deps: AppDeps = {}) {
   const sync = new SyncService(repo, client);
   const app = new Hono();
   /** Save after mutations. Failures are observable but never roll back valid in-memory work. */
-  let persistTail: Promise<void> = Promise.resolve();
   const persist = async () => {
     const memory = repo as MemoryRepository & { exportSyncState?: () => CompetitionSnapshot["sync"]; getSchedule?: (id:string) => Promise<any> };
-    persistTail=persistTail.then(async()=>{try {
+    try {
       // Keep optional snapshot-export failures from changing an otherwise valid request result.
       const syncState = memory.exportSyncState?.() as CompetitionSnapshot["sync"] | undefined;
       await persistence.save({version:1,eventId:EVENT_ID,savedAt:new Date().toISOString(),lifecycle:structuredClone(store),schedule:await memory.getSchedule?.(EVENT_ID),sync:syncState || {links:[],runs:[],items:[]}});
-    } catch (error) { console.error("CUE snapshot persistence failed", error instanceof Error ? error.message : "unknown error"); }});
-    await persistTail;
+    } catch (error) { console.error("CUE snapshot persistence failed", error instanceof Error ? error.message : "unknown error"); }
   };
   const deliver = async (row: ReturnType<typeof sendTemplate>) => {
     const to=store.profiles.find(p=>p.speakerId===row.speakerId)?.email || store.submissions.find(s=>s.speakerId===row.speakerId)?.email;
@@ -380,15 +378,32 @@ export function createApp(deps: AppDeps = {}) {
     const r = store.reviews.find((x) => x.id === c.req.param("id"));
     if (!r) return fail(c, "review not found", 404);
     if (role === "reviewer" && r.reviewerId !== personaOf(c).id) return fail(c, "review not assigned", 403);
-    const b = (await c.req.json()) as { scores?: Record<string, number>; notes?: string; round?: "r1" | "r2" | "final" };
-    const target = b.round && b.round !== r.round ? reviewForRound(r.submissionId, r.reviewerId, b.round) : r;
-    target.scores = b.scores || target.scores;
+    const b = (await c.req.json()) as {
+      scores?: Record<string, number>;
+      responses?: Record<string, string | number>;
+      notes?: string;
+      round?: string;
+    };
+    const legacyRound = b.round === "r1" || b.round === "r2" || b.round === "final" ? b.round : undefined;
+    const target =
+      legacyRound && legacyRound !== r.round ? reviewForRound(r.submissionId, r.reviewerId, legacyRound) : r;
+    if (b.responses) {
+      target.responses = b.responses;
+      const numeric = Object.fromEntries(
+        Object.entries(b.responses).filter(([, v]) => typeof v === "number"),
+      ) as Record<string, number>;
+      target.scores = { ...target.scores, ...numeric, ...(b.scores || {}) };
+      if (b.responses.recommendation != null) target.recommendation = String(b.responses.recommendation);
+      if (b.responses.comments != null && b.notes == null) target.notes = String(b.responses.comments);
+    } else {
+      target.scores = b.scores || target.scores;
+    }
     target.notes = b.notes ?? target.notes;
     target.status = "submitted";
     target.source = "human";
     const sub = store.submissions.find((s) => s.id === r.submissionId);
     if (sub && sub.status === "submitted") sub.status = "under_review";
-    if (sub && b.round) sub.round = b.round;
+    if (sub && legacyRound) sub.round = legacyRound;
     await persist();
     return c.json({ data: target });
   });
@@ -701,7 +716,7 @@ export function createApp(deps: AppDeps = {}) {
     const body = await c.req
       .json<{ slot: AgendaSlot; version: number; acknowledge?: string[] }>()
       .catch(() => null);
-    if (!s || !body) return c.json({ error: "schedule and move are required" }, 400);
+    if (!s || !body?.slot || typeof body.version !== "number" || !body.slot.sessionId || !body.slot.roomId || !body.slot.startsAt || !body.slot.endsAt) return c.json({ error: "schedule move requires { slot: { sessionId, roomId, startsAt, endsAt }, version }" }, 400);
     const result=applyScheduleMove(s,body.slot,body.version,body.acknowledge);
     if(!result.ok)return c.json({error:result.error,version:result.version,conflicts:result.conflicts,warnings:result.warnings},result.status);
     await r.putSchedule?.(c.req.param("eventId"), s);

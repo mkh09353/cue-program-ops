@@ -19,6 +19,7 @@ import {
   ensurePersonaForRole,
   getPersona,
   getPersonaCatalog,
+  restorePersonaFromSession,
   roleHome,
   setPersona,
   setPersonaCatalog,
@@ -115,11 +116,16 @@ function SkipLink() {
 
 function useRoleSync(role: Role) {
   const location = useLocation();
-  // Imperative sync before paint of children that depend on headers
+  const [ready, setReady] = useState(false);
+  // Rehydrate stored persona before any role gating so direct URL loads don't flash 403.
+  restorePersonaFromSession();
   ensurePersonaForRole(role);
   useEffect(() => {
+    restorePersonaFromSession();
     ensurePersonaForRole(role);
+    setReady(true);
   }, [role, location.pathname]);
+  return ready;
 }
 
 const orgNav = [
@@ -248,7 +254,14 @@ export function OrganizerShell() {
 }
 
 export function ReviewerShell() {
-  useRoleSync("reviewer");
+  const ready = useRoleSync("reviewer");
+  if (!ready) {
+    return (
+      <div className="grid min-h-screen place-items-center bg-canvas text-sm text-mid">
+        Restoring reviewer session…
+      </div>
+    );
+  }
   return (
     <div className="min-h-screen bg-canvas">
       <SkipLink />
@@ -287,7 +300,7 @@ export function ReviewerShell() {
 }
 
 export function PortalShell() {
-  useRoleSync("speaker");
+  const ready = useRoleSync("speaker");
   const links = [
     { to: "/p", label: "Home", icon: Home, end: true },
     { to: "/p/talks", label: "Talks" },
@@ -296,6 +309,13 @@ export function PortalShell() {
     { to: "/p/resources", label: "Resources" },
     { to: "/p/profile", label: "Profile" },
   ];
+  if (!ready) {
+    return (
+      <div className="grid min-h-screen place-items-center bg-canvas text-sm text-mid">
+        Restoring speaker session…
+      </div>
+    );
+  }
   return (
     <div
       className="min-h-screen bg-canvas pb-20 md:pb-0"

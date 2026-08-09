@@ -35,7 +35,7 @@ npx wrangler deploy
 
 The Worker sends API/public/sync paths to the Durable Object named `primary`; other paths go directly to the Vite SPA asset binding. That one object owns the in-memory Hono runtime, choosing one consistent live state over horizontal API scale for the competition demo. Requests no longer land on independent stateless Worker isolates with divergent repositories.
 
-`CueState` deliberately makes **zero Durable Object storage calls**. Its in-memory state survives ordinary front-worker isolate churn because every API request reaches the same named object, but it can reset when that object is evicted or the deployment restarts. If Airtable is configured, startup attempts to restore its event snapshot and mutations best-effort write through to Airtable; without Airtable there is no eviction/redeploy durability. Local `npm run dev` and Node tests still construct `createApp` directly and do not require Durable Objects.
+`CueState` deliberately makes **zero Durable Object storage calls**. The named object provides one live state owner, while the `DB` D1 binding durably stores a whole-event snapshot so eviction, restart, and redeploy can restore it. D1 writes are trailing-edge coalesced and mutation responses await the final flush. If Airtable is configured it is an optional secondary snapshot. Local `npm run dev` and Node tests still use configured Airtable or memory persistence and require no D1 binding.
 
 ## Environment variables
 
@@ -54,6 +54,7 @@ No new provider variables were introduced by review management, content, CRM, CF
 | `ACCELEVENTS_TOKEN` | No | Mock unless full gate is satisfied | Placeholder bearer credential |
 | `ASSETS` | Worker binding | Set by Wrangler | Fetcher binding for built SPA files; not a user secret |
 | `CUE_STATE` | Worker Durable Object binding | Set by Wrangler | Routes all API traffic to the single in-memory `CueState` instance named `primary`; no DO storage used |
+| `DB` | Worker D1 binding | Set by Wrangler | Primary durable whole-event snapshot used to restore the named DO after eviction/redeploy |
 
 Reference template: [`.env.example`](../.env.example). Do not commit populated credentials.
 
@@ -89,7 +90,11 @@ Selected only when `AIRTABLE_TOKEN` and `AIRTABLE_BASE_ID` are both set.
 | Startup | `restoreSnapshot()` imports the latest matching snapshot |
 | Mutation behavior | Best-effort save; error is logged and does not roll back valid in-memory mutation |
 
-This is convenient demo recovery—not normalized storage, transactions, tenant isolation or safe multi-writer persistence. Without it, process restart/Worker isolate changes may reset or fork state.
+This remains a secondary recovery copy—not normalized storage, transactions, or tenant isolation. D1 is the Worker's primary snapshot store.
+
+## D1 snapshot persistence
+
+Database `cue-snapshots` contains one `snapshots` row per event (`event_id`, JSON `payload`, and `updated_at`). Apply `migrations/0001_cue_snapshots.sql` with `npx wrangler d1 migrations apply cue-snapshots --remote`. The single named DO restores this row before serving requests. Saves arriving within the 1.75-second window are coalesced to the latest snapshot, and all waiting mutation calls resolve only after that latest state is committed. This snapshot architecture is appropriate for the demo but is not normalized multi-tenant persistence.
 
 ## Mail option
 

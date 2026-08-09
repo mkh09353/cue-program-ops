@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, subscribeData } from "../lib/api";
-import { EVENT_ID, EVENT_TZ, PROGRAM_DAYS, fmtDate, fmtTime, fmtTzLabel, formatStatus } from "../lib/utils";
+import { EVENT_ID, EVENT_TZ, PROGRAM_DAYS, programDaysFromRange, type ProgramDay, fmtDate, fmtTime, fmtTzLabel, formatStatus } from "../lib/utils";
 import {
   Badge,
   Button,
   Card,
   Dialog,
   EmptyState,
+  Field,
+  Input,
   Notice,
   PageHeader,
   Spinner,
@@ -37,18 +39,34 @@ export function SchedulePage() {
   const [busy, setBusy] = useState(false);
   const [agenda,setAgenda]=useState<any[]>([]);
   const [constraints,setConstraints]=useState({dayStartHour:9,dayEndHour:17,slotMinutes:30,breakMinutes:15});
-  const [newRoom,setNewRoom]=useState(""),[newTrack,setNewTrack]=useState("");
+  const [newRoom, setNewRoom] = useState("");
+  const [newTrack, setNewTrack] = useState("");
+  const [showRoomForm, setShowRoomForm] = useState(false);
+  const [showTrackForm, setShowTrackForm] = useState(false);
+  const [programDays, setProgramDays] = useState<ProgramDay[]>(() => [...PROGRAM_DAYS]);
+  const [selectedDay, setSelectedDay] = useState<string>(PROGRAM_DAYS[0].id);
 
   const load = () =>
     api
       .schedule()
       .then(setD)
       .catch((e) => setErr(e.message));
-  const loadAgenda=()=>api.agendaProposals().then(r=>setAgenda(r.data)).catch(e=>setErr(e.message));
+  const loadAgenda = () => api.agendaProposals().then((r) => setAgenda(r.data)).catch((e) => setErr(e.message));
 
   useEffect(() => {
     load();
     loadAgenda();
+    api
+      .bootstrap()
+      .then((r) => {
+        const ev = r.data?.event || {};
+        const days = programDaysFromRange(ev.startsAt, ev.endsAt, ev.timezone || EVENT_TZ);
+        if (days.length) {
+          setProgramDays(days);
+          setSelectedDay((cur) => (days.some((d) => d.id === cur) ? cur : days[0].id));
+        }
+      })
+      .catch(() => {});
     return subscribeData(load);
   }, []);
 
@@ -71,7 +89,7 @@ export function SchedulePage() {
     }
   };
 
-  const move = async (sessionId: string, roomId: string, startHour = hour, dayIso: string = PROGRAM_DAYS[0].id) => {
+  const move = async (sessionId: string, roomId: string, startHour = hour, dayIso: string = selectedDay) => {
     if (!d) return;
     const s = session(sessionId);
     if (!s) return;
@@ -115,7 +133,9 @@ export function SchedulePage() {
 
   const items = [...(d?.slots || [])].sort((a: any, b: any) => a.startsAt.localeCompare(b.startsAt));
   const unscheduled = (d?.sessions || []).filter((x: any) => !scheduled.has(x.id) && x.status === "accepted");
-  const seedDayLabel = items[0]?.startsAt ? fmtDate(items[0].startsAt) : PROGRAM_DAYS[0].dateLabel;
+  const seedDayLabel = items[0]?.startsAt ? fmtDate(items[0].startsAt) : programDays[0]?.dateLabel || PROGRAM_DAYS[0].dateLabel;
+  const activeDay = programDays.find((d) => d.id === selectedDay) || programDays[0] || PROGRAM_DAYS[0];
+  const dayItems = items.filter((slot: any) => String(slot.startsAt).startsWith(selectedDay) || String(slot.startsAt).slice(0, 10) === selectedDay);
 
   const roomLanes = d?.rooms || [];
   const trackLanes = d?.tracks || [];
@@ -170,10 +190,71 @@ export function SchedulePage() {
             ))}
           </select>
         </label>
-        <Button size="sm" variant="secondary" onClick={async()=>{const name=prompt("New room name",newRoom||"Overflow Room");if(name){setNewRoom(name);await api.createAgendaRoom({name});toast("Room added and ready for scheduling");load()}}}>+ Room</Button>
-        <Button size="sm" variant="secondary" onClick={async()=>{const name=prompt("New track name",newTrack||"Community");if(name){setNewTrack(name);await api.createAgendaTrack({name});toast("Track added");load()}}}>+ Track</Button>
+        <Button size="sm" variant="secondary" onClick={() => { setShowRoomForm((v) => !v); setShowTrackForm(false); }}>+ Room</Button>
+        <Button size="sm" variant="secondary" onClick={() => { setShowTrackForm((v) => !v); setShowRoomForm(false); }}>+ Track</Button>
         <Button size="sm" onClick={async()=>{const r=await api.publishAgenda();toast(`${r.data.count} sessions published`);load();window.open(r.data.publicUrl,"_blank")}}>Publish agenda</Button>
       </div>
+
+      {showRoomForm ? (
+        <Card className="mb-3 flex flex-wrap items-end gap-2 p-3" id="add-room-form">
+          <Field label="New room name">
+            <Input
+              value={newRoom}
+              onChange={(e) => setNewRoom(e.target.value)}
+              placeholder="Overflow Room"
+              aria-label="New room name"
+            />
+          </Field>
+          <Button
+            size="sm"
+            disabled={!newRoom.trim()}
+            onClick={async () => {
+              const name = newRoom.trim();
+              if (!name) return;
+              await api.createAgendaRoom({ name });
+              toast("Room added and ready for scheduling");
+              setNewRoom("");
+              setShowRoomForm(false);
+              load();
+            }}
+          >
+            Add room
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => setShowRoomForm(false)}>
+            Cancel
+          </Button>
+        </Card>
+      ) : null}
+      {showTrackForm ? (
+        <Card className="mb-3 flex flex-wrap items-end gap-2 p-3" id="add-track-form">
+          <Field label="New track name">
+            <Input
+              value={newTrack}
+              onChange={(e) => setNewTrack(e.target.value)}
+              placeholder="Community"
+              aria-label="New track name"
+            />
+          </Field>
+          <Button
+            size="sm"
+            disabled={!newTrack.trim()}
+            onClick={async () => {
+              const name = newTrack.trim();
+              if (!name) return;
+              await api.createAgendaTrack({ name });
+              toast("Track added");
+              setNewTrack("");
+              setShowTrackForm(false);
+              load();
+            }}
+          >
+            Add track
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => setShowTrackForm(false)}>
+            Cancel
+          </Button>
+        </Card>
+      ) : null}
 
       <Card className="mb-4 border-line p-4" id="ai-agenda">
         <div className="flex flex-wrap items-start justify-between gap-3"><div><Badge tone="primary">AI Agenda · advisory</Badge><h2 className="mt-2 text-xl font-bold">Heuristic schedule assistant</h2><p className="text-sm text-mid">Deterministic demo heuristic only—not a model. It creates a persisted review draft and never changes the live schedule until you accept placements.</p></div><div className="flex gap-2"><Button onClick={async()=>{setBusy(true);try{await api.generateAgenda(constraints);toast("Reviewable agenda draft generated");loadAgenda()}catch(e:any){setErr(e.message)}finally{setBusy(false)}}} disabled={busy}>{agenda.length?"Regenerate draft":"Generate draft"}</Button>{agenda[0]?.status==="review"?<><Button variant="secondary" onClick={async()=>{await api.decideAgenda(agenda[0].id,"accept");toast("Accepted conflict-free placements through canonical schedule mutation");load();loadAgenda()}}>Accept all</Button><Button variant="outline" onClick={async()=>{await api.decideAgenda(agenda[0].id,"reject");toast("Proposal rejected; live schedule unchanged");loadAgenda()}}>Reject all</Button></>:null}</div></div>
@@ -215,7 +296,7 @@ export function SchedulePage() {
                 </div>
                 <div className="mt-2 flex flex-wrap gap-1 md:hidden">
                   {(d.rooms || []).slice(0, 3).map((room: any) => (
-                    <Button key={room.id} size="sm" variant="outline" onClick={() => move(x.id, room.id)}>
+                    <Button key={room.id} size="sm" variant="outline" onClick={() => move(x.id, room.id, hour, selectedDay)}>
                       → {room.name}
                     </Button>
                   ))}
@@ -229,12 +310,27 @@ export function SchedulePage() {
         </Card>
 
         <Card className="p-4">
-          <div className="mb-3 flex items-center justify-between text-[11px] font-bold uppercase tracking-wider text-mid">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-[11px] font-bold uppercase tracking-wider text-mid">
             <span>
-              {view} view · program week · seed day {seedDayLabel}
+              {view} view · {programDays.length} program day{programDays.length === 1 ? "" : "s"} · focusing {activeDay?.label || selectedDay}
             </span>
             <span>version {d?.version}</span>
           </div>
+          {(view === "day" || view === "week" || view === "room" || view === "track") ? (
+            <div className="mb-3 flex flex-wrap gap-1" role="tablist" aria-label="Program days">
+              {programDays.map((day) => (
+                <Button
+                  key={day.id}
+                  size="sm"
+                  variant={selectedDay === day.id ? "dark" : "outline"}
+                  aria-selected={selectedDay === day.id}
+                  onClick={() => setSelectedDay(day.id)}
+                >
+                  {day.label}
+                </Button>
+              ))}
+            </div>
+          ) : null}
 
           {view === "list" ? (
             <div className="divide-y">
@@ -261,7 +357,7 @@ export function SchedulePage() {
                   </div>
                   <div className="flex flex-wrap gap-1">
                     {(d.rooms || []).map((room: any) => (
-                      <Button key={room.id} size="sm" variant="secondary" onClick={() => move(x.id, room.id)}>
+                      <Button key={room.id} size="sm" variant="secondary" onClick={() => move(x.id, room.id, hour, selectedDay)}>
                         Place in {room.name}
                       </Button>
                     ))}
@@ -274,7 +370,7 @@ export function SchedulePage() {
             </div>
           ) : view === "week" ? (
             <div className="grid gap-3 md:grid-cols-3">
-              {PROGRAM_DAYS.map((day, idx) => {
+              {programDays.map((day, idx) => {
                 const daySlots = items.filter((slot: any) => String(slot.startsAt).startsWith(day.id));
                 const isSeedDay = idx === 0 || daySlots.length > 0;
                 return (
@@ -312,7 +408,7 @@ export function SchedulePage() {
                         <div className="flex h-full min-h-24 flex-col justify-center text-center text-xs text-mid">
                           <p className="font-semibold text-mid">Open day</p>
                           <p className="mt-1">
-                            Demo seed places sessions on {PROGRAM_DAYS[0].short}. Drop here to schedule onto{" "}
+                            Drop here to schedule onto{" "}
                             {day.short}.
                           </p>
                         </div>
@@ -324,6 +420,11 @@ export function SchedulePage() {
             </div>
           ) : (
             <div className="space-y-4">
+              {view === "day" ? (
+                <p className="text-xs text-mid">
+                  Placing onto <b>{activeDay?.dateLabel || selectedDay}</b> at {hour}:00 ({fmtTzLabel()}). Switch days with the tabs above.
+                </p>
+              ) : null}
               {(view === "track" ? trackLanes : roomLanes).map((lane: any) => (
                 <section
                   key={lane.id}
@@ -332,7 +433,7 @@ export function SchedulePage() {
                   onDrop={() => {
                     if (!drag) return;
                     const roomId = view === "track" ? d.rooms[0].id : lane.id;
-                    move(drag, roomId);
+                    move(drag, roomId, hour, selectedDay);
                     setDrag(null);
                   }}
                 >
@@ -344,6 +445,11 @@ export function SchedulePage() {
                     {items
                       .filter((slot: any) => {
                         const s = session(slot.sessionId);
+                        const onDay =
+                          view !== "day" ||
+                          String(slot.startsAt).startsWith(selectedDay) ||
+                          String(slot.startsAt).slice(0, 10) === selectedDay;
+                        if (!onDay) return false;
                         if (view === "track") return s?.trackIds?.includes(lane.id);
                         return slot.roomId === lane.id;
                       })

@@ -8,12 +8,74 @@ export function cn(...inputs: ClassValue[]) {
 export const EVENT_ID = "evt-ai-summit-2026";
 export const EVENT_SLUG = "ai-engineer-summit";
 export const EVENT_NAME = "AI Engineer Summit";
-/** Canonical program days shown in Schedule (aligned with seed slots). */
+/** Event timezone used for organizer schedule + public widgets. */
+export const EVENT_TZ = "America/Los_Angeles";
+
+/** Fallback program days when bootstrap event dates are unavailable. */
 export const PROGRAM_DAYS = [
   { id: "2026-10-12", label: "Mon · Oct 12", short: "Mon 12", dateLabel: "October 12, 2026" },
   { id: "2026-10-13", label: "Tue · Oct 13", short: "Tue 13", dateLabel: "October 13, 2026" },
   { id: "2026-10-14", label: "Wed · Oct 14", short: "Wed 14", dateLabel: "October 14, 2026" },
 ] as const;
+
+export type ProgramDay = { id: string; label: string; short: string; dateLabel: string };
+
+/** Calendar day keys (YYYY-MM-DD) spanning event startsAt..endsAt in the event timezone. */
+export function eventDayKeys(startsAt: string, endsAt: string, timeZone: string = EVENT_TZ): string[] {
+  const keys: string[] = [];
+  const fmt = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const start = new Date(startsAt);
+  const end = new Date(endsAt);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return [];
+  // Walk UTC noon anchors so DST doesn't skip a civil day
+  let cursor = new Date(`${fmt.format(start)}T12:00:00.000Z`);
+  const last = fmt.format(end);
+  for (let i = 0; i < 31; i++) {
+    const key = fmt.format(cursor);
+    keys.push(key);
+    if (key === last) break;
+    cursor = new Date(cursor.getTime() + 86400000);
+  }
+  return keys;
+}
+
+export function programDaysFromRange(
+  startsAt?: string,
+  endsAt?: string,
+  timeZone: string = EVENT_TZ,
+): ProgramDay[] {
+  const keys =
+    startsAt && endsAt ? eventDayKeys(startsAt, endsAt, timeZone) : PROGRAM_DAYS.map((d) => d.id);
+  const use = keys.length ? keys : PROGRAM_DAYS.map((d) => d.id);
+  return use.map((id) => {
+    const known = PROGRAM_DAYS.find((d) => d.id === id);
+    if (known) return { ...known };
+    try {
+      const d = new Date(`${id}T12:00:00.000Z`);
+      const label = d.toLocaleDateString("en-US", {
+        timeZone,
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+      });
+      const short = d.toLocaleDateString("en-US", { timeZone, weekday: "short", day: "numeric" });
+      const dateLabel = d.toLocaleDateString("en-US", {
+        timeZone,
+        month: "long",
+        day: "numeric",
+        year: "numeric",
+      });
+      return { id, label, short, dateLabel };
+    } catch {
+      return { id, label: id, short: id.slice(5), dateLabel: id };
+    }
+  });
+}
 
 export type Role = "organizer" | "reviewer" | "speaker";
 
@@ -56,8 +118,6 @@ export function daysUntil(iso: string) {
   return Math.max(0, Math.ceil(ms / 86400000));
 }
 
-/** Event timezone used for organizer schedule + public widgets. */
-export const EVENT_TZ = "America/Los_Angeles";
 
 export function fmtTime(iso: string, timeZone: string = EVENT_TZ) {
   return new Date(iso).toLocaleTimeString([], {

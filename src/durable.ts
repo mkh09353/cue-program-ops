@@ -1,7 +1,7 @@
 import { DurableObject } from "cloudflare:workers";
 import { createApp, configuredClient, restoreSnapshot } from "./app.js";
 import { configuredMailer } from "./mailer.js";
-import { configuredPersistence } from "./persistence.js";
+import { CompositeSnapshotPersistence, D1SnapshotPersistence, configuredPersistence } from "./persistence.js";
 import { MemoryRepository } from "./repository.js";
 
 export interface CueEnv {
@@ -13,6 +13,7 @@ export interface CueEnv {
   AIRTABLE_BASE_ID?: string;
   MAILER_API_KEY?: string;
   MAILER_FROM?: string;
+  DB?: D1Database;
 }
 
 /** Single named instance owns CUE's mutable demo runtime. It never touches DO storage. */
@@ -33,9 +34,9 @@ export class CueState extends DurableObject<CueEnv> {
         MAILER_FROM: env.MAILER_FROM,
       };
       const repo = new MemoryRepository();
-      // Memory persistence is a no-op; configured Airtable optionally restores and
-      // snapshots state. Durable Object storage is deliberately unused.
-      const persistence = configuredPersistence(variables);
+      const secondary = configuredPersistence(variables);
+      let persistence = secondary;
+      if(env.DB){const d1=new D1SnapshotPersistence(env.DB);await d1.initialize();persistence=new CompositeSnapshotPersistence(d1,secondary)}
       this.app = createApp({
         repo,
         client: configuredClient(variables),

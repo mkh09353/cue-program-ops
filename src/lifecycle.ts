@@ -77,6 +77,9 @@ export interface ReviewCriterion {
   label: string;
   type: "rating" | "select" | "text";
   weight: number;
+  /** Inclusive scale bounds for rating criteria (default 1–5). */
+  min?: number;
+  max?: number;
   options?: string[];
 }
 export interface ReviewRound {
@@ -252,7 +255,8 @@ export const store: LifecycleStore = {
     slug: EVENT_SLUG,
     timezone: "America/Los_Angeles",
     startsAt: "2026-10-12T16:00:00.000Z",
-    endsAt: "2026-10-14T01:00:00.000Z",
+    // End of program day Oct 14 in America/Los_Angeles (covers three civil days).
+    endsAt: "2026-10-15T01:00:00.000Z",
     website: "https://ai.engineer",
     location: "New York, NY",
   },
@@ -444,8 +448,8 @@ export const store: LifecycleStore = {
       blind: true,
       reviewerIds: ["rev-ada", "rev-linus"],
       criteria: [
-        { id: "relevance", label: "Program relevance", type: "rating", weight: 2 },
-        { id: "novelty", label: "Novelty", type: "rating", weight: 1 },
+        { id: "relevance", label: "Program relevance", type: "rating", weight: 2, min: 1, max: 5 },
+        { id: "novelty", label: "Novelty", type: "rating", weight: 1, min: 1, max: 5 },
         { id: "recommendation", label: "Recommendation", type: "select", weight: 0, options: ["Strong accept", "Accept", "Borderline", "Reject"] },
         { id: "comments", label: "Committee comments", type: "text", weight: 0 },
       ],
@@ -459,8 +463,8 @@ export const store: LifecycleStore = {
       blind: false,
       reviewerIds: ["rev-linus"],
       criteria: [
-        { id: "clarity", label: "Clarity", type: "rating", weight: 1 },
-        { id: "depth", label: "Technical depth", type: "rating", weight: 2 },
+        { id: "clarity", label: "Clarity", type: "rating", weight: 1, min: 1, max: 5 },
+        { id: "depth", label: "Technical depth", type: "rating", weight: 2, min: 1, max: 5 },
         { id: "recommendation", label: "Recommendation", type: "select", weight: 0, options: ["Accept", "Waitlist", "Reject"] },
         { id: "comments", label: "Final notes", type: "text", weight: 0 },
       ],

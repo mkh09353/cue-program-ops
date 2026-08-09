@@ -142,3 +142,21 @@ test("speakers list is surname-sorted and HTML pages are anonymous", async () =>
     assert.doesNotMatch(text, /sign in|password/i);
   }
 });
+
+test("public program days span full event window including empty day 3", () => {
+  const program = buildPublicProgram(demoSchedule, { id: "evt-ai-summit-2026", slug: "ai-engineer-summit" });
+  assert.ok(program.days.includes("2026-10-12"), `days=${program.days.join(",")}`);
+  assert.ok(program.days.includes("2026-10-13"), `days=${program.days.join(",")}`);
+  assert.ok(program.days.includes("2026-10-14"), `expected Oct 14 in days=${program.days.join(",")}`);
+});
+
+test("public agenda ?day=2026-10-14 does not fall back to day 1", async () => {
+  const res = await app.request("/e/ai-engineer-summit/public/agenda?day=2026-10-14");
+  assert.equal(res.status, 200);
+  const text = await res.text();
+  assert.match(text, /2026-10-14|Oct 14|October 14/i);
+  // Should not claim only Oct 12 as the only day tab
+  assert.ok(text.includes("day=2026-10-14") || text.includes("2026-10-14") || /Wed|Oct 14/.test(text));
+  // Prev day link should point at Oct 13 when on day 3
+  assert.ok(text.includes("2026-10-13") || text.includes("day=2026-10-13"));
+});

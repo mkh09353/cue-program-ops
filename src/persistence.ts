@@ -12,6 +12,53 @@ export interface SnapshotPersistence { load(eventId: string): Promise<Competitio
 /** Default persistence is a no-op and cannot make a network call. */
 export class MemorySnapshotPersistence implements SnapshotPersistence { async load(_: string) { return undefined; } async save(_: CompetitionSnapshot) {} }
 
+/** Durable whole-event snapshot in D1. Saves arriving during the debounce window
+ * share one flush and only the newest payload is written. Callers await that flush,
+ * so an isolate cannot return a mutation while its trailing write is still pending. */
+export class D1SnapshotPersistence implements SnapshotPersistence {
+  private pending?: CompetitionSnapshot;
+  private timer?: ReturnType<typeof setTimeout>;
+  private flushing?: Promise<void>;
+  private resolve?: () => void;
+  private reject?: (error: unknown) => void;
+  constructor(private readonly db: D1Database, private readonly debounceMs = 1750) {}
+  async initialize() {
+    await this.db.exec("CREATE TABLE IF NOT EXISTS snapshots (event_id TEXT PRIMARY KEY, payload TEXT NOT NULL, updated_at TEXT NOT NULL)");
+  }
+  async load(eventId: string) {
+    const row=await this.db.prepare("SELECT payload FROM snapshots WHERE event_id = ?").bind(eventId).first<{payload:string}>();
+    if (!row?.payload) return undefined;
+    const parsed=JSON.parse(row.payload) as CompetitionSnapshot;
+    if(parsed.version!==1||parsed.eventId!==eventId)throw new Error("invalid D1 CUE snapshot");
+    return parsed;
+  }
+  save(snapshot:CompetitionSnapshot):Promise<void>{
+    this.pending=structuredClone(snapshot);
+    if(!this.flushing)this.flushing=new Promise<void>((resolve,reject)=>{this.resolve=resolve;this.reject=reject});
+    if(this.timer)clearTimeout(this.timer);
+    this.timer=setTimeout(()=>void this.flush(),this.debounceMs);
+    return this.flushing;
+  }
+  async flush():Promise<void>{
+    if(!this.pending){this.resolve?.();this.reset();return}
+    const snapshot=this.pending;this.pending=undefined;if(this.timer)clearTimeout(this.timer);this.timer=undefined;
+    try{
+      const payload=JSON.stringify(snapshot);
+      await this.db.prepare("INSERT INTO snapshots(event_id,payload,updated_at) VALUES(?,?,?) ON CONFLICT(event_id) DO UPDATE SET payload=excluded.payload,updated_at=excluded.updated_at").bind(snapshot.eventId,payload,snapshot.savedAt).run();
+      // A save may arrive while D1 was writing. Flush it before resolving callers.
+      if(this.pending){await this.flush();return}
+      this.resolve?.();this.reset();
+    }catch(error){this.reject?.(error);this.reset();throw error}
+  }
+  private reset(){this.flushing=undefined;this.resolve=undefined;this.reject=undefined;this.timer=undefined}
+}
+
+export class CompositeSnapshotPersistence implements SnapshotPersistence {
+  constructor(private readonly primary:SnapshotPersistence,private readonly secondary:SnapshotPersistence){}
+  async load(eventId:string){return (await this.primary.load(eventId)) || this.secondary.load(eventId)}
+  async save(snapshot:CompetitionSnapshot){await Promise.all([this.primary.save(snapshot),this.secondary.save(snapshot)])}
+}
+
 export class AirtableSnapshotPersistence implements SnapshotPersistence {
   constructor(private readonly transport: AirtableTransport, private readonly table = AIRTABLE_SNAPSHOT_SCHEMA.table) {}
   async save(snapshot: CompetitionSnapshot) {

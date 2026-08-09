@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api, setPersona, setPersonaCatalog } from "../lib/api";
 import { formatStatus } from "../lib/utils";
 import {
@@ -464,21 +464,25 @@ export function PublicCfpPage() {
 }
 
 export function ReviewerQueuePage({ done = false }: { done?: boolean }) {
+  const location = useLocation();
+  const isDone = done || location.pathname.endsWith("/done");
   const [rows, setRows] = useState<any[]>([]);
   const [err, setErr] = useState("");
   const [loaded, setLoaded] = useState(false);
   useEffect(() => {
+    setLoaded(false);
+    setErr("");
     api
       .reviewerQueue()
       .then((r) => {
-        setRows(r.data.filter((x: any) => (done ? x.status === "completed" : x.status === "assigned")));
+        setRows(r.data.filter((x: any) => (isDone ? x.status === "completed" : x.status === "assigned")));
         setLoaded(true);
       })
       .catch((e) => {
         setErr(e.message);
         setLoaded(true);
       });
-  }, [done]);
+  }, [isDone, location.pathname]);
 
   if (!loaded) return <Spinner />;
   if (err) return <Notice tone="danger">{err}</Notice>;
@@ -486,7 +490,7 @@ export function ReviewerQueuePage({ done = false }: { done?: boolean }) {
   return (
     <div>
       <PageHeader
-        title={done ? "Completed reviews" : "My queue"}
+        title={isDone ? "Completed reviews" : "My queue"}
         description="Score from the queue. AI drafts never decide."
       />
       <div className="space-y-2">
@@ -507,8 +511,8 @@ export function ReviewerQueuePage({ done = false }: { done?: boolean }) {
         ))}
         {!rows.length ? (
           <EmptyState
-            title={done ? "No completed reviews" : "Queue empty"}
-            description={done ? "Submitted scores will appear here." : "Nothing assigned to this reviewer right now."}
+            title={isDone ? "No completed reviews" : "Queue empty"}
+            description={isDone ? "Submitted scores will appear here." : "Nothing assigned to this reviewer right now."}
           />
         ) : null}
       </div>
@@ -521,7 +525,7 @@ export function ReviewerGuidelinesPage() {
     <div>
       <PageHeader title="Guidelines" />
       <Card className="space-y-3 p-5 text-sm text-ink-soft">
-        <p>Score relevance, novelty, clarity, and depth on a 1–5 scale.</p>
+        <p>Score the configured round criteria (ratings use the organizer scale; select options come from the scorecard).</p>
         <p>AI assist is deterministic and advisory. You must click Score & save as a human.</p>
         <p>Only organizers can accept or decline submissions. After scoring, use “Finish as organizer” on the submission.</p>
       </Card>
@@ -535,18 +539,144 @@ export function ReviewerSubmissionPage() {
   const [data, setData] = useState<any>(null);
   const [responses, setResponses] = useState<Record<string, string | number>>({});
   const [err, setErr] = useState("");
-  const load = () => api.reviewerAssignment(submissionId!).then((r) => { setData(r.data); setResponses(r.data.review?.responses || r.data.review?.scores || {}); }).catch((e: Error) => setErr(e.message));
-  useEffect(() => { load(); }, [submissionId]);
+  const [confirmRecuse, setConfirmRecuse] = useState(false);
+  const [recuseBusy, setRecuseBusy] = useState(false);
+  const [notice, setNotice] = useState("");
+  const load = () =>
+    api
+      .reviewerAssignment(submissionId!)
+      .then((r) => {
+        setData(r.data);
+        setResponses(r.data.review?.responses || r.data.review?.scores || {});
+      })
+      .catch((e: Error) => setErr(e.message));
+  useEffect(() => {
+    load();
+  }, [submissionId]);
   if (!data && !err) return <Spinner />;
   if (err) return <Notice tone="danger">{err}</Notice>;
-  const submission=data.submission, round=data.round;
-  return <div>
-    <PageHeader title={submission.title} description={`${round.name} · ${round.blind ? "Blind review — author identity redacted" : submission.name} · AI remains advisory`} />
-    <div className="grid gap-4 lg:grid-cols-2">
-      <Card className="p-5"><div className="flex gap-2"><StatusBadge status={data.assignment.status}/>{round.blind?<Badge tone="primary">Blind</Badge>:null}</div><p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed">{submission.abstract}</p><p className="mt-4 text-xs text-mid">Category: {submission.category} · Review board: {submission.reviewBoard}</p></Card>
-      <Card className="p-5"><h2 className="mb-4 font-bold">Scorecard</h2>{round.criteria.map((criterion:any) => <Field key={criterion.id} label={`${criterion.label}${criterion.weight ? ` · ${criterion.weight}× weight` : ""}`}>
-        {criterion.type === "rating" ? <div><input className="w-full accent-ink" type="range" min={1} max={5} value={Number(responses[criterion.id] || 3)} onChange={e=>setResponses(x=>({...x,[criterion.id]:Number(e.target.value)}))}/><div className="text-right text-xs font-bold">{responses[criterion.id] || 3}/5</div></div> : criterion.type === "select" ? <Select value={String(responses[criterion.id]||"")} onChange={e=>setResponses(x=>({...x,[criterion.id]:e.target.value}))}><option value="">Select…</option>{criterion.options?.map((o:string)=><option key={o}>{o}</option>)}</Select> : <Textarea value={String(responses[criterion.id]||"")} onChange={e=>setResponses(x=>({...x,[criterion.id]:e.target.value}))}/>} 
-      </Field>)}<div className="flex flex-wrap gap-2"><Button onClick={async()=>{await api.submitAssignment(data.assignment.id,{responses});toast("Evaluation submitted");nav("/r/done")}}>Submit evaluation</Button><Button variant="danger" onClick={async()=>{await api.recuseAssignment(data.assignment.id,"Reviewer-declared conflict of interest");toast("Conflict logged; assignment removed");nav("/r")}}>Declare conflict / recuse</Button></div></Card>
+  const submission = data.submission;
+  const round = data.round;
+  return (
+    <div>
+      <PageHeader
+        title={submission.title}
+        description={`${round.name} · ${round.blind ? "Blind review — author identity redacted" : submission.name} · AI remains advisory`}
+      />
+      {notice ? <Notice tone="ok">{notice}</Notice> : null}
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card className="p-5">
+          <div className="flex gap-2">
+            <StatusBadge status={data.assignment.status} />
+            {round.blind ? <Badge tone="primary">Blind</Badge> : null}
+          </div>
+          <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed">{submission.abstract}</p>
+          <p className="mt-4 text-xs text-mid">
+            Category: {submission.category} · Review board: {submission.reviewBoard}
+          </p>
+        </Card>
+        <Card className="p-5">
+          <h2 className="mb-4 font-bold">Scorecard</h2>
+          {round.criteria.map((criterion: any) => {
+            const min = criterion.min ?? 1;
+            const max = criterion.max ?? 5;
+            return (
+              <Field
+                key={criterion.id}
+                label={`${criterion.label}${criterion.weight ? ` · ${criterion.weight}× weight` : ""}${
+                  criterion.type === "rating" ? ` · ${min}–${max}` : ""
+                }`}
+              >
+                {criterion.type === "rating" ? (
+                  <div>
+                    <input
+                      className="w-full accent-ink"
+                      type="range"
+                      min={min}
+                      max={max}
+                      aria-label={criterion.label}
+                      value={Number(responses[criterion.id] ?? min)}
+                      onChange={(e) => setResponses((x) => ({ ...x, [criterion.id]: Number(e.target.value) }))}
+                    />
+                    <div className="text-right text-xs font-bold">
+                      {responses[criterion.id] ?? min}/{max}
+                    </div>
+                  </div>
+                ) : criterion.type === "select" ? (
+                  <Select
+                    value={String(responses[criterion.id] || "")}
+                    onChange={(e) => setResponses((x) => ({ ...x, [criterion.id]: e.target.value }))}
+                  >
+                    <option value="">Select…</option>
+                    {(criterion.options || []).map((o: string) => (
+                      <option key={o} value={o}>
+                        {o}
+                      </option>
+                    ))}
+                  </Select>
+                ) : (
+                  <Textarea
+                    value={String(responses[criterion.id] || "")}
+                    onChange={(e) => setResponses((x) => ({ ...x, [criterion.id]: e.target.value }))}
+                  />
+                )}
+              </Field>
+            );
+          })}
+          <div className="flex flex-wrap gap-2">
+            <Button
+              onClick={async () => {
+                await api.submitAssignment(data.assignment.id, { responses });
+                toast("Evaluation submitted");
+                nav("/r/done");
+              }}
+            >
+              Submit evaluation
+            </Button>
+            <Button variant="danger" onClick={() => setConfirmRecuse(true)}>
+              Declare conflict / recuse
+            </Button>
+          </div>
+          {confirmRecuse ? (
+            <div
+              className="mt-4 rounded-[18px] border border-line bg-canvas p-4"
+              role="dialog"
+              aria-label="Confirm recusal"
+            >
+              <p className="text-sm font-semibold">Recuse from this assignment?</p>
+              <p className="mt-1 text-xs text-mid">
+                This logs a conflict of interest and removes the submission from your queue. Organizers can reinstate
+                it later.
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button
+                  variant="danger"
+                  disabled={recuseBusy}
+                  onClick={async () => {
+                    setRecuseBusy(true);
+                    try {
+                      await api.recuseAssignment(data.assignment.id, "Reviewer-declared conflict of interest");
+                      setNotice("Recusal recorded — assignment removed from your queue.");
+                      toast("Conflict logged; assignment removed");
+                      setTimeout(() => nav("/r"), 600);
+                    } catch (e: any) {
+                      toast(e.message || "Recuse failed", "danger");
+                    } finally {
+                      setRecuseBusy(false);
+                      setConfirmRecuse(false);
+                    }
+                  }}
+                >
+                  {recuseBusy ? "Recusing…" : "Confirm recuse"}
+                </Button>
+                <Button variant="outline" disabled={recuseBusy} onClick={() => setConfirmRecuse(false)}>
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          ) : null}
+        </Card>
+      </div>
     </div>
-  </div>;
+  );
 }

@@ -29,7 +29,31 @@ export function createReviewRoutes(deps: {
     const b=await c.req.json();
     if(b.name&&deps.store.reviewRounds.some((r)=>r.id!==row.id&&r.name.trim().toLowerCase()===String(b.name).trim().toLowerCase()))return error(c,"round name already exists",409);
     const reviewerIds=b.reviewerIds===undefined?row.reviewerIds:[...new Set((b.reviewerIds as string[]).filter(id=>deps.store.personas.some(p=>p.id===id&&p.role==="reviewer")))];
-    const criteria=b.criteria===undefined?row.criteria:(b.criteria as any[]).map(x=>({id:String(x.id||`criterion-${crypto.randomUUID().slice(0,6)}`),label:String(x.label||"").trim(),type:x.type,weight:Number(x.weight||0),options:x.options})).filter(x=>x.label&&["rating","select","text"].includes(x.type));
+    const criteria=b.criteria===undefined?row.criteria:(b.criteria as any[]).map(x=>{
+      const type = x.type as "rating" | "select" | "text";
+      const base: any = {
+        id: String(x.id || `criterion-${crypto.randomUUID().slice(0, 6)}`),
+        label: String(x.label || "").trim(),
+        type,
+        weight: Number(x.weight || 0),
+      };
+      if (type === "rating") {
+        const min = x.min != null && Number.isFinite(Number(x.min)) ? Number(x.min) : 1;
+        const max = x.max != null && Number.isFinite(Number(x.max)) ? Number(x.max) : 5;
+        base.min = min;
+        base.max = max >= min ? max : min;
+      }
+      if (type === "select") {
+        const opts = Array.isArray(x.options)
+          ? x.options.map((o: any) => String(o).trim()).filter(Boolean)
+          : String(x.optionsText || "")
+              .split("\n")
+              .map((o: string) => o.trim())
+              .filter(Boolean);
+        base.options = opts.length ? opts : ["Accept", "Reject"];
+      }
+      return base;
+    }).filter(x=>x.label&&["rating","select","text"].includes(x.type));
     Object.assign(row,b,{id:row.id,reviewerIds,criteria}); await deps.persist(); return c.json({ data: row });
   });
   app.post("/:eventId/review-rounds/:id/reviewers",async(c)=>{
@@ -71,6 +95,38 @@ export function createReviewRoutes(deps: {
   app.post("/:eventId/reviewer-queue/:assignmentId/recuse", async (c) => {
     if (!event(c)) return error(c, "event not found", 404); const p = deps.persona(c); const a = deps.store.reviewAssignments.find((x) => x.id === c.req.param("assignmentId") && x.reviewerId === p.id && x.status === "assigned"); if (!a) return error(c, "assignment not found", 404);
     const b = await c.req.json().catch(() => ({})); a.status = "recused"; deps.store.reviewConflicts.push({ id: `conflict-${crypto.randomUUID().slice(0,8)}`, assignmentId: a.id, reviewerId: p.id, submissionId: a.submissionId, reason: b.reason || "Conflict of interest", createdAt: new Date().toISOString() }); await deps.persist(); return c.json({ data: a });
+  });
+  /** Organizer list of recused assignments (for Assignments reinstate UI). */
+  app.get("/:eventId/review-recusals", (c) => {
+    if (!event(c)) return error(c, "event not found", 404);
+    if (!organizer(c)) return error(c, "organizer role required", 403);
+    const data = deps.store.reviewAssignments
+      .filter((a) => a.status === "recused")
+      .map((a) => {
+        const conflict = [...deps.store.reviewConflicts].reverse().find((x) => x.assignmentId === a.id);
+        return {
+          ...a,
+          round: round(a.roundId),
+          reviewer: deps.store.personas.find((p) => p.id === a.reviewerId),
+          submission: deps.store.submissions.find((s) => s.id === a.submissionId),
+          reason: conflict?.reason || "Conflict of interest",
+          recusedAt: conflict?.createdAt,
+        };
+      });
+    return c.json({ data });
+  });
+  /** Organizer reinstate: move recused assignment back to assigned and drop conflict row. */
+  app.post("/:eventId/review-assignments/:assignmentId/reinstate", async (c) => {
+    if (!event(c)) return error(c, "event not found", 404);
+    if (!organizer(c)) return error(c, "organizer role required", 403);
+    const a = deps.store.reviewAssignments.find((x) => x.id === c.req.param("assignmentId"));
+    if (!a) return error(c, "assignment not found", 404);
+    if (a.status !== "recused") return error(c, "assignment is not recused", 400);
+    a.status = "assigned";
+    delete a.completedAt;
+    deps.store.reviewConflicts = deps.store.reviewConflicts.filter((x) => x.assignmentId !== a.id);
+    await deps.persist();
+    return c.json({ data: a });
   });
   app.get("/:eventId/review-progress", (c) => {
     if (!event(c)) return error(c, "event not found", 404); if (!organizer(c)) return error(c, "organizer role required", 403);

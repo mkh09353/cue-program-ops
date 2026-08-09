@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { AirtableSnapshotPersistence, CompetitionSnapshot, MemorySnapshotPersistence, configuredPersistence } from "../src/persistence.js";
+import { AirtableSnapshotPersistence, CompetitionSnapshot, D1SnapshotPersistence, MemorySnapshotPersistence, configuredPersistence } from "../src/persistence.js";
 import { AirtableTransport } from "../src/airtable.js";
 import { HttpMailer, MockMailer, configuredMailer } from "../src/mailer.js";
 import { demoSchedule } from "../src/repository.js";
@@ -16,6 +16,8 @@ test("default persistence and mail adapters make zero network calls", async () =
   const sent=await mailer.send({to:"speaker@example.test",subject:"Hello",text:"body"});
   assert.equal(sent.status,"mock_sent"); assert.equal(calls,0);
 });
+
+test("D1 persistence coalesces a burst, flushes latest, and restores it",async()=>{let row:any,writes=0;const db={exec:async()=>({}),prepare:(sql:string)=>({bind:(...args:any[])=>({run:async()=>{writes++;row={event_id:args[0],payload:args[1],updated_at:args[2]};return{}},first:async()=>row?{payload:row.payload}:null})})} as any;const persistence=new D1SnapshotPersistence(db,10);await persistence.initialize();const a=snapshot(),b=snapshot();b.savedAt="2026-10-01T00:00:02.000Z";b.schedule!.version=42;const pending=[persistence.save(a),persistence.save(b)];await Promise.all(pending);assert.equal(writes,1);const restored=await persistence.load(b.eventId);assert.equal(restored?.schedule?.version,42);assert.equal(restored?.savedAt,b.savedAt)});
 
 test("Airtable snapshot save/load uses documented upsert and round-trips JSON", async () => {
   let saved: any; const requests: {url:string; init:RequestInit}[]=[];

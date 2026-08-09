@@ -138,24 +138,29 @@ export function ReviewStudioPage() {
   const { id } = useParams();
   const nav = useNavigate();
   const [data, setData] = useState<any>(null);
-  const [scores, setScores] = useState<Record<string, number>>({});
+  const [rounds, setRounds] = useState<any[]>([]);
+  const [scores, setScores] = useState<Record<string, number | string>>({});
   const [notes, setNotes] = useState("");
-  const [round, setRound] = useState<"r1" | "r2" | "final">("r1");
+  const [roundId, setRoundId] = useState<string>("");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
 
   const load = () =>
-    api
-      .submission(id!)
-      .then((r) => {
+    Promise.all([api.submission(id!), api.reviewRounds().catch(() => ({ data: [] as any[] }))])
+      .then(([r, rr]) => {
         setData(r.data);
+        const list = rr.data || [];
+        setRounds(list);
+        const preferred =
+          list.find((x: any) => x.status === "open") ||
+          list[0];
+        setRoundId((cur) => cur || preferred?.id || "");
         const rev =
           r.data.reviews?.find((x: any) => x.status === "assigned") ||
           r.data.reviews?.[r.data.reviews.length - 1];
         if (rev) {
-          setScores(rev.scores || {});
+          setScores({ ...(rev.responses || rev.scores || {}) });
           setNotes(rev.notes || "");
-          setRound(rev.round || "r1");
         }
       })
       .catch((e) => setErr(e.message));
@@ -165,19 +170,28 @@ export function ReviewStudioPage() {
     return subscribeData(load);
   }, [id]);
 
+  const activeRound = useMemo(
+    () => rounds.find((r) => r.id === roundId) || rounds.find((r) => r.status === "open") || rounds[0],
+    [rounds, roundId],
+  );
+  const criteria = activeRound?.criteria || [];
+
   const activeReview = useMemo(() => {
     if (!data?.reviews?.length) return null;
     return (
-      data.reviews.find((x: any) => x.status === "assigned" && x.round === round) ||
-      data.reviews.find((x: any) => x.round === round) ||
+      data.reviews.find((x: any) => x.status === "assigned") ||
+      data.reviews[data.reviews.length - 1] ||
       data.reviews[0]
     );
-  }, [data, round]);
+  }, [data]);
 
   if (!data && !err) return <Spinner />;
   if (err) return <Notice tone="danger">{err}</Notice>;
 
-  const total = CRITERIA.reduce((a, k) => a + (Number(scores[k]) || 0), 0) / CRITERIA.length;
+  const ratingCriteria = criteria.filter((c: any) => c.type === "rating");
+  const total = ratingCriteria.length
+    ? ratingCriteria.reduce((a: number, c: any) => a + (Number(scores[c.id]) || 0), 0) / ratingCriteria.length
+    : 0;
 
   return (
     <div>
@@ -227,44 +241,97 @@ export function ReviewStudioPage() {
 
         <Card className="flex flex-col p-5">
           <div className="mb-3 flex flex-wrap gap-2">
-            {(["r1", "r2", "final"] as const).map((r) => (
-              <Button key={r} size="sm" variant={round === r ? "dark" : "outline"} onClick={() => setRound(r)}>
-                {r.toUpperCase()}
+            {rounds.map((r) => (
+              <Button
+                key={r.id}
+                size="sm"
+                variant={activeRound?.id === r.id ? "dark" : "outline"}
+                onClick={() => setRoundId(r.id)}
+              >
+                {r.name}
               </Button>
             ))}
             {activeReview?.source === "ai_draft" ? (
               <Badge tone="ai">AI draft — edit before submit</Badge>
             ) : null}
           </div>
+          <p className="mb-3 text-xs text-mid">
+            Scorecard from <b>{activeRound?.name || "active round"}</b>
+            {activeRound?.blind ? " · blind" : ""}. AI assist fills configured rating criteria only.
+          </p>
 
           <div className="space-y-4">
-            {CRITERIA.map((k) => (
-              <div key={k}>
-                <div className="mb-1 flex justify-between text-xs font-semibold uppercase tracking-wide text-mid">
-                  <span>{k}</span>
-                  <span>
-                    {scores[k] || 0}/5
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min={0}
-                  max={5}
-                  step={1}
-                  aria-label={`${k} score`}
-                  value={scores[k] || 0}
-                  onChange={(e) => setScores((s) => ({ ...s, [k]: Number(e.target.value) }))}
-                  className="w-full accent-ink"
-                />
-              </div>
-            ))}
+            {criteria.map((c: any) => {
+              const min = c.min ?? 1;
+              const max = c.max ?? 5;
+              if (c.type === "rating") {
+                return (
+                  <div key={c.id}>
+                    <div className="mb-1 flex justify-between text-xs font-semibold uppercase tracking-wide text-mid">
+                      <span>
+                        {c.label}
+                        {c.weight ? ` · ${c.weight}×` : ""}
+                      </span>
+                      <span>
+                        {scores[c.id] ?? min}/{max}
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min={min}
+                      max={max}
+                      step={1}
+                      aria-label={`${c.label} score`}
+                      value={Number(scores[c.id] ?? min)}
+                      onChange={(e) => setScores((s) => ({ ...s, [c.id]: Number(e.target.value) }))}
+                      className="w-full accent-ink"
+                    />
+                  </div>
+                );
+              }
+              if (c.type === "select") {
+                return (
+                  <Field key={c.id} label={`${c.label}${c.weight ? ` · ${c.weight}×` : ""}`}>
+                    <select
+                      className="h-10 w-full rounded-[18px] border border-line bg-white px-3 text-sm"
+                      aria-label={c.label}
+                      value={String(scores[c.id] || "")}
+                      onChange={(e) => setScores((s) => ({ ...s, [c.id]: e.target.value }))}
+                    >
+                      <option value="">Select…</option>
+                      {(c.options || []).map((o: string) => (
+                        <option key={o} value={o}>
+                          {o}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                );
+              }
+              return (
+                <Field key={c.id} label={c.label}>
+                  <Textarea
+                    aria-label={c.label}
+                    value={String(scores[c.id] || "")}
+                    onChange={(e) => setScores((s) => ({ ...s, [c.id]: e.target.value }))}
+                    rows={3}
+                  />
+                </Field>
+              );
+            })}
+            {!criteria.length ? (
+              <Notice tone="warn">No criteria on this round — configure them under Evaluation Plan.</Notice>
+            ) : null}
           </div>
 
-          <Field label="Notes">
+          <Field label="Organizer notes">
             <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={4} />
           </Field>
           <div className="mb-4 text-sm">
-            Average <b>{total.toFixed(1)}</b>
+            Rating average <b>{total.toFixed(1)}</b>
+            {activeReview?.source === "ai_draft" ? (
+              <span className="ml-2 text-xs text-mid">· provenance: AI advisory draft</span>
+            ) : null}
           </div>
 
           <div className="mt-auto flex flex-wrap gap-2">
@@ -276,9 +343,29 @@ export function ReviewStudioPage() {
                 setBusy(true);
                 try {
                   const r = await api.aiAssist(activeReview.id);
-                  setScores(r.data.scores);
-                  setNotes(r.data.notes);
-                  toast("AI advisory draft applied — submit as a human", "info");
+                  const aiScores = r.data.scores || {};
+                  const mapped: Record<string, number | string> = { ...scores };
+                  for (const c of criteria) {
+                    if (c.type === "rating") {
+                      if (aiScores[c.id] != null) mapped[c.id] = Number(aiScores[c.id]);
+                      else if (aiScores[c.label?.toLowerCase?.()] != null) mapped[c.id] = Number(aiScores[c.label.toLowerCase()]);
+                      else if (["relevance", "novelty", "clarity", "depth"].includes(c.id) && aiScores[c.id] != null)
+                        mapped[c.id] = Number(aiScores[c.id]);
+                      else if (aiScores.relevance != null && c.id === "relevance") mapped[c.id] = Number(aiScores.relevance);
+                      else if (aiScores.novelty != null && c.id === "novelty") mapped[c.id] = Number(aiScores.novelty);
+                      else if (aiScores.clarity != null && c.id === "clarity") mapped[c.id] = Number(aiScores.clarity);
+                      else if (aiScores.depth != null && c.id === "depth") mapped[c.id] = Number(aiScores.depth);
+                      else if (Object.keys(aiScores).length) {
+                        // Fall back: distribute first rating values onto criteria in order
+                        const vals = Object.values(aiScores).filter((v) => typeof v === "number") as number[];
+                        const idx = criteria.filter((x: any) => x.type === "rating").indexOf(c);
+                        if (idx >= 0 && vals[idx] != null) mapped[c.id] = vals[idx];
+                      }
+                    }
+                  }
+                  setScores(mapped);
+                  setNotes(r.data.notes || notes);
+                  toast("AI advisory draft applied — human remains responsible", "info");
                   load();
                 } catch (e: any) {
                   toast(e.message, "danger");
@@ -295,7 +382,7 @@ export function ReviewStudioPage() {
                 if (!activeReview) return;
                 setBusy(true);
                 try {
-                  await api.saveReview(activeReview.id, { scores, notes, round });
+                  await api.saveReview(activeReview.id, { scores, responses: scores, notes, round: activeRound?.id || roundId });
                   toast("Scores saved for this round");
                   load();
                 } catch (e: any) {

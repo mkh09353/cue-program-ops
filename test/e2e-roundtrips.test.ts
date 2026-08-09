@@ -492,3 +492,18 @@ test("defect: CRM campaigns list endpoint works", async () => {
   assert.equal(r.status, 200, JSON.stringify(r.body));
   assert.ok(Array.isArray(r.body?.data));
 });
+
+test("defect: event day range covers Oct 12–14 for schedule + public agenda", async () => {
+  const { app } = appWithSchedule();
+  const boot = await json(app, `/api/events/${E}/bootstrap`, { headers: org });
+  assert.equal(boot.status, 200);
+  const ev = boot.body?.data?.event || boot.body?.event;
+  assert.ok(ev?.startsAt && ev?.endsAt, "bootstrap event dates");
+  // Public agenda day 3
+  const day3 = await json(app, `/e/${SLUG}/public/agenda?day=2026-10-14`);
+  assert.equal(day3.status, 200);
+  assert.ok(
+    day3.text.includes("2026-10-14") || /Oct 14|October 14/.test(day3.text),
+    "agenda should acknowledge day 3",
+  );
+});

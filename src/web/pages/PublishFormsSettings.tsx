@@ -630,7 +630,13 @@ export function SettingsPage() {
         </Card>
         <Card className="p-5">
           <h2 className="text-sm font-bold uppercase tracking-wide text-mid">Program structure</h2>
-          <p className="mt-1 text-xs text-mid">Read-only from schedule seed (edit requires backend).</p>
+          <p className="mt-1 text-xs text-mid">
+            Rooms and tracks are editable on the{" "}
+            <a className="font-semibold underline" href="/app/schedule">
+              Schedule
+            </a>{" "}
+            page (+ Room / + Track). Changes apply immediately to the canonical schedule.
+          </p>
           <div className="mt-4">
             <div className="text-xs font-bold uppercase text-mid">Tracks</div>
             <ul className="mt-2 flex flex-wrap gap-2">
@@ -653,6 +659,11 @@ export function SettingsPage() {
               ))}
               {!rooms.length ? <span className="text-sm text-mid">—</span> : null}
             </ul>
+          </div>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Button asChild size="sm" variant="secondary">
+              <a href="/app/schedule">Open schedule builder</a>
+            </Button>
           </div>
         </Card>
       </div>

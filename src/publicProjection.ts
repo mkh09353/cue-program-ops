@@ -89,6 +89,33 @@ export function dayKeyOf(iso: string, timeZone = "UTC"): string {
   }
 }
 
+/** Inclusive civil-day keys for the event window (used by public agenda day tabs). */
+export function eventRangeDayKeys(startsAt: string, endsAt: string, timeZone = "UTC"): string[] {
+  const keys: string[] = [];
+  try {
+    const fmt = new Intl.DateTimeFormat("en-CA", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    });
+    const start = new Date(startsAt);
+    const end = new Date(endsAt);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return keys;
+    let cursor = new Date(`${fmt.format(start)}T12:00:00.000Z`);
+    const last = fmt.format(end);
+    for (let i = 0; i < 31; i++) {
+      const key = fmt.format(cursor);
+      keys.push(key);
+      if (key === last) break;
+      cursor = new Date(cursor.getTime() + 86400000);
+    }
+  } catch {
+    /* ignore */
+  }
+  return keys;
+}
+
 function speakerView(sp: ScheduleSpeaker, sessionIds: string[] = []): PublicSpeakerView {
   const { firstName, lastName } = splitName(sp.name);
   return {
@@ -170,7 +197,12 @@ export function buildPublicProgram(
     })
     .sort((a, b) => a.lastName.localeCompare(b.lastName) || a.firstName.localeCompare(b.firstName) || a.name.localeCompare(b.name));
 
-  const days = [...new Set(sessions.map((s) => s.dayKey))].sort();
+  const sessionDays = [...new Set(sessions.map((s) => s.dayKey))];
+  const startsAt = schedule.event?.startsAt || store.event.startsAt;
+  const endsAt = schedule.event?.endsAt || store.event.endsAt;
+  // Always expose every civil day in the event window (even if empty) so agenda nav reaches day 3.
+  const rangeDays = eventRangeDayKeys(startsAt, endsAt, timezone);
+  const days = [...new Set([...rangeDays, ...sessionDays])].sort();
   const formats = [...new Set(sessions.map((s) => s.format).filter(Boolean))].sort();
   const trackNames = [...new Set(sessions.flatMap((s) => s.trackNames))].sort();
   const roomNames = [...new Set(sessions.map((s) => s.room))].sort();
@@ -181,8 +213,8 @@ export function buildPublicProgram(
       slug,
       name: meta?.name || (schedule.event as { name?: string } | undefined)?.name || store.event.name,
       timezone,
-      startsAt: schedule.event?.startsAt || store.event.startsAt,
-      endsAt: schedule.event?.endsAt || store.event.endsAt,
+      startsAt,
+      endsAt,
       location: meta?.location || store.event.location || "",
       website: meta?.website || store.event.website || "",
     },
