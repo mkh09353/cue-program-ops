@@ -202,6 +202,8 @@ export interface SessionDraft {
   roomId?: string;
   slot?: { startsAt: string; endsAt: string };
 }
+export interface AgendaProposalPlacement { id:string; sessionId:string; slot:{id:string;sessionId:string;roomId:string;startsAt:string;endsAt:string}; status:"proposed"|"accepted"|"rejected"|"conflict"; rationale:string; conflicts:string[]; decidedAt?:string }
+export interface AgendaProposal { id:string; eventId:string; status:"review"|"partially_applied"|"applied"|"rejected"; provenance:"deterministic_heuristic_demo"; generatedAt:string; generation:number; constraints:{dayStartHour:number;dayEndHour:number;slotMinutes:number;breakMinutes:number;speakerAvailability:Record<string,{startsAt:string;endsAt:string}[]>}; placements:AgendaProposalPlacement[] }
 
 export interface LifecycleStore {
   event: {
@@ -231,6 +233,7 @@ export interface LifecycleStore {
   communications: Communication[];
   resources: Resource[];
   sessions: SessionDraft[];
+  agendaProposals: AgendaProposal[];
   rooms: { id: string; name: string }[];
   tracks: { id: string; name: string }[];
   boards: { id: string; label: string }[];
@@ -285,7 +288,7 @@ export const store: LifecycleStore = {
         label: "Format",
         type: "select",
         required: true,
-        options: ["Keynote (45 min)", "Talk (30 min)", "Lightning Talk (10 min)", "Workshop (120 min)", "Panel (45 min)", "Talk", "Panel", "Workshop"],
+        options: ["Keynote (45 min)", "Talk (30 min)", "Lightning Talk (10 min)", "Workshop (120 min)", "Panel (45 min)"],
       },
       {
         key: "workshopPlan",
@@ -293,7 +296,7 @@ export const store: LifecycleStore = {
         type: "textarea",
         required: true,
         visibleWhen: { key: "format", equals: "Workshop (120 min)" },
-        helpText: "Shown only when Format = Workshop.",
+        helpText: "Shown only when Format = Workshop (120 min).",
       },
       {
         key: "duration",
@@ -301,6 +304,7 @@ export const store: LifecycleStore = {
         type: "text",
         required: true,
         visibleWhen: { key: "format", equals: "Workshop (120 min)" },
+        helpText: "Shown only when Format = Workshop (120 min).",
       },
       {
         key: "experience",
@@ -332,8 +336,8 @@ export const store: LifecycleStore = {
       title: "Analytical Engines in Practice",
       abstract: "Reliable systems patterns for creative engineering teams shipping AI products.",
       category: "Engineering",
-      format: "Talk",
-      answers: { experience: "advanced", format: "Talk" },
+      format: "Talk (30 min)",
+      answers: { experience: "advanced", format: "Talk (30 min)" },
       status: "accepted",
       reviewBoard: "engineering",
       round: "final",
@@ -348,8 +352,8 @@ export const store: LifecycleStore = {
       title: "Compilers for Humans",
       abstract: "Making agent toolchains legible to the teams who maintain them.",
       category: "Product",
-      format: "Talk",
-      answers: { experience: "advanced", format: "Talk" },
+      format: "Talk (30 min)",
+      answers: { experience: "advanced", format: "Talk (30 min)" },
       status: "under_review",
       reviewBoard: "product",
       round: "r1",
@@ -364,8 +368,8 @@ export const store: LifecycleStore = {
       title: "Visualizing Agent Memory",
       abstract: "Interactive mental models for long-running agent state.",
       category: "Agents",
-      format: "Talk",
-      answers: { experience: "intermediate", format: "Talk" },
+      format: "Talk (30 min)",
+      answers: { experience: "intermediate", format: "Talk (30 min)" },
       status: "submitted",
       reviewBoard: "agents",
       round: "r1",
@@ -380,8 +384,8 @@ export const store: LifecycleStore = {
       title: "Shipping AI Products Without Regret",
       abstract: "Release discipline for high-stakes model-backed features.",
       category: "Product",
-      format: "Talk",
-      answers: { experience: "advanced", format: "Talk" },
+      format: "Talk (30 min)",
+      answers: { experience: "advanced", format: "Talk (30 min)" },
       status: "accepted",
       reviewBoard: "product",
       round: "final",
@@ -396,10 +400,10 @@ export const store: LifecycleStore = {
       title: "Eval Harnesses Teams Actually Use",
       abstract: "A field guide to eval loops that survive contact with production.",
       category: "Engineering",
-      format: "Workshop",
+      format: "Workshop (120 min)",
       answers: {
         experience: "intermediate",
-        format: "Workshop",
+        format: "Workshop (120 min)",
         workshopPlan: "Hands-on harness build in pairs.",
         duration: "60",
       },
@@ -689,6 +693,7 @@ export const store: LifecycleStore = {
       published: true,
     },
   ],
+  agendaProposals: [],
   sessions: [
     {
       id: "ses-analytical",

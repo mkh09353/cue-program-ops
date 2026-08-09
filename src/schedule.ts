@@ -9,6 +9,7 @@ export interface ScheduleData { event?:{startsAt:string;endsAt:string;timezone:s
 export interface ScheduleConflict { id:string; severity:ConflictSeverity; code:ConflictCode; message:string; relatedIds:string[] }
 export interface SuggestedSlot { roomId:string; startsAt:string; endsAt:string; label:string }
 export interface Validation { conflicts:ScheduleConflict[]; alternatives:SuggestedSlot[] }
+export interface ScheduleMoveResult { ok:boolean; status:200|409|422; error?:string; conflicts:ScheduleConflict[]; warnings:ScheduleConflict[]; slot?:AgendaSlot; version:number }
 const ms=(v:string)=>Date.parse(v);
 /** Half-open [start,end) intersection; equal endpoints deliberately do not overlap. */
 export const overlaps=(a:{startsAt:string;endsAt:string},b:{startsAt:string;endsAt:string})=>ms(a.startsAt)<ms(b.endsAt)&&ms(b.startsAt)<ms(a.endsAt);
@@ -31,4 +32,13 @@ export function validateSlot(data:ScheduleData, candidate:AgendaSlot):Validation
 }
 function validateCore(data:ScheduleData,candidate:AgendaSlot){ const s=data.sessions.find(x=>x.id===candidate.sessionId); const room=data.rooms.find(x=>x.id===candidate.roomId); const cs:ScheduleConflict[]=[]; if(!s||!room||ms(candidate.endsAt)<=ms(candidate.startsAt))return [conflict("hard","INVALID_RANGE",[candidate.sessionId],"Invalid")]; for(const o of data.slots.filter(x=>x.sessionId!==candidate.sessionId&&overlaps(x,candidate))){if(o.roomId===candidate.roomId)cs.push(conflict("hard","ROOM_OVERLAP",[o.sessionId,candidate.sessionId],"Room"));const os=data.sessions.find(x=>x.id===o.sessionId);if(s.speakerIds.some(id=>os?.speakerIds.includes(id)))cs.push(conflict("hard","SPEAKER_OVERLAP",[o.sessionId,candidate.sessionId],"Speaker"));}return cs }
 export function scheduleWarnings(data:ScheduleData):ScheduleConflict[]{return data.sessions.filter(s=>s.status==="accepted"&&!data.slots.some(x=>x.sessionId===s.id)).map(s=>conflict("warning","UNSCHEDULED_ACCEPTED",[s.id],`${s.title} is accepted but unscheduled.`)).sort((a,b)=>a.id.localeCompare(b.id))}
+/** The single canonical mutation used by manual moves and accepted agenda suggestions. */
+export function applyScheduleMove(data:ScheduleData, slot:AgendaSlot, version:number, acknowledge:string[]=[]):ScheduleMoveResult {
+ if(version!==data.version)return {ok:false,status:409,error:"stale schedule",conflicts:[],warnings:[],version:data.version};
+ const result=validateSlot(data,slot),hard=result.conflicts.filter(x=>x.severity==="hard"),warnings=result.conflicts.filter(x=>x.severity==="warning");
+ if(hard.length)return {ok:false,status:409,error:"hard conflicts block this move",conflicts:result.conflicts,warnings,version:data.version};
+ if(warnings.some(x=>!acknowledge.includes(x.id)))return {ok:false,status:422,error:"warnings require acknowledgement",conflicts:result.conflicts,warnings,version:data.version};
+ const i=data.slots.findIndex(x=>x.sessionId===slot.sessionId);if(i>=0)data.slots[i]=slot;else data.slots.push(slot);data.version++;
+ return {ok:true,status:200,conflicts:result.conflicts,warnings,slot,version:data.version};
+}
 export function publicSchedule(data:ScheduleData){const published=data.sessions.filter(s=>s.publishStatus==="published"&&(s.status==="published"||s.status==="accepted"));const eligible=new Set(published.flatMap(s=>s.speakerIds));const publicSpeakers=new Map(data.speakers.filter(x=>x.isPublic!==false&&eligible.has(x.id)).map(x=>[x.id,x]));const publishedIds=new Set(published.map(s=>s.id));return data.slots.map(slot=>{const s=data.sessions.find(x=>x.id===slot.sessionId)!;const room=data.rooms.find(x=>x.id===slot.roomId)!;return {id:s.id,title:s.title,abstract:s.abstract,startsAt:slot.startsAt,endsAt:slot.endsAt,room:room?.name||"TBA",tracks:s.trackIds.map(id=>data.tracks.find(t=>t.id===id)?.name).filter(Boolean),speakers:s.speakerIds.map(id=>publicSpeakers.get(id)).filter(Boolean).map(x=>({id:x!.id,name:x!.name,bio:x!.bio,company:x!.company,title:x!.title,headshotUrl:x!.headshotUrl}))}}).filter(x=>publishedIds.has(x.id)).sort((a,b)=>a.startsAt.localeCompare(b.startsAt)||a.title.localeCompare(b.title));}

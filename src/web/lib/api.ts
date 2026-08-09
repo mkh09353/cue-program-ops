@@ -219,6 +219,13 @@ export const api = {
     req(`/api/events/${EVENT_ID}/schedule/validate`, { method: "POST", body: JSON.stringify(slot) }),
   moveSlot: (body: any) =>
     mut(`/api/events/${EVENT_ID}/schedule/move`, { method: "POST", body: JSON.stringify(body) }),
+  agendaProposals: () => req<{data:any[]}>(`/api/events/${EVENT_ID}/agenda/proposals`),
+  generateAgenda: (body:any) => mut<{data:any}>(`/api/events/${EVENT_ID}/agenda/proposals/generate`,{method:"POST",body:JSON.stringify(body)}),
+  decideAgendaPlacement: (proposalId:string,placementId:string,decision:"accept"|"reject") => mut(`/api/events/${EVENT_ID}/agenda/proposals/${proposalId}/placements/${placementId}/${decision}`,{method:"POST",body:"{}"}),
+  decideAgenda: (proposalId:string,decision:"accept"|"reject") => mut(`/api/events/${EVENT_ID}/agenda/proposals/${proposalId}/${decision}`,{method:"POST",body:"{}"}),
+  createAgendaRoom: (body:any) => mut(`/api/events/${EVENT_ID}/agenda/rooms`,{method:"POST",body:JSON.stringify(body)}),
+  createAgendaTrack: (body:any) => mut(`/api/events/${EVENT_ID}/agenda/tracks`,{method:"POST",body:JSON.stringify(body)}),
+  publishAgenda: () => mut<{data:any}>(`/api/events/${EVENT_ID}/agenda/publish`,{method:"POST",body:"{}"}),
   saveSettings: (body: any) =>
     mut(`/api/events/${EVENT_ID}/settings`, { method: "PUT", body: JSON.stringify(body) }),
   syncPreview: () =>

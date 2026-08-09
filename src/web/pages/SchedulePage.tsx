@@ -35,15 +35,20 @@ export function SchedulePage() {
   const [hour, setHour] = useState(18);
   const [pending, setPending] = useState<PendingMove | null>(null);
   const [busy, setBusy] = useState(false);
+  const [agenda,setAgenda]=useState<any[]>([]);
+  const [constraints,setConstraints]=useState({dayStartHour:9,dayEndHour:17,slotMinutes:30,breakMinutes:15});
+  const [newRoom,setNewRoom]=useState(""),[newTrack,setNewTrack]=useState("");
 
   const load = () =>
     api
       .schedule()
       .then(setD)
       .catch((e) => setErr(e.message));
+  const loadAgenda=()=>api.agendaProposals().then(r=>setAgenda(r.data)).catch(e=>setErr(e.message));
 
   useEffect(() => {
     load();
+    loadAgenda();
     return subscribeData(load);
   }, []);
 
@@ -164,7 +169,16 @@ export function SchedulePage() {
             ))}
           </select>
         </label>
+        <Button size="sm" variant="secondary" onClick={async()=>{const name=prompt("New room name",newRoom||"Overflow Room");if(name){setNewRoom(name);await api.createAgendaRoom({name});toast("Room added and ready for scheduling");load()}}}>+ Room</Button>
+        <Button size="sm" variant="secondary" onClick={async()=>{const name=prompt("New track name",newTrack||"Community");if(name){setNewTrack(name);await api.createAgendaTrack({name});toast("Track added");load()}}}>+ Track</Button>
+        <Button size="sm" onClick={async()=>{const r=await api.publishAgenda();toast(`${r.data.count} sessions published`);load();window.open(r.data.publicUrl,"_blank")}}>Publish agenda</Button>
       </div>
+
+      <Card className="mb-4 border-indigo-200 p-4" id="ai-agenda">
+        <div className="flex flex-wrap items-start justify-between gap-3"><div><Badge tone="primary">AI Agenda · advisory</Badge><h2 className="mt-2 text-xl font-bold">Heuristic schedule assistant</h2><p className="text-sm text-stone-600">Deterministic demo heuristic only—not a model. It creates a persisted review draft and never changes the live schedule until you accept placements.</p></div><div className="flex gap-2"><Button onClick={async()=>{setBusy(true);try{await api.generateAgenda(constraints);toast("Reviewable agenda draft generated");loadAgenda()}catch(e:any){setErr(e.message)}finally{setBusy(false)}}} disabled={busy}>{agenda.length?"Regenerate draft":"Generate draft"}</Button>{agenda[0]?.status==="review"?<><Button variant="secondary" onClick={async()=>{await api.decideAgenda(agenda[0].id,"accept");toast("Accepted conflict-free placements through canonical schedule mutation");load();loadAgenda()}}>Accept all</Button><Button variant="outline" onClick={async()=>{await api.decideAgenda(agenda[0].id,"reject");toast("Proposal rejected; live schedule unchanged");loadAgenda()}}>Reject all</Button></>:null}</div></div>
+        <div className="mt-3 flex flex-wrap gap-3">{Object.entries(constraints).map(([key,value])=><label key={key} className="text-xs font-semibold text-stone-600">{key.replace(/([A-Z])/g," $1")}<input className="ml-2 w-16 rounded border px-2 py-1" type="number" value={value} onChange={e=>setConstraints(x=>({...x,[key]:Number(e.target.value)}))}/></label>)}</div>
+        {agenda[0]?<div className="mt-4"><p className="text-xs text-stone-500">Generation {agenda[0].generation} · {new Date(agenda[0].generatedAt).toLocaleString()} · provenance: {agenda[0].provenance}</p><div className="mt-2 grid gap-2 lg:grid-cols-2">{agenda[0].placements.map((p:any)=>{const s=session(p.sessionId),room=d?.rooms.find((r:any)=>r.id===p.slot.roomId);return <article key={p.id} className="rounded-xl border p-3"><div className="flex justify-between gap-2"><b>{s?.title||p.sessionId}</b><Badge tone={p.status==="accepted"?"ok":p.status==="conflict"?"danger":"primary"}>{p.status}</Badge></div><p className="mt-1 text-sm">{fmtDate(p.slot.startsAt)} · {fmtTime(p.slot.startsAt)} · {room?.name}</p><p className="mt-2 text-xs text-stone-500">Why: {p.rationale}</p>{p.conflicts?.length?<Notice tone="danger">{p.conflicts.join(" ")}</Notice>:null}{p.status==="proposed"?<div className="mt-2 flex gap-2"><Button size="sm" onClick={async()=>{try{await api.decideAgendaPlacement(agenda[0].id,p.id,"accept");toast("Placement applied through canonical conflict checks");load();loadAgenda()}catch(e:any){setErr(`AI proposal blocked: ${e.message}`);loadAgenda()}}}>Accept</Button><Button size="sm" variant="outline" onClick={async()=>{await api.decideAgendaPlacement(agenda[0].id,p.id,"reject");loadAgenda()}}>Reject</Button></div>:null}</article>})}</div>{!agenda[0].placements.length?<EmptyState title="No eligible unscheduled sessions" description="Accept a session or move one back to the pool, then regenerate."/>:null}</div>:null}
+      </Card>
 
       {d?.warnings?.length ? (
         <Card className="mb-4 border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">

@@ -28,7 +28,7 @@ import {
   type Role,
   type Submission,
 } from "./lifecycle.js";
-import { publicSchedule, scheduleWarnings, validateSlot, type AgendaSlot } from "./schedule.js";
+import { applyScheduleMove, publicSchedule, scheduleWarnings, validateSlot, type AgendaSlot } from "./schedule.js";
 import { canonicalScheduleMetrics, publicSpeakers } from "./projection.js";
 import { MemorySnapshotPersistence, type CompetitionSnapshot, type SnapshotPersistence } from "./persistence.js";
 import { MockMailer, type Mailer } from "./mailer.js";
@@ -38,6 +38,7 @@ import { createPublicSite } from "./publicSite.js";
 import { createCrmRoutes } from "./crmRoutes.js";
 import { createSpeakerRoutes } from "./speakerRoutes.js";
 import { blindSubmission } from "./review.js";
+import { createAgendaRoutes } from "./agendaRoutes.js";
 
 export interface AppDeps {
   repo?: Repository;
@@ -119,6 +120,7 @@ export function createApp(deps: AppDeps = {}) {
   app.route("/", createContentRoutes({ store, persist, persona: personaOf, mailer, repo }));
   app.route("/", createPublicSite({ repo }));
   app.route("/", createCrmRoutes({ store, persist, persona: personaOf, mailer }));
+  app.route("/", createAgendaRoutes({ store, repo, persist, persona: personaOf }));
 
   app.get("/health", (c) =>
     c.json({ ok: true, mode: client instanceof MockAcceleventsClient ? "mock" : "configured", product: "CUE" }),
@@ -662,17 +664,8 @@ export function createApp(deps: AppDeps = {}) {
       .json<{ slot: AgendaSlot; version: number; acknowledge?: string[] }>()
       .catch(() => null);
     if (!s || !body) return c.json({ error: "schedule and move are required" }, 400);
-    if (body.version !== s.version) return c.json({ error: "stale schedule", version: s.version }, 409);
-    const result = validateSlot(s, body.slot);
-    const hard = result.conflicts.filter((x) => x.severity === "hard");
-    if (hard.length) return c.json({ error: "hard conflicts block this move", ...result }, 409);
-    const warnings = result.conflicts.filter((x) => x.severity === "warning");
-    if (warnings.some((x) => !body.acknowledge?.includes(x.id)))
-      return c.json({ error: "warnings require acknowledgement", ...result }, 422);
-    const i = s.slots.findIndex((x: AgendaSlot) => x.sessionId === body.slot.sessionId);
-    if (i >= 0) s.slots[i] = body.slot;
-    else s.slots.push(body.slot);
-    s.version++;
+    const result=applyScheduleMove(s,body.slot,body.version,body.acknowledge);
+    if(!result.ok)return c.json({error:result.error,version:result.version,conflicts:result.conflicts,warnings:result.warnings},result.status);
     await r.putSchedule?.(c.req.param("eventId"), s);
     // Mirror into lifecycle session drafts when ids align
     const life = store.sessions.find((x) => x.id === body.slot.sessionId);
@@ -682,7 +675,7 @@ export function createApp(deps: AppDeps = {}) {
       life.slot = { startsAt: body.slot.startsAt, endsAt: body.slot.endsAt };
     }
     await persist();
-    return c.json({ slot: body.slot, version: s.version, warnings });
+    return c.json({ slot: body.slot, version: s.version, warnings: result.warnings });
   });
 
   // JSON feeds (kept)

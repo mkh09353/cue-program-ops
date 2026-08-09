@@ -129,6 +129,7 @@ const orgNav = [
   { to: "/app/review-progress", label: "Review Progress", icon: LayoutGrid },
   { to: "/app/results", label: "Results", icon: FileText },
   { to: "/app/schedule", label: "Schedule", icon: CalendarDays },
+  { to: "/app/schedule#ai-agenda", label: "AI Agenda", icon: CalendarDays },
   { to: "/app/speakers", label: "Speakers", icon: Users },
   { to: "/app/crm", label: "Speaker CRM", icon: ContactRound },
   { to: "/app/content", label: "Content", icon: FileText },

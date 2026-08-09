@@ -22,46 +22,164 @@ import {
 export function DemoLandingPage() {
   const nav = useNavigate();
   const [personas, setPersonas] = useState<any[]>([]);
+  const [eventName, setEventName] = useState("AI Engineer Summit");
   useEffect(() => {
     api.bootstrap().then((r) => {
       const list = r.data.personas || [];
       setPersonas(list);
       if (list.length) setPersonaCatalog(list);
+      if (r.data.event?.name) setEventName(r.data.event.name);
     });
   }, []);
 
+  const byRole = (role: string) => personas.filter((p) => p.role === role);
+  const enter = (p: any) => {
+    setPersona(p);
+    nav(p.role === "organizer" ? "/app" : p.role === "reviewer" ? "/r" : "/p");
+  };
+
+  const publicLinks = [
+    { to: "/e/ai-engineer-summit/cfp", label: "Public CFP", blurb: "Conditional fields, draft save, edit link" },
+    { to: "/e/ai-engineer-summit/public/sessions", label: "Sessions widget", blurb: "Published catalog + search" },
+    { to: "/e/ai-engineer-summit/public/speakers", label: "Speakers widget", blurb: "Bios + session pairing" },
+    { to: "/e/ai-engineer-summit/public/agenda", label: "Agenda grid", blurb: "Room × time by day" },
+    { to: "/e/ai-engineer-summit/public/itinerary", label: "Itinerary", blurb: "Chronological + My Schedule" },
+    { to: "/e/ai-engineer-summit/public/gallery", label: "Speaker gallery", blurb: "Visual directory" },
+    { to: "/e/ai-engineer-summit/public/feed.json", label: "JSON feed", blurb: "Machine-readable program" },
+    { to: "/e/ai-engineer-summit/public/ics", label: "iCal feed", blurb: "Subscribe-friendly calendar" },
+  ];
+
+  const loop = [
+    "Configure & publish a CFP with routing",
+    "Review & score across rounds",
+    "Accept → speaker onboarding portal",
+    "Build a conflict-aware agenda",
+    "Publish embeds + one-way Accelevents sync",
+  ];
+
   return (
-    <div className="mx-auto flex min-h-screen max-w-3xl flex-col justify-center p-6">
-      <div className="mb-2 text-xs font-bold uppercase tracking-[0.2em] text-stone-500">Kill My SaaS · CUE</div>
-      <h1 className="text-4xl font-bold tracking-tight sm:text-5xl">Run the program ops loop in six minutes.</h1>
-      <p className="mt-3 max-w-xl text-stone-600">
-        Open-source replacement path for Sessionboard: CFP → review → onboard → schedule → publish → Accelevents.
-        In-memory demo, credential-free.
-      </p>
-      <div className="mt-8 grid gap-3 sm:grid-cols-2">
-        {personas.map((p) => (
-          <button
-            key={p.id}
-            type="button"
-            className="rounded-2xl border border-stone-200 bg-white p-4 text-left shadow-sm hover:border-iris/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-iris"
-            onClick={() => {
-              setPersona(p);
-              nav(p.role === "organizer" ? "/app" : p.role === "reviewer" ? "/r" : "/p");
-            }}
-          >
-            <div className="text-xs font-bold uppercase text-stone-500">{p.role}</div>
-            <div className="mt-1 text-lg font-bold">{p.name}</div>
-            <div className="text-xs text-stone-500">{p.email}</div>
-          </button>
-        ))}
-      </div>
-      <div className="mt-8 flex flex-wrap gap-3 text-sm font-semibold">
-        <Link className="text-iris" to="/e/ai-engineer-summit/cfp">
-          Public CFP →
-        </Link>
-        <Link className="text-iris" to="/app/publish">
-          Embeds & sync →
-        </Link>
+    <div className="min-h-screen bg-canvas">
+      <div className="mx-auto max-w-5xl px-6 py-12 sm:py-16">
+        <div className="mb-2 text-xs font-bold uppercase tracking-[0.2em] text-stone-500">Kill My SaaS · CUE</div>
+        <h1 className="max-w-3xl text-4xl font-bold tracking-tight sm:text-5xl">
+          Conference program ops, end to end — without Sessionboard.
+        </h1>
+        <p className="mt-4 max-w-2xl text-lg text-stone-600">
+          Open-source path for <b>{eventName}</b>: CFP → review → onboard → schedule → publish → Accelevents.
+          Credential-free demo with persona simulation (not production auth). State lives in process memory unless
+          optional Airtable snapshot restore is configured.
+        </p>
+
+        <div className="mt-6 flex flex-wrap gap-2">
+          <Badge tone="primary">Demo · no login</Badge>
+          <Badge tone="muted">Mock mailer default</Badge>
+          <Badge tone="muted">Accelevents one-way mock</Badge>
+        </div>
+
+        <section className="mt-10">
+          <h2 className="text-sm font-bold uppercase tracking-wide text-stone-500">Enter a role shell</h2>
+          <p className="mt-1 text-sm text-stone-500">
+            Persona headers simulate identity. Pick a card to land in the matching shell with seed data loaded.
+          </p>
+          <div className="mt-4 grid gap-4 lg:grid-cols-3">
+            {(
+              [
+                {
+                  role: "organizer",
+                  title: "Organizer",
+                  path: "/app",
+                  blurb: "Command center, submissions, review, speakers, schedule, CRM, publish.",
+                },
+                {
+                  role: "reviewer",
+                  title: "Reviewer",
+                  path: "/r",
+                  blurb: "Scoped queue, weighted scorecards, recusal, guidelines.",
+                },
+                {
+                  role: "speaker",
+                  title: "Speaker",
+                  path: "/p",
+                  blurb: "Profile, tasks, deliverables, talks, resources, calendar ICS.",
+                },
+              ] as const
+            ).map((shell) => {
+              const list = byRole(shell.role);
+              return (
+                <Card key={shell.role} className="flex flex-col p-5">
+                  <div className="text-xs font-bold uppercase tracking-wide text-iris">{shell.title}</div>
+                  <p className="mt-2 text-sm text-stone-600">{shell.blurb}</p>
+                  <code className="mt-2 block text-[11px] text-stone-400">{shell.path}/*</code>
+                  <div className="mt-4 flex flex-1 flex-col gap-2">
+                    {list.map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        className="rounded-xl border border-stone-200 bg-white px-3 py-2 text-left shadow-sm hover:border-iris/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-iris"
+                        onClick={() => enter(p)}
+                      >
+                        <div className="font-semibold">{p.name}</div>
+                        <div className="text-xs text-stone-500">{p.email}</div>
+                      </button>
+                    ))}
+                    {!list.length ? (
+                      <Button type="button" variant="outline" onClick={() => nav(shell.path)}>
+                        Open {shell.title.toLowerCase()} shell
+                      </Button>
+                    ) : null}
+                  </div>
+                </Card>
+              );
+            })}
+          </div>
+        </section>
+
+        <section className="mt-12">
+          <h2 className="text-sm font-bold uppercase tracking-wide text-stone-500">Public surfaces</h2>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {publicLinks.map((l) => (
+              <Link
+                key={l.to}
+                to={l.to}
+                className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm transition hover:border-iris/40"
+              >
+                <div className="font-semibold text-ink">{l.label}</div>
+                <div className="mt-1 text-xs text-stone-500">{l.blurb}</div>
+              </Link>
+            ))}
+          </div>
+          <div className="mt-4 flex flex-wrap gap-3 text-sm font-semibold">
+            <Link className="text-iris" to="/app/publish">
+              Organizer embed manager →
+            </Link>
+            <a className="text-iris" href="/public/events/evt-ai-summit-2026/gallery">
+              Legacy gallery alias →
+            </a>
+            <a className="text-iris" href="/health">
+              /health →
+            </a>
+          </div>
+        </section>
+
+        <section className="mt-12 grid gap-6 lg:grid-cols-2">
+          <Card className="p-5">
+            <h2 className="text-sm font-bold uppercase tracking-wide text-stone-500">Judge walkthrough</h2>
+            <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm text-stone-700">
+              {loop.map((step) => (
+                <li key={step}>{step}</li>
+              ))}
+            </ol>
+          </Card>
+          <Card className="p-5">
+            <h2 className="text-sm font-bold uppercase tracking-wide text-stone-500">Honest defaults</h2>
+            <ul className="mt-3 space-y-2 text-sm text-stone-700">
+              <li>Identity is header/persona simulation — not multi-tenant auth.</li>
+              <li>Mailer is mock unless a Resend-compatible endpoint is configured.</li>
+              <li>Accelevents sync is one-way mock; live HTTP is placeholder.</li>
+              <li>Memory resets on Worker restart; optional Airtable snapshot for demo recovery only.</li>
+            </ul>
+          </Card>
+        </section>
       </div>
     </div>
   );
@@ -70,7 +188,7 @@ export function DemoLandingPage() {
 export function PublicCfpPage() {
   const [data, setData] = useState<any>(null);
   const [answers, setAnswers] = useState<Record<string, string>>({
-    format: "Talk",
+    format: "Talk (30 min)",
     category: "Engineering",
     experience: "intermediate",
   });
@@ -114,7 +232,7 @@ export function PublicCfpPage() {
         </div>
         <p className="mt-4 rounded-xl bg-indigo-50 p-3 text-sm">
           Routed to <b>{result.boardLabel || result.reviewBoard}</b> review board
-          {answers.format === "Workshop" ? " · Workshop conditional fields were collected." : ""}.
+          {String(answers.format || "").startsWith("Workshop") ? " · Workshop conditional fields were collected." : ""}.
         </p>
         <p className="mt-3 text-sm"><b>Reference:</b> {result.id}</p>
         <a className="mt-2 block text-sm font-semibold text-iris underline" href={result.editUrl}>View or edit this submission</a>
