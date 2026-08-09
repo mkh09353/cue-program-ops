@@ -1,138 +1,116 @@
-# CUE — 6-minute judge walkthrough
+# CUE — 6-minute competition walkthrough
 
-Credential-free. Start from a fresh `npm run dev` so the in-memory seed is intact.
+**Live:** https://cue-program-ops.headley-max.workers.dev
+**Local:** `npm run dev`, then use the Vite URL (normally `http://localhost:5173`).
 
-**Live demo:** `https://cue-program-ops.headley-max.workers.dev`  
-**Local defaults:** UI `http://localhost:5173` · API `http://localhost:8787` (Vite proxies API paths).
+The demo is credential-free and seeded. Choose **Swyx · organizer** on `/`. State is process memory by default, so use a fresh process for the most predictable path.
 
-**Demo event:** AI Engineer Summit · id `evt-ai-summit-2026` · slug `ai-engineer-summit`.
+## 0:00–0:45 — CFP
 
----
+1. Open **Forms** (`/app/forms`).
+2. Point out the field builder: label/key/type/options, required flags, sections and remove/reorder controls.
+3. Show **Conditional visibility** on the workshop prerequisites field and category-to-review-board routing.
+4. Show opening and closing dates. Saving persists the complete schema.
+5. Click **View CFP**, or open `/e/ai-engineer-summit/cfp` in a private/logged-out tab.
+6. Select Workshop and then Talk to show the conditional field appear/disappear.
+7. Enter name, email and only a title; click **Save as draft**. Point out the reference and resumable edit-token URL.
 
-## Minute 0:00 — Land and choose a role (~30s)
+**Verify:** event branding/deadline are visible; final submit is server-validated; moving the close date into the past replaces the public form with a closed state and locks edits.
 
-1. Open `/`.
-2. Read the one-liner: CFP → review → onboard → schedule → publish → Accelevents.
-3. Click **Swyx · organizer**.
+## 0:45–1:35 — Review and decisions
 
-**Expect:** `/app` Command with KPIs (submissions, awaiting review, accepted unscheduled, speakers blocked) and a “Needs you” list.
+1. Return as organizer. Open **Evaluation Plan** (`/app/evaluation-plan`): show rounds, open/close window, blind mode and mixed scorecard criteria/weights.
+2. Open **Assignments**: show specific or auto-distributed work and assignment caps.
+3. Open **Review Progress**: completion counts and manual reviewer reminders.
+4. Open **Results**: aggregate human results, recommendation counts and **Download CSV**.
+5. Switch persona to **Ada Reviewer**, enter `/r`, and open an assigned submission. In blind rounds, identity is withheld; organizer navigation is absent.
+6. Submit criteria and a comment, or recuse. Return to organizer and open the submission to see the same human review.
+7. Optional: run **AI assist** in Review Studio. Read its heuristic/advisory label; it drafts only and never advances the submission.
+8. Accept or reject as organizer.
 
----
+**Verify:** reviewer queues are assignment-scoped; decisions remain human/organizer-owned.
 
-## Minute 0:30 — Forms & conditional CFP (~50s)
+## 1:35–2:20 — Speaker management and portal
 
-1. Sidebar → **Forms** (`/app/forms`).
-2. Show **Welcome preview** (markdown rendered, not raw `**`).
-3. Under a Workshop field, point at **Conditional visibility** (`format = Workshop`).
-4. Expand **Category → board routing** (Engineering / Product / Agents / …).
-5. Optional: toggle a condition or route, **Save form**, toast confirms.
-6. **View CFP** → `/e/ai-engineer-summit/cfp` (public shell: event-focused, not ops chrome).
-7. Step through You → Talk; set **Format = Workshop** and show plan/duration fields appear; set category and note board routing on Review step.
-8. Submit or abandon — either is fine. Return via browser back or `/app`.
+1. Open **Speakers** (`/app/speakers`). Filter/search by readiness, workflow status or tag.
+2. Show the progress matrix and **CSV import** / manual add controls.
+3. Open a speaker: inspect profile, sessions, actual outstanding tasks, content files and communication history.
+4. Create a general/form task or preview a merge-field communication. Show reminder planning/run; call it **manual**, not scheduled automation.
+5. Switch to **Sam Rivera · speaker** and open `/p`.
+6. Visit **My submissions**, **Tasks**, **Deliverables**, **Resources** and **Profile**. Submit a form task or update the profile; readiness derives from saved state.
 
-**Requirement covered:** #1 CFP + logic + routing.
+**Verify:** a speaker sees only that persona’s records. Header personas are a demo simulation, not secure login.
 
----
+## 2:20–3:05 — Content
 
-## Minute 1:20 — Review Studio & accept (~70s)
+1. Return as organizer and open **Content** (`/app/content`).
+2. Show a deliverable task assigned to a speaker/session, due date, allowed MIME types and current readiness.
+3. Open a file: inspect retained versions, current-version marker, download and comments.
+4. Approve or request changes and add a comment.
+5. Edit canonical session or speaker content; inspect edit history and the restore action.
+6. Optional: send outstanding-content reminders.
+7. Switch briefly to `/p/deliverables` to show speaker-scoped upload/version history.
 
-1. **Submissions** (`/app/submissions`).
-2. Open **Compilers for Humans** (Grace) or any in-review row — note draft scores if present.
-3. In **Review Studio** (`/app/submissions/:id`):
-   - R1 / R2 / Final tabs  
-   - Criteria sliders + notes  
-   - **AI assist** (advisory only — banner/copy says human must submit)  
-   - **Score & save**  
-   - **Accept** (organizer-only)
-4. On Accept, toast should mention tasks + mock email / ICS path.
+**Verify:** content changes propagate to canonical schedule/public projection. Demo versions live in snapshot data; there is no production object store or malware scanner.
 
-**Optional reviewer beat (30s):** persona → **Ada Reviewer** → `/r` → open a queue item → score → **Finish as organizer** to return for Accept.
+## 3:05–4:00 — Agenda and AI assist
 
-**Requirement covered:** #4 multi-round review + AI.
+1. Open **Schedule** (`/app/schedule`). Cycle through **List, Day, Week, Track, Room**; all read the same canonical schedule.
+2. Show the accepted/unscheduled pool. Drag or click-place a session into a room/time.
+3. Attempt an occupied-room or shared-speaker overlap. The server blocks hard conflicts and the UI shows the exact reason; move to a free slot and the conflict clears.
+4. Add **Overflow Room** and **Community** track to prove schedule structure is configurable.
+5. In **AI Agenda**, set day hours, slot interval and break duration, then click **Generate draft**.
+6. Read the honest provenance—**deterministic demo heuristic**—and one placement’s rationale.
+7. Reject one placement and accept another, or use Accept/Reject All. Generation itself does not mutate the live schedule; acceptance re-runs the canonical conflict-checked move.
+8. Click **Publish agenda**. The confirmation reports count and opens the public itinerary.
 
----
+**Verify:** proposals survive reload through the lifecycle snapshot boundary; regenerate retains proposal history.
 
-## Minute 2:30 — Speaker greenroom (~60s)
+## 4:00–4:45 — Public widgets
 
-1. Persona → **Sam Rivera · speaker** (or open `/p` — shell auto-selects a speaker persona).
-2. Home: onboarding % , **Not ready**, Up next task.
-3. **Tasks** → open profile or slides task.
-4. Complete **profile** with bio 20+ chars **or** upload a file receipt for slides/headshot (filename is enough; no binary store).
-5. **Resources** → **Speaker handbook**: polished checklist; any meme/unallowlisted embed is suppressed.
-6. If a session is scheduled for this speaker, calendar buttons + ICS appear.
+1. Open **Publish** (`/app/publish`) and show the embed manager with copyable iframe snippets and feed links.
+2. Open each attendee surface:
+   - `/e/ai-engineer-summit/public/sessions`
+   - `/e/ai-engineer-summit/public/speakers`
+   - `/e/ai-engineer-summit/public/agenda`
+   - `/e/ai-engineer-summit/public/itinerary`
+   - `/e/ai-engineer-summit/public/gallery`
+3. Search/filter sessions, open a session/speaker detail, and switch agenda days.
+4. Star sessions. Open **My Schedule** in the itinerary and download ICS.
+5. Point out JSON and ICS feeds in Publish (`feed.json`, sessions/speakers/agenda JSON and calendar feed).
 
-**Requirement covered:** #2 portal, #8 resources embed, part of #3 calendar.
+**Verify:** these are responsive server-rendered HTML surfaces suitable for iframes, not JSON printed inside an iframe; only canonical published data appears.
 
----
+## 4:45–5:25 — Speaker CRM
 
-## Minute 3:30 — Command + Speakers ops (~40s)
+1. Open **Speaker CRM** (`/app/crm`). Search/filter the directory and open a contact.
+2. Show notes, tags, stage history, merge and **Add to event**.
+3. Open **Pipeline** and move a contact through the configured stages.
+4. Open **Segments** to show saved dynamic filters and counts.
+5. Open **Import**, validate CSV, then import/merge duplicates if desired.
+6. Optional: sync current event speakers into CRM or send a merge-field campaign. Default delivery remains mock and is recorded honestly.
 
-1. Persona → **Swyx · organizer**.
-2. **Command** (`/app`): blocked speakers and unscheduled counts reflect ops pressure. **Accepted unscheduled** comes from the **canonical schedule projection** (same source as the schedule board).
-3. **Speakers** (`/app/speakers`): human “Missing: Upload slides” style copy (not raw `task:…` ids).
-4. **Nudge blocked** or per-row **Nudge** → mock reminder send.
+**Verify:** CRM is organizer-only and persists in the lifecycle snapshot.
 
-**Requirement covered:** #6 Command / onboarding ops.
+## 5:25–6:00 — Comms, API and one-way sync
 
----
+1. Open **Comms**: preview merge fields, send to a selected speaker and inspect recipient/status in the log.
+2. If a session is scheduled, show downloadable ICS. Say: “ICS download or attachment is not proof of calendar delivery.”
+3. Open **Publish**. In Accelevents, run **Preview push**, then **Push now (mock)**.
+4. Inspect run history and per-record create/update/skip/error outcomes and retry visibility.
+5. Open [API.md](API.md) or `/health` to show the Hono API and deployment mode.
 
-## Minute 4:10 — Schedule board (~50s)
+Say the honest close:
 
-1. **Schedule** (`/app/schedule`).
-2. Mobile-width note: defaults to **List** with place-in-room actions; desktop **Day/Room** supports drag from **Unscheduled pool**.
-3. Drag (or place) an accepted session onto a room/hour.
-4. If soft warnings appear → in-app **dialog** (not `window.confirm`) with **Schedule anyway** and server **alternatives**.
-5. Try a hard overlap (e.g. Main Hall at an occupied time) → blocked with error toast; version unchanged.
-6. Peek **Week** — three program days; seed concentrates on the primary day; other days are open drop targets, not fake empty theater.
-
-**Requirement covered:** #5 DnD + conflicts.
-
----
-
-## Minute 5:00 — Comms (~30s)
-
-1. **Comms** (`/app/comms`).
-2. Pick **Acceptance** or **Task reminder** template; show variables (portal link is a relative `/speaker/…` path, not localhost).
-3. **Send to speaker** → send log gains a **Sent (mock)** row under default `MockMailer`; ICS link on the entry when the session is scheduled.
-
-**Requirement covered:** #3 comms + calendar.
-
----
-
-## Minute 5:30 — Publish + Accelevents honesty (~30s)
-
-1. **Publish** (`/app/publish`).
-2. Speaker **gallery** and schedule **itinerary** iframes are HTML pages; copy snippet.
-3. Open HTML in a new tab — mobile-friendly layout, “Powered by CUE”.
-4. **Accelevents** panel: badge **Mock mode · no network**.
-5. **Preview push** then **Push now (mock)** — run history fills; no external HTTP. Outbound rows come from the **canonical schedule projection** (accepted/published + slotted).
-6. Say out loud: *“Live HTTP is gated and placeholder until Accelevents confirms the API. Optional Airtable snapshot and Resend mail are env-gated; this demo uses zero-network defaults.”*
-
-**Requirement covered:** #7 one-way sync, #9 embeds.
-
----
-
-## Minute 6:00 — Stop
-
-You have touched all nine requirements. If time remains: Settings tracks/rooms readout, or public itinerary JSON feed link.
-
----
+> “The judge demo uses persona headers, process memory, mock mail and mock Accelevents. Airtable snapshot and Resend-compatible mail are optional. AI review and agenda assistance are deterministic and advisory. The Accelevents HTTP contract is still a placeholder until vendor validation.”
 
 ## Troubleshooting
 
-| Symptom | Fix |
+| Symptom | Action |
 |---|---|
-| UI loads, API fails | Confirm `:8787` (or `PORT`) and Vite proxy |
-| Empty / weird KPIs after long poking | Restart `npm run dev` to reset memory seed (if Airtable snapshot env is set, clear that row or unset env for a pristine seed) |
-| Persona says wrong role | Use shell deep link (`/r`, `/p`, `/app`) or Demo landing cards |
-| Port 5173 busy | Vite picks next port; read terminal, or stop the other app |
-| Accept 403 | You are on reviewer persona — Finish as organizer / switch to Swyx |
-
-## What not to demo as “production”
-
-- Demo header auth  
-- Filename-only uploads (no binary object store)  
-- Default mock email (optional Resend path is env-gated, not automatic)  
-- Deterministic in-process AI  
-- Accelevents HTTP placeholders (contract unconfirmed)  
-- Default in-memory durability; Airtable snapshot is continuity-only, not multi-writer production storage  
+| Unexpected state | Restart the API for the built-in seed. If Airtable is configured, clear/unset its snapshot first. |
+| 403 in organizer/reviewer/speaker route | Switch persona or enter through `/app`, `/r` or `/p`. |
+| Empty AI proposal | Ensure at least one accepted session remains unscheduled. |
+| Public session absent | Schedule it and publish; public widgets filter to canonical published rows. |
+| Mock email did not arrive externally | Expected: inspect the in-app communication log. Configure the optional provider only with a verified sender. |
+| Accelevents has no remote record | Expected in mock mode. Do not enable placeholder HTTP mode for a production account. |
