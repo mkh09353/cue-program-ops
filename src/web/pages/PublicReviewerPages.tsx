@@ -138,14 +138,15 @@ export function DemoLandingPage() {
           <h2 className="text-xs font-medium uppercase tracking-wide text-mid">Public surfaces</h2>
           <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {publicLinks.map((l) => (
-              <Link
+              // Server-rendered pages: must be full-page loads, not SPA router links.
+              <a
                 key={l.to}
-                to={l.to}
+                href={l.to}
                 className="rounded-[24px] border border-line bg-paper p-4 shadow-card transition hover:border-ink/20"
               >
                 <div className="font-semibold text-ink">{l.label}</div>
                 <div className="mt-1 text-xs text-mid">{l.blurb}</div>
-              </Link>
+              </a>
             ))}
           </div>
           <div className="mt-4 flex flex-wrap gap-3 text-sm font-semibold">

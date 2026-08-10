@@ -29,6 +29,42 @@ type PendingMove = {
   alternatives: any[];
 };
 
+/**
+ * Accessible click-to-place form state. Drag-and-drop is unreachable for keyboard and
+ * aria-driven agents, so every session also gets a Place/Move button that drives the
+ * same canonical /schedule/move mutation through explicit Day / Time / Room selects.
+ */
+type PlaceTarget = {
+  sessionId: string;
+  title: string;
+  durationMinutes: number;
+  mode: "place" | "move";
+  day: string;
+  time: string;
+  roomId: string;
+};
+
+/** HH:MM options across the configured day window, stepped by the slot interval. */
+export function timeOptions(startHour: number, endHour: number, stepMinutes: number) {
+  const step = Math.max(5, Math.min(120, Math.round(stepMinutes || 30)));
+  const from = Math.max(0, Math.min(23, Math.round(startHour)));
+  const to = Math.max(from + 1, Math.min(24, Math.round(endHour)));
+  const out: string[] = [];
+  for (let minutes = from * 60; minutes < to * 60; minutes += step) {
+    out.push(`${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`);
+  }
+  return out;
+}
+
+/** Capacity (soft) warnings for an already-placed slot, derived from canonical data. */
+export function capacityWarning(
+  session: { capacity?: number } | undefined,
+  room: { name?: string; capacity?: number } | undefined,
+) {
+  if (!session?.capacity || !room?.capacity || session.capacity <= room.capacity) return "";
+  return `${session.capacity} expected attendees exceeds ${room.name}'s ${room.capacity} capacity.`;
+}
+
 export function SchedulePage() {
   const [d, setD] = useState<any>(null);
   const [view, setView] = useState<View>(defaultView);
@@ -48,6 +84,11 @@ export function SchedulePage() {
   const [publishBusy, setPublishBusy] = useState(false);
   const [publishBanner, setPublishBanner] = useState("");
   const [newSession,setNewSession]=useState({title:"",speakerIds:[] as string[],trackId:"",durationMinutes:45});
+  const [place, setPlace] = useState<PlaceTarget | null>(null);
+  const [placeError, setPlaceError] = useState("");
+  const [placeConflicts, setPlaceConflicts] = useState<any[]>([]);
+  const [placeWarnings, setPlaceWarnings] = useState<any[]>([]);
+  const [placeBusy, setPlaceBusy] = useState(false);
 
   const load = () =>
     api
@@ -136,6 +177,97 @@ export function SchedulePage() {
     } catch (e: any) {
       setErr(e.message);
       toast(e.message, "danger");
+    }
+  };
+
+  /** Open the accessible place/move form for a session, prefilled from its slot. */
+  const openPlace = (sessionId: string, mode: "place" | "move") => {
+    const s = session(sessionId);
+    if (!s || !d) return;
+    const slot = d.slots.find((x: any) => x.sessionId === sessionId);
+    const iso: string | undefined = slot?.startsAt;
+    const options = timeOptions(constraints.dayStartHour, constraints.dayEndHour, constraints.slotMinutes);
+    const currentTime = iso ? String(iso).slice(11, 16) : "";
+    setPlaceError("");
+    setPlaceConflicts([]);
+    setPlaceWarnings([]);
+    setPlace({
+      sessionId,
+      title: s.title,
+      durationMinutes: s.durationMinutes || 45,
+      mode,
+      day: (iso ? String(iso).slice(0, 10) : selectedDay) || programDays[0]?.id || selectedDay,
+      // Keep the session's current time even if it is off the step grid.
+      time: currentTime || options[0] || "09:00",
+      roomId: slot?.roomId || d.rooms?.[0]?.id || "",
+    });
+  };
+
+  const placeSlot = (target: PlaceTarget) => {
+    const startsAt = `${target.day}T${target.time}:00.000Z`;
+    return {
+      id: d?.slots.find((x: any) => x.sessionId === target.sessionId)?.id ?? `slot-${target.sessionId}`,
+      sessionId: target.sessionId,
+      roomId: target.roomId,
+      startsAt,
+      endsAt: new Date(Date.parse(startsAt) + target.durationMinutes * 60000).toISOString(),
+    };
+  };
+
+  /**
+   * Submit through the canonical /schedule/move path. Hard conflicts (409) keep the
+   * dialog open with the server's own message; capacity warnings (422) offer an
+   * explicit acknowledgement; a stale version (409) refetches and retries once.
+   */
+  const submitPlace = async (acknowledge: string[] = [], retry = true): Promise<void> => {
+    if (!place || !d) return;
+    if (!place.roomId) {
+      setPlaceError("Choose a room.");
+      return;
+    }
+    setPlaceBusy(true);
+    setPlaceError("");
+    setPlaceConflicts([]);
+    setPlaceWarnings([]);
+    try {
+      const slot = placeSlot(place);
+      const result = await api.moveSlotDetailed({ slot, version: d.version, acknowledge });
+      if (result.ok) {
+        toast(`${place.mode === "move" ? "Moved" : "Placed"} ${place.title}`);
+        setPlace(null);
+        setErr("");
+        load();
+        return;
+      }
+      if (result.status === 409 && /stale/i.test(result.error) && retry) {
+        // Someone else (or an earlier action) advanced the schedule: refresh and retry.
+        const fresh = await api.schedule();
+        setD(fresh);
+        const again = await api.moveSlotDetailed({ slot, version: fresh.version, acknowledge });
+        if (again.ok) {
+          toast(`${place.mode === "move" ? "Moved" : "Placed"} ${place.title}`);
+          setPlace(null);
+          load();
+          return;
+        }
+        setPlaceConflicts(again.conflicts.filter((x: any) => x.severity === "hard"));
+        setPlaceWarnings(again.warnings || []);
+        setPlaceError(again.error || "Move rejected");
+        return;
+      }
+      const hard = (result.conflicts || []).filter((x: any) => x.severity === "hard");
+      setPlaceConflicts(hard);
+      setPlaceWarnings(result.warnings || []);
+      setPlaceError(
+        result.status === 422
+          ? "This placement has soft warnings. Review them and confirm to place anyway."
+          : result.error || "Move rejected",
+      );
+      toast(hard[0]?.message || result.error || "Move rejected", "danger");
+    } catch (e: any) {
+      setPlaceError(e?.message || "Move failed");
+    } finally {
+      setPlaceBusy(false);
     }
   };
 
@@ -332,7 +464,9 @@ export function SchedulePage() {
       <div className="grid gap-4 lg:grid-cols-[260px_1fr]">
         <Card className="p-4 lg:sticky lg:top-24 lg:self-start">
           <h3 className="text-sm font-bold">Unscheduled pool</h3>
-          <p className="mt-1 text-xs text-mid">Accepted sessions needing a room. Drag onto a lane.</p>
+          <p className="mt-1 text-xs text-mid">
+            Accepted sessions needing a room. Use <b>Place session</b> to pick day, time and room, or drag a card onto a lane.
+          </p>
           <div className="mt-3 space-y-2">
             {unscheduled.map((x: any) => (
               <article
@@ -349,7 +483,17 @@ export function SchedulePage() {
                   {x.speakerIds?.map((i: string) => d.speakers.find((q: any) => q.id === i)?.name).join(", ")}
                 </div>
                 <details className="mt-2 text-xs"><summary className="cursor-pointer font-semibold">Edit session speakers</summary><select multiple aria-label={`Edit speakers for ${x.title}`} className="mt-2 min-h-20 w-full rounded-[12px] border border-line p-2" value={x.speakerIds||[]} onChange={async e=>{await api.updateScheduleSession(x.id,{speakerIds:Array.from(e.target.selectedOptions).map(o=>o.value)});toast("Session speakers updated");load()}}>{(d.speakers||[]).map((s:any)=><option key={s.id} value={s.id}>{s.name}</option>)}</select></details>
-                <div className="mt-2 flex flex-wrap gap-1 md:hidden">
+                <div className="mt-2 flex flex-wrap gap-1">
+                  <Button
+                    size="sm"
+                    aria-label={`Place ${x.title}`}
+                    data-testid={`place-${x.id}`}
+                    onClick={() => openPlace(x.id, "place")}
+                  >
+                    Place session
+                  </Button>
+                </div>
+                <div className="mt-1 flex flex-wrap gap-1 md:hidden">
                   {(d.rooms || []).slice(0, 3).map((room: any) => (
                     <Button key={room.id} size="sm" variant="outline" onClick={() => move(x.id, room.id, hour, selectedDay)}>
                       → {room.name}
@@ -400,7 +544,21 @@ export function SchedulePage() {
                         {d.rooms.find((r: any) => r.id === slot.roomId)?.name}
                       </div>
                     </div>
-                    <Badge tone="ok">{formatStatus(s?.publishStatus || "published")}</Badge>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {capacityWarning(s, d.rooms.find((r: any) => r.id === slot.roomId)) ? (
+                        <Badge tone="warn">Capacity warning</Badge>
+                      ) : null}
+                      <Badge tone="ok">{formatStatus(s?.publishStatus || "published")}</Badge>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        aria-label={`Move ${s?.title || slot.sessionId}`}
+                        data-testid={`move-${slot.sessionId}`}
+                        onClick={() => openPlace(slot.sessionId, "move")}
+                      >
+                        Move
+                      </Button>
+                    </div>
                   </div>
                 );
               })}
@@ -411,6 +569,14 @@ export function SchedulePage() {
                     <div className="text-xs text-ink-soft">Accepted · not on grid yet</div>
                   </div>
                   <div className="flex flex-wrap gap-1">
+                    <Button
+                      size="sm"
+                      aria-label={`Place ${x.title}`}
+                      data-testid={`place-list-${x.id}`}
+                      onClick={() => openPlace(x.id, "place")}
+                    >
+                      Place session
+                    </Button>
                     {(d.rooms || []).map((room: any) => (
                       <Button key={room.id} size="sm" variant="secondary" onClick={() => move(x.id, room.id, hour, selectedDay)}>
                         Place in {room.name}
@@ -456,6 +622,18 @@ export function SchedulePage() {
                               <div>
                                 {fmtTime(slot.startsAt)} · {d.rooms.find((r: any) => r.id === slot.roomId)?.name}
                               </div>
+                              {capacityWarning(s, d.rooms.find((r: any) => r.id === slot.roomId)) ? (
+                                <Badge tone="warn">Capacity warning</Badge>
+                              ) : null}
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="mt-1"
+                                aria-label={`Move ${s?.title || slot.sessionId}`}
+                                onClick={() => openPlace(slot.sessionId, "move")}
+                              >
+                                Move
+                              </Button>
                             </div>
                           );
                         })
@@ -526,6 +704,25 @@ export function SchedulePage() {
                                 ?.map((i: string) => d.speakers.find((q: any) => q.id === i)?.name)
                                 .join(", ")}
                             </div>
+                            {(() => {
+                              const warning = capacityWarning(s, d.rooms.find((r: any) => r.id === slot.roomId));
+                              return warning ? (
+                                <div className="mt-1" title={warning} data-testid={`capacity-warning-${slot.sessionId}`}>
+                                  <Badge tone="warn">Capacity warning</Badge>
+                                  <p className="mt-1 text-[11px] text-mid">{warning}</p>
+                                </div>
+                              ) : null;
+                            })()}
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="mt-2"
+                              aria-label={`Move ${s?.title || slot.sessionId}`}
+                              data-testid={`move-day-${slot.sessionId}`}
+                              onClick={() => openPlace(slot.sessionId, "move")}
+                            >
+                              Move
+                            </Button>
                           </article>
                         );
                       })}
@@ -536,6 +733,128 @@ export function SchedulePage() {
           )}
         </Card>
       </div>
+
+      <Dialog
+        open={!!place}
+        onClose={() => !placeBusy && setPlace(null)}
+        title={place?.mode === "move" ? `Move ${place?.title}` : `Place ${place?.title || "session"}`}
+        description="Choose a day, time and room. Placement goes through the canonical schedule check — hard room/speaker conflicts are refused."
+        footer={
+          <>
+            <Button variant="outline" disabled={placeBusy} onClick={() => setPlace(null)}>
+              Cancel
+            </Button>
+            {placeWarnings.length ? (
+              <Button
+                variant="secondary"
+                disabled={placeBusy}
+                aria-label="Place anyway despite warnings"
+                onClick={() => void submitPlace(placeWarnings.map((w: any) => w.id))}
+              >
+                Place anyway
+              </Button>
+            ) : null}
+            <Button
+              variant="dark"
+              disabled={placeBusy || !place?.roomId}
+              data-testid="confirm-place"
+              aria-label={place?.mode === "move" ? `Confirm move of ${place?.title}` : `Confirm placement of ${place?.title}`}
+              onClick={() => void submitPlace([])}
+            >
+              {placeBusy ? "Saving…" : place?.mode === "move" ? "Move session" : "Place session"}
+            </Button>
+          </>
+        }
+      >
+        {place ? (
+          <div className="space-y-3 text-sm">
+            <div className="grid gap-3 sm:grid-cols-3">
+              <Field label="Day">
+                <select
+                  className="h-10 w-full rounded-[18px] border border-line bg-white px-3 text-sm"
+                  aria-label="Day"
+                  value={place.day}
+                  onChange={(e) => setPlace({ ...place, day: e.target.value })}
+                >
+                  {programDays.map((day) => (
+                    <option key={day.id} value={day.id}>
+                      {day.label} · {day.dateLabel}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label={`Start time (${fmtTzLabel()})`}>
+                <select
+                  className="h-10 w-full rounded-[18px] border border-line bg-white px-3 text-sm"
+                  aria-label="Start time"
+                  value={place.time}
+                  onChange={(e) => setPlace({ ...place, time: e.target.value })}
+                >
+                  {[
+                    ...new Set([
+                      ...timeOptions(constraints.dayStartHour, constraints.dayEndHour, constraints.slotMinutes),
+                      place.time,
+                    ]),
+                  ]
+                    .filter(Boolean)
+                    .sort()
+                    .map((t) => (
+                      <option key={t} value={t}>
+                        {t}
+                      </option>
+                    ))}
+                </select>
+              </Field>
+              <Field label="Room">
+                <select
+                  className="h-10 w-full rounded-[18px] border border-line bg-white px-3 text-sm"
+                  aria-label="Room"
+                  value={place.roomId}
+                  onChange={(e) => setPlace({ ...place, roomId: e.target.value })}
+                >
+                  {(d?.rooms || []).map((room: any) => (
+                    <option key={room.id} value={room.id}>
+                      {room.name}
+                      {room.capacity ? ` · seats ${room.capacity}` : ""}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            </div>
+            <p className="text-xs text-mid" data-testid="place-summary">
+              Duration <b className="text-ink">{place.durationMinutes} minutes</b> · ends{" "}
+              {fmtTime(placeSlot(place).endsAt)} · slot interval {constraints.slotMinutes} min · times are{" "}
+              {fmtTzLabel()}.
+            </p>
+            {placeError ? (
+              <Notice tone={placeWarnings.length && !placeConflicts.length ? "warn" : "danger"}>
+                <span className="block font-semibold" data-testid="place-error">
+                  {placeError}
+                </span>
+                {placeConflicts.length ? (
+                  <ul className="mt-1 list-disc pl-5" data-testid="place-conflicts">
+                    {placeConflicts.map((c: any) => (
+                      <li key={c.id}>{c.message}</li>
+                    ))}
+                  </ul>
+                ) : null}
+                {placeWarnings.length ? (
+                  <ul className="mt-1 list-disc pl-5" data-testid="place-warnings">
+                    {placeWarnings.map((w: any) => (
+                      <li key={w.id}>{w.message}</li>
+                    ))}
+                  </ul>
+                ) : null}
+                {placeConflicts.length ? (
+                  <span className="mt-1 block text-xs">
+                    Pick a different time or room above, then submit again — nothing was changed.
+                  </span>
+                ) : null}
+              </Notice>
+            ) : null}
+          </div>
+        ) : null}
+      </Dialog>
 
       <Dialog
         open={!!pending}

@@ -316,6 +316,36 @@ export const api = {
     req(`/api/events/${EVENT_ID}/schedule/validate`, { method: "POST", body: JSON.stringify(slot) }),
   moveSlot: (body: any) =>
     mut(`/api/events/${EVENT_ID}/schedule/move`, { method: "POST", body: JSON.stringify(body) }),
+  /**
+   * Same canonical /schedule/move mutation, but returns the FULL server response
+   * (status + error + conflicts + warnings) instead of throwing a bare message, so
+   * the place/move dialog can render the server's own conflict text inline and tell
+   * hard blocks (409) apart from acknowledgeable warnings (422) and stale versions.
+   */
+  moveSlotDetailed: async (body: any) => {
+    const r = await fetch(`/api/events/${EVENT_ID}/schedule/move`, {
+      method: "POST",
+      headers: headers(),
+      body: JSON.stringify(body),
+    });
+    const text = await r.text();
+    let data: any = null;
+    try {
+      data = text ? JSON.parse(text) : null;
+    } catch {
+      data = { error: text };
+    }
+    if (r.ok) bumpData();
+    return {
+      ok: r.ok,
+      status: r.status,
+      error: typeof data?.error === "string" ? data.error : data?.error?.message || "",
+      conflicts: (data?.conflicts || []) as any[],
+      warnings: (data?.warnings || []) as any[],
+      version: data?.version as number | undefined,
+      slot: data?.slot,
+    };
+  },
   createScheduleSession:(body:any)=>mut<{data:any}>(`/api/events/${EVENT_ID}/schedule/sessions`,{method:"POST",body:JSON.stringify(body)}),
   updateScheduleSession:(id:string,body:any)=>mut<{data:any}>(`/api/events/${EVENT_ID}/schedule/sessions/${id}`,{method:"PATCH",body:JSON.stringify(body)}),
   agendaProposals: () => req<{data:any[]}>(`/api/events/${EVENT_ID}/agenda/proposals`),
