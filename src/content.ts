@@ -1,5 +1,20 @@
 import type { ContentFile, ContentFileVersion, DeliverableTask, LifecycleStore } from "./lifecycle.js";
 
+/**
+ * A re-request does not erase the canonical artifact. Instead it records the version
+ * frontier that existed when the organizer opened this collection cycle. Only an upload
+ * beyond that frontier satisfies the request.
+ *
+ * Kept as additive task metadata so older snapshots and seeded tasks retain their
+ * existing status semantics without a lifecycle schema migration.
+ */
+export type DeliverableCollectionCycle = {
+  requestedAt: string;
+  baselineVersionCount: number;
+  baselineCurrentVersionId?: string;
+};
+type CycleTask = DeliverableTask & { collectionCycle?: DeliverableCollectionCycle };
+
 export const MAX_CONTENT_FILE_BYTES = 2 * 1024 * 1024;
 export const CONTENT_MIME_ALLOWLIST = new Set(["application/pdf", "image/png", "image/jpeg", "application/vnd.openxmlformats-officedocument.presentationml.presentation", "text/plain"]);
 
@@ -17,11 +32,17 @@ export function addFileVersion(store: LifecycleStore, input: { task: Deliverable
   if (!file) { file={id:`content-${crypto.randomUUID().slice(0,8)}`,speakerId:input.task.speakerId,sessionId:input.task.sessionId,taskId:input.task.id,kind:input.kind,status:"submitted",versions:[],comments:[]}; store.contentFiles.push(file); }
   file.versions.forEach((v)=>v.current=false);
   const version: ContentFileVersion={id:`version-${crypto.randomUUID().slice(0,8)}`,version:file.versions.length+1,name:input.name,mime:input.mime,size:input.size,dataBase64:input.dataBase64,uploadedBy:input.uploadedBy,uploadedAt:new Date().toISOString(),current:true};
-  file.versions.push(version); file.status="submitted"; input.task.status="complete"; return {file,version};
+  file.versions.push(version); file.status="submitted";
+  // A successful upload is newer than the request frontier and completes that cycle.
+  // Tasks without cycle metadata preserve the legacy "any successful upload completes"
+  // behavior used by seeded and accepted-submission deliverables.
+  const cycle=(input.task as CycleTask).collectionCycle;
+  input.task.status=!cycle||file.versions.length>cycle.baselineVersionCount?"complete":"incomplete";
+  return {file,version};
 }
 
 export function contentReadiness(store: LifecycleStore, at=new Date()) {
-  return store.deliverableTasks.map((task)=>{const file=store.contentFiles.find((f)=>f.taskId===task.id);const overdue=task.status!=="complete"&&Date.parse(task.dueAt)<at.getTime();return {...task,overdue,uploadCount:file?.versions.length||0,fileId:file?.id,fileStatus:file?.status||"draft",speaker:store.profiles.find((p)=>p.speakerId===task.speakerId),session:store.sessions.find((s)=>s.id===task.sessionId)};});
+  return store.deliverableTasks.map((task)=>{const file=store.contentFiles.find((f)=>f.taskId===task.id),uploadCount=file?.versions.length||0,cycle=(task as CycleTask).collectionCycle;const status=cycle?(uploadCount>cycle.baselineVersionCount?"complete":"incomplete"):task.status;const overdue=status!=="complete"&&Date.parse(task.dueAt)<at.getTime();return {...task,status,overdue,uploadCount,fileId:file?.id,fileStatus:file?.status||"draft",speaker:store.profiles.find((p)=>p.speakerId===task.speakerId),session:store.sessions.find((s)=>s.id===task.sessionId)};});
 }
 
 export function canAccessFile(file: ContentFile, persona: {role:string;speakerId?:string}) { return persona.role==="organizer" || (persona.role==="speaker" && persona.speakerId===file.speakerId); }
@@ -98,6 +119,10 @@ export function mergeDeliverableDuplicates(store: LifecycleStore, matches: Deliv
 export function upsertDeliverable(store: LifecycleStore, candidate: DeliverableTask) {
   const matches = equivalentDeliverables(store, candidate);
   if (!matches.length) {
+    // Organizer-created empty slots begin with an explicit zero-version cycle. Seeded
+    // tasks do not pass through this path and therefore keep their current semantics.
+    (candidate as CycleTask).collectionCycle={requestedAt:new Date().toISOString(),baselineVersionCount:0};
+    candidate.status="incomplete";
     store.deliverableTasks.push(candidate);
     return { task: candidate, reused: false as const };
   }
@@ -107,6 +132,12 @@ export function upsertDeliverable(store: LifecycleStore, candidate: DeliverableT
   winner.dueAt = candidate.dueAt || winner.dueAt;
   winner.acceptedTypes = candidate.acceptedTypes?.length ? candidate.acceptedTypes : winner.acceptedTypes;
   winner.fileRequired = candidate.fileRequired !== undefined ? candidate.fileRequired : winner.fileRequired;
+  const file=store.contentFiles.find((f)=>f.taskId===winner.id);
+  const current=file?.versions.find((version)=>version.current)||file?.versions.at(-1);
+  // Re-requesting opens a fresh cycle at the current canonical frontier. Existing
+  // versions/comments remain on the same file, but none can satisfy the new request.
+  (winner as CycleTask).collectionCycle={requestedAt:new Date().toISOString(),baselineVersionCount:file?.versions.length||0,...(current?{baselineCurrentVersionId:current.id}:{})};
+  winner.status="incomplete";
   return { task: winner, reused: true as const };
 }
 

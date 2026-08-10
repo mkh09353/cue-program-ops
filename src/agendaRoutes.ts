@@ -70,6 +70,59 @@ export function createAgendaRoutes(deps:{store:LifecycleStore;repo:Repository;pe
  app.get("/api/events/:eventId/agenda/proposals",async c=>{const denied=guard(c);if(denied)return denied;if(c.req.param("eventId")!==deps.store.event.id)return fail(c,"event not found",404);return c.json({data:deps.store.agendaProposals||[]})});
  app.post("/api/events/:eventId/agenda/rooms",async c=>{const denied=guard(c);if(denied)return denied;const data=await schedule(),b=await c.req.json().catch(()=>null) as any;if(!data||!b?.name?.trim())return fail(c,"room name is required");const room={id:b.id||`room-${crypto.randomUUID().slice(0,8)}`,name:String(b.name).trim(),capacity:b.capacity?Number(b.capacity):undefined,color:b.color||"#5B5CFF"};data.rooms.push(room);await (deps.repo as ScheduleRepo).putSchedule?.(deps.store.event.id,data);await deps.persist();return c.json({data:room},201)});
  app.post("/api/events/:eventId/agenda/tracks",async c=>{const denied=guard(c);if(denied)return denied;const data=await schedule(),b=await c.req.json().catch(()=>null) as any;if(!data||!b?.name?.trim())return fail(c,"track name is required");const track={id:b.id||`track-${crypto.randomUUID().slice(0,8)}`,name:String(b.name).trim(),color:b.color||"#5B5CFF",maxConcurrent:b.maxConcurrent?Number(b.maxConcurrent):undefined};data.tracks.push(track);await (deps.repo as ScheduleRepo).putSchedule?.(deps.store.event.id,data);await deps.persist();return c.json({data:track},201)});
+ /**
+  * Rename / adjust a room in place. The id is stable so every existing slot stays
+  * linked; only the canonical stored schedule is mutated, through the same
+  * putSchedule + persist plumbing the create routes use.
+  */
+ app.patch("/api/events/:eventId/agenda/rooms/:roomId",async c=>{
+  const denied=guard(c);if(denied)return denied;
+  const data=await schedule();if(!data)return fail(c,"schedule not found",404);
+  const room=data.rooms.find((r:any)=>r.id===c.req.param("roomId"));
+  if(!room)return fail(c,"room not found",404);
+  const b=await c.req.json().catch(()=>null) as any;if(!b)return fail(c,"JSON body required");
+  if(b.name!==undefined){
+   const name=String(b.name||"").trim();
+   if(!name)return fail(c,"room name is required");
+   if(data.rooms.some((r:any)=>r.id!==room.id&&r.name.trim().toLowerCase()===name.toLowerCase()))return fail(c,"another room already uses that name",409);
+   room.name=name;
+  }
+  if(b.capacity!==undefined){
+   const capacity=b.capacity===null||b.capacity===""?undefined:Number(b.capacity);
+   if(capacity!==undefined&&(!Number.isFinite(capacity)||capacity<=0))return fail(c,"capacity must be a positive number");
+   room.capacity=capacity;
+  }
+  if(b.color!==undefined&&String(b.color||"").trim())room.color=String(b.color).trim();
+  data.version++;
+  await (deps.repo as ScheduleRepo).putSchedule?.(deps.store.event.id,data);
+  await deps.persist();
+  return c.json({data:room});
+ });
+
+ /** Rename / adjust a track in place; ids stay stable so sessions keep their track. */
+ app.patch("/api/events/:eventId/agenda/tracks/:trackId",async c=>{
+  const denied=guard(c);if(denied)return denied;
+  const data=await schedule();if(!data)return fail(c,"schedule not found",404);
+  const track=data.tracks.find((t:any)=>t.id===c.req.param("trackId"));
+  if(!track)return fail(c,"track not found",404);
+  const b=await c.req.json().catch(()=>null) as any;if(!b)return fail(c,"JSON body required");
+  if(b.name!==undefined){
+   const name=String(b.name||"").trim();
+   if(!name)return fail(c,"track name is required");
+   if(data.tracks.some((t:any)=>t.id!==track.id&&t.name.trim().toLowerCase()===name.toLowerCase()))return fail(c,"another track already uses that name",409);
+   track.name=name;
+  }
+  if(b.color!==undefined&&String(b.color||"").trim())track.color=String(b.color).trim();
+  if(b.maxConcurrent!==undefined){
+   const maxConcurrent=b.maxConcurrent===null||b.maxConcurrent===""?undefined:Number(b.maxConcurrent);
+   if(maxConcurrent!==undefined&&(!Number.isFinite(maxConcurrent)||maxConcurrent<=0))return fail(c,"maxConcurrent must be a positive number");
+   track.maxConcurrent=maxConcurrent;
+  }
+  data.version++;
+  await (deps.repo as ScheduleRepo).putSchedule?.(deps.store.event.id,data);
+  await deps.persist();
+  return c.json({data:track});
+ });
  app.post("/api/events/:eventId/agenda/publish",async c=>{const denied=guard(c);if(denied)return denied;const data=await schedule();if(!data)return fail(c,"schedule not found",404);
   // Publish EVERY currently slotted session, whatever its prior status (accepted/draft),
   // so freshly placed and AI-accepted placements reach the public agenda. Content

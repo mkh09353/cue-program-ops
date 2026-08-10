@@ -2,9 +2,62 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createApp } from "../src/app.js";
 import { EVENT_ID, store } from "../src/lifecycle.js";
+import { createCustomCfpField } from "../src/web/pages/PublishFormsSettings.js";
 
 const headers = (persona: string) => ({ "content-type": "application/json", "x-demo-persona": persona });
 const parse = async (res: Response) => ({ res, body: (await res.json()) as any });
+
+test("builder creates a collision-resistant clean custom field without seeded metadata", () => {
+  const duration = store.form.fields.find((field) => field.key === "duration")!;
+  const first = createCustomCfpField(store.form.fields);
+  const second = createCustomCfpField([...store.form.fields, first]);
+  assert.notEqual(first.key, duration.key);
+  assert.notEqual(first.key, second.key);
+  assert.match(first.key, /^custom_[0-9a-f-]{36}$/);
+  assert.deepEqual(first, { key: first.key, label: "New field", type: "text", required: false, section: "Proposal" });
+  assert.equal("visibleWhen" in first, false);
+  assert.equal("helpText" in first, false);
+  assert.equal("options" in first, false);
+  assert.equal(duration.key, "duration");
+  assert.deepEqual(duration.visibleWhen, { key: "format", equals: "Workshop (120 min)" });
+});
+
+test("form save visibly rejects duplicate keys and malformed conditions", async () => {
+  const app = createApp();
+  const original = structuredClone(store.form);
+  const save = (fields: any[]) => app.request(`/api/events/${EVENT_ID}/forms/form-cfp`, {
+    method: "PUT", headers: headers("org-swyx"), body: JSON.stringify({ ...original, fields }),
+  });
+  try {
+    const duplicate = await parse(await save([...original.fields, { ...original.fields[0] }]));
+    assert.equal(duplicate.res.status, 400);
+    assert.match(duplicate.body.error.message, /duplicate form field key: title/);
+
+    const missingTrigger = await parse(await save([...original.fields, {
+      key: "bad_missing", label: "Bad missing", type: "text", required: false,
+      visibleWhen: { key: "does_not_exist", equals: "Anything" },
+    }]));
+    assert.equal(missingTrigger.res.status, 400);
+    assert.match(missingTrigger.body.error.message, /conditional trigger field not found/);
+
+    const self = await parse(await save([...original.fields, {
+      key: "bad_self", label: "Bad self", type: "text", required: false,
+      visibleWhen: { key: "bad_self", equals: "Yes" },
+    }]));
+    assert.equal(self.res.status, 400);
+    assert.match(self.body.error.message, /cannot conditionally depend on itself/);
+
+    const badOption = await parse(await save([...original.fields, {
+      key: "bad_option", label: "Bad option", type: "text", required: false,
+      visibleWhen: { key: "format", equals: "Webinar (999 min)" },
+    }]));
+    assert.equal(badOption.res.status, 400);
+    assert.match(badOption.body.error.message, /conditional value is not an option for format/);
+    assert.deepEqual(store.form.fields, original.fields, "rejected schemas must not partially replace fields");
+  } finally {
+    store.form = original;
+  }
+});
 
 /**
  * Item 4 regression: a NEW custom field added in the builder with required=true must

@@ -3,8 +3,22 @@ import type { ReviewAssignment, ReviewCriterion, ReviewRound, Submission } from 
 export function blindSubmission(submission: Submission, blind: boolean) {
   if (!blind) return submission;
   const answers = Object.fromEntries(Object.entries(submission.answers).filter(([key]) => !/(name|email|company|author|participant|speaker)/i.test(key)));
-  const { name: _name, email: _email, speakerId: _speakerId, ...safe } = submission;
-  return { ...safe, answers, name: "Anonymous speaker", email: undefined, speakerId: undefined };
+  // additionalSpeakers is a top-level field carrying co-author names and emails, so
+  // stripping the lead author alone still leaked participant identity to blind reviewers.
+  const { name: _name, email: _email, speakerId: _speakerId, additionalSpeakers, ...safe } = submission;
+  const coAuthorCount = additionalSpeakers?.length || 0;
+  return {
+    ...safe,
+    answers,
+    name: "Anonymous speaker",
+    email: undefined,
+    speakerId: undefined,
+    // Role-only placeholders: reviewers may know HOW MANY co-presenters exist, never who.
+    additionalSpeakers: coAuthorCount
+      ? additionalSpeakers!.map((person) => ({ id: "", name: "Anonymous co-author", email: "", role: person.role }))
+      : undefined,
+    coAuthorCount,
+  };
 }
 
 export function weightedScore(criteria: ReviewCriterion[], responses: Record<string, string | number>) {

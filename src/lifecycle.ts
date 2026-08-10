@@ -41,6 +41,18 @@ export interface CfpForm {
   routes: { category: string; boardId: string; boardLabel: string }[];
 }
 
+/** Credential-free demo access link. This selects a reviewer persona; it is not authentication. */
+export interface ReviewerInvite {
+  token: string;
+  eventId: string;
+  reviewerId: string;
+  roundId: string;
+  email: string;
+  createdAt: string;
+  expiresAt?: string;
+  revokedAt?: string;
+}
+
 export interface Submission {
   id: string;
   eventId: string;
@@ -282,6 +294,7 @@ export interface LifecycleStore {
   tracks: { id: string; name: string }[];
   boards: { id: string; label: string }[];
   personas: { id: string; role: Role; name: string; email: string; speakerId?: string; boardIds?: string[] }[];
+  reviewerInvites: ReviewerInvite[];
   embedConfigs: EmbedConfig[];
   automation: AutomationState;
 }
@@ -291,6 +304,7 @@ const now = () => new Date().toISOString();
 export const RUBRIC_CRITERIA = ["relevance", "novelty", "clarity", "depth"] as const;
 
 export const store: LifecycleStore = {
+  reviewerInvites: [],
   embedConfigs: [],
   automation: {enabled:true,schedule:"0 * * * *",speakerSent:0,reviewerSent:0,status:"never"},
   event: {

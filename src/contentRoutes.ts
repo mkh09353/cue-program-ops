@@ -69,7 +69,90 @@ export function createContentRoutes(deps:{store:LifecycleStore;persist:()=>Promi
   await deps.persist();return c.json({data:h});
  });
  app.patch("/api/events/:eventId/content/speakers/:speakerId",async(c)=>{if(!event(c))return fail(c,"event not found",404);if(!org(c))return fail(c,"organizer role required",403);const profile=deps.store.profiles.find(p=>p.speakerId===c.req.param("speakerId")),b=await c.req.json();if(!profile)return fail(c,"speaker not found",404);const before={bio:profile.bio,company:profile.company,title:profile.title,headshotUrl:(profile as any).headshotUrl};Object.assign(profile,{bio:b.bio??profile.bio,company:b.company??profile.company,title:b.title??profile.title});if(b.headshotUrl!==undefined)(profile as any).headshotUrl=b.headshotUrl;const p=deps.persona(c);deps.store.contentHistory.push({id:`history-${crypto.randomUUID().slice(0,8)}`,entityType:"speaker",entityId:profile.speakerId,editorId:p.id,editorName:p.name,createdAt:new Date().toISOString(),before,after:{bio:profile.bio,company:profile.company,title:profile.title,headshotUrl:(profile as any).headshotUrl}});await syncSpeaker(profile.speakerId);await deps.persist();return c.json({data:profile})});
- const exportZip=(c:any)=>{if(!event(c))return fail(c,"event not found",404);if(!org(c))return fail(c,"organizer role required",403);const clean=(s:string)=>s.replace(/[^a-zA-Z0-9._ -]+/g,"-");const entries=deps.store.contentFiles.flatMap(f=>{const v=f.versions.find(x=>x.current)||f.versions.at(-1);if(!v)return[];const session=deps.store.sessions.find(s=>s.id===f.sessionId);return[{name:`${clean(session?.title||"General")}/${clean(v.name)}`,bytes:Uint8Array.from(atob(v.dataBase64),x=>x.charCodeAt(0))}]});const zip=createZip(entries);return c.body(zip.buffer,200,{"content-type":"application/zip","content-disposition":"attachment; filename=cue-latest-content.zip","x-cue-file-count":String(entries.length)})};
- app.get("/api/events/:eventId/content/export",exportZip);app.post("/api/events/:eventId/content/export",exportZip);
+ /**
+  * —— Archive export (CNT-14) ——
+  *
+  * The organizer picks exactly what to archive; an empty or malformed selection is a
+  * 400, never a silent "export everything". Only the CURRENT version of each file is
+  * included, and only files owned by this event's content records.
+  */
+ const cleanSegment=(value:string)=>String(value||"").replace(/[^a-zA-Z0-9._ -]+/g,"-").replace(/^[.\s]+|[\s.]+$/g,"").slice(0,80)||"General";
+
+ /** Latest (current) version of a file, or the last uploaded one as a fallback. */
+ const currentVersion=(file:any)=>file.versions.find((v:any)=>v.current)||file.versions.at(-1);
+
+ /** Resolve which content files a selection refers to, in a stable order. */
+ const selectedFiles=(selection:{sessionIds?:string[];fileIds?:string[]})=>{
+  const fileIds=new Set((selection.fileIds||[]).map(String));
+  const sessionIds=new Set((selection.sessionIds||[]).map(String));
+  return deps.store.contentFiles.filter(f=>fileIds.has(f.id)||(f.sessionId?sessionIds.has(f.sessionId):false));
+ };
+
+ /** Folder for a file under the chosen grouping. */
+ const folderFor=(file:any,grouping:"session"|"speaker")=>{
+  if(grouping==="speaker"){
+   const speaker=deps.store.profiles.find(p=>p.speakerId===file.speakerId);
+   return cleanSegment(speaker?.name||"Unassigned");
+  }
+  const session=deps.store.sessions.find(s=>s.id===file.sessionId);
+  return cleanSegment(session?.title||"General");
+ };
+
+ /** Build ZIP entries, disambiguating duplicate paths so no file is silently dropped. */
+ const buildEntries=(files:any[],grouping:"session"|"speaker")=>{
+  const used=new Map<string,number>(),entries:{name:string;bytes:Uint8Array}[]=[];
+  for(const file of files){
+   const version=currentVersion(file);
+   if(!version)continue;
+   const folder=folderFor(file,grouping);
+   const base=cleanSegment(version.name||`${file.id}.bin`);
+   let path=`${folder}/${base}`;
+   if(used.has(path)){
+    const n=(used.get(path)||1)+1;used.set(path,n);
+    const dot=base.lastIndexOf(".");
+    const stem=dot>0?base.slice(0,dot):base,ext=dot>0?base.slice(dot):"";
+    path=`${folder}/${stem} (${n})${ext}`;
+   }else used.set(path,1);
+   entries.push({name:path,bytes:Uint8Array.from(atob(version.dataBase64),x=>x.charCodeAt(0))});
+  }
+  return entries;
+ };
+
+ const zipResponse=(c:any,entries:{name:string;bytes:Uint8Array}[],grouping:string)=>{
+  const zip=createZip(entries);
+  return c.body(zip.buffer,200,{
+   "content-type":"application/zip",
+   "content-disposition":"attachment; filename=cue-content-archive.zip",
+   "x-cue-file-count":String(entries.length),
+   "x-cue-grouping":grouping,
+  });
+ };
+
+ /** Legacy GET stays global (unchanged behaviour for any existing consumer). */
+ const exportAllZip=(c:any)=>{
+  if(!event(c))return fail(c,"event not found",404);
+  if(!org(c))return fail(c,"organizer role required",403);
+  const entries=buildEntries(deps.store.contentFiles,"session");
+  return zipResponse(c,entries,"session");
+ };
+
+ /** Filtered POST used by the archive dialog. */
+ const exportSelectionZip=async(c:any)=>{
+  if(!event(c))return fail(c,"event not found",404);
+  if(!org(c))return fail(c,"organizer role required",403);
+  const body=await c.req.json().catch(()=>null) as any;
+  if(!body||typeof body!=="object")return fail(c,"selection payload required");
+  const grouping=body.grouping;
+  if(grouping!=="session"&&grouping!=="speaker")return fail(c,'grouping must be "session" or "speaker"');
+  const sessionIds=Array.isArray(body.sessionIds)?body.sessionIds.filter((x:any)=>typeof x==="string"&&x.trim()):[];
+  const fileIds=Array.isArray(body.fileIds)?body.fileIds.filter((x:any)=>typeof x==="string"&&x.trim()):[];
+  if(!sessionIds.length&&!fileIds.length)return fail(c,"select at least one session or file to export");
+  const files=selectedFiles({sessionIds,fileIds});
+  const entries=buildEntries(files,grouping);
+  if(!entries.length)return fail(c,"no matching files with an uploaded version for this selection");
+  return zipResponse(c,entries,grouping);
+ };
+ app.get("/api/events/:eventId/content/export",exportAllZip);
+ app.post("/api/events/:eventId/content/export",exportSelectionZip);
  return app;
 }

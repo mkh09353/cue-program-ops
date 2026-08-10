@@ -72,11 +72,60 @@ export const eventDateTimeLocal=(iso:string)=>{const {day,time}=isoToZonedWallTi
 /** Inverse: a datetime-local value is EVENT wall time; store the matching UTC instant. */
 export const eventLocalToIso=(value:string)=>{const [day,time]=String(value).split("T");return zonedWallTimeToIso(day!,time!)};
 
+type ReviewerInviteSuccess = { name: string; email: string; url: string };
+
+/** Persistent artifact shared by the Evaluation Plan and Assignments invite controls. */
+function ReviewerInviteSuccessNotice({ invite, onClose }: { invite: ReviewerInviteSuccess; onClose: () => void }) {
+  return (
+    <Notice tone="ok" onClose={onClose}>
+      <div data-testid="review-management-reviewer-demo-access-link">
+        <b>Reviewer invited: {invite.name}</b> · {invite.email}
+        <Input className="mt-2" readOnly aria-label="Reviewer demo access link" value={invite.url} />
+        <Button
+          className="mt-2"
+          size="sm"
+          variant="secondary"
+          onClick={async () => {
+            await navigator.clipboard.writeText(invite.url);
+            toast("Reviewer access link copied");
+          }}
+        >
+          Copy reviewer access link
+        </Button>
+        <p className="mt-2 text-xs">
+          It is credential-free demo persona access, not password authentication or a production login.
+        </p>
+      </div>
+    </Notice>
+  );
+}
+
 function RoundEditor({ round, personas, saved }: { round: any; personas: any[]; saved: () => void }) {
-  const [draft, setDraft] = useState(() => structuredClone(round));
+  const [draft, setDraftState] = useState(() => structuredClone(round));
+  /** True once the organizer has typed into THIS round since the last save. */
+  const [dirty, setDirty] = useState(false);
+  const roundIdRef = useRef(round.id);
+  // Every editor field goes through this, so any local edit marks the draft dirty.
+  const setDraft = (next: any) => {
+    setDirty(true);
+    setDraftState(next);
+  };
   const [invite, setInvite] = useState({ name: "", email: "" });
+  const [inviteSuccess, setInviteSuccess] = useState<ReviewerInviteSuccess | null>(null);
   const criteria = draft.criteria || [];
-  useEffect(()=>setDraft(structuredClone(round)),[round]);
+  // Saving/inviting on ANOTHER round refetches every round, which used to reset this
+  // editor and silently discard in-progress configuration. Re-sync only when the round
+  // identity changes, or when there is nothing unsaved to lose.
+  useEffect(() => {
+    if (roundIdRef.current !== round.id) {
+      roundIdRef.current = round.id;
+      setDirty(false);
+      setDraftState(structuredClone(round));
+      return;
+    }
+    if (dirty) return;
+    setDraftState((prev: any) => (JSON.stringify(prev) === JSON.stringify(round) ? prev : structuredClone(round)));
+  }, [round, dirty]);
   const reviewers=[...new Map(personas.filter(p=>p.role==="reviewer").map(p=>[String(p.email||p.id).trim().toLowerCase(),p])).values()];
 
   return (
@@ -252,7 +301,13 @@ function RoundEditor({ round, personas, saved }: { round: any; personas: any[]; 
         <Button
           variant="outline"
           onClick={async () => {
-            await api.inviteReviewer(round.id, invite);
+            const invited: any = await api.inviteReviewer(round.id, invite);
+            const linked = await api.issueReviewerInviteLink(invited.data.reviewer.id, round.id);
+            setInviteSuccess({
+              name: invited.data.reviewer.name,
+              email: invited.data.reviewer.email,
+              url: linked.data.inviteUrl || `${window.location.origin}${linked.data.invitePath}`,
+            });
             setInvite({ name: "", email: "" });
             toast("Reviewer invited");
             saved();
@@ -261,16 +316,24 @@ function RoundEditor({ round, personas, saved }: { round: any; personas: any[]; 
           Invite reviewer
         </Button>
       </div>
+      {inviteSuccess ? (
+        <div className="mt-3">
+          <ReviewerInviteSuccessNotice invite={inviteSuccess} onClose={() => setInviteSuccess(null)} />
+        </div>
+      ) : null}
       <Button
         className="mt-4"
         onClick={async () => {
           const savedRound:any=await api.updateReviewRound(round.id, draft);
-          setDraft(structuredClone(savedRound.data));
+          // Adopt the server copy and drop the dirty flag so later sibling refreshes may
+          // re-sync this editor again.
+          setDraftState(structuredClone(savedRound.data));
+          setDirty(false);
           toast("Round saved");
           saved();
         }}
       >
-        Save round
+        {dirty ? "Save round *" : "Save round"}
       </Button>
     </Card>
   );
@@ -339,6 +402,7 @@ export function AssignmentsPage() {
   const [assigned, setAssigned] = useState<{ titles: string[]; skipped: string[]; reviewer: string } | null>(null);
   const [assignBusy, setAssignBusy] = useState(false);
   const [invite,setInvite]=useState({name:"",email:""});
+  const [inviteSuccess,setInviteSuccess]=useState<ReviewerInviteSuccess|null>(null);
 
   const titleOf = (id: string) => subs.find((s) => s.id === id)?.title || id;
 
@@ -383,7 +447,7 @@ export function AssignmentsPage() {
   return (
     <div>
       <PageHeader title="Assignments" description="Choose abstracts and assign them to a reviewer. Reinstate recused work below." />
-      <Card className="mb-4 p-5"><h2 className="font-bold">Invite reviewer</h2><p className="text-sm text-mid">Add a reviewer directly to the selected round, then assign submissions below.</p><div className="mt-3 grid gap-2 md:grid-cols-[1fr_1fr_auto]"><Input placeholder="Reviewer name" value={invite.name} onChange={e=>setInvite({...invite,name:e.target.value})}/><Input type="email" placeholder="Reviewer email" value={invite.email} onChange={e=>setInvite({...invite,email:e.target.value})}/><Button variant="outline" onClick={async()=>{if(!roundId)return;const r:any=await api.inviteReviewer(roundId,invite);setInvite({name:"",email:""});setReviewer(r.data.reviewer.id);toast("Reviewer invited to this round");reloadRounds();reloadBoot()}}>Invite reviewer</Button></div></Card>
+      <Card className="mb-4 p-5"><h2 className="font-bold">Invite reviewer</h2><p className="text-sm text-mid">Add a reviewer directly to the selected round, then assign submissions below.</p><div className="mt-3 grid gap-2 md:grid-cols-[1fr_1fr_auto]"><Input placeholder="Reviewer name" value={invite.name} onChange={e=>setInvite({...invite,name:e.target.value})}/><Input type="email" placeholder="Reviewer email" value={invite.email} onChange={e=>setInvite({...invite,email:e.target.value})}/><Button variant="outline" onClick={async()=>{if(!roundId)return;const r:any=await api.inviteReviewer(roundId,invite);const linked=await api.issueReviewerInviteLink(r.data.reviewer.id,roundId);setInviteSuccess({name:r.data.reviewer.name,email:r.data.reviewer.email,url:linked.data.inviteUrl||`${window.location.origin}${linked.data.invitePath}`});setInvite({name:"",email:""});setReviewer(r.data.reviewer.id);toast("Reviewer invited to this round");reloadRounds();reloadBoot()}}>Invite reviewer</Button></div>{inviteSuccess?<div className="mt-3"><ReviewerInviteSuccessNotice invite={inviteSuccess} onClose={()=>setInviteSuccess(null)}/></div>:null}</Card>
       <Card className="grid gap-4 p-5 md:grid-cols-3">
         <Field label="Round">
           <Select value={roundId} onChange={(e) => setRound(e.target.value)}>

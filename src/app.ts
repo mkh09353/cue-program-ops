@@ -193,6 +193,36 @@ export function createApp(deps: AppDeps = {}) {
     });
   });
 
+  // Demo-only reviewer persona links. These select an existing reviewer persona and
+  // deliberately do not claim to create a password, session, or production login.
+  app.post("/api/events/:eventId/reviewers/:reviewerId/invite-link", async (c) => {
+    if (c.req.param("eventId") !== EVENT_ID) return fail(c, "event not found", 404);
+    if (actor(c) !== "organizer") return fail(c, "organizer role required", 403);
+    const b = await c.req.json().catch(() => null) as { roundId?: string } | null;
+    const reviewer = store.personas.find((p) => p.id === c.req.param("reviewerId") && p.role === "reviewer");
+    const round = store.reviewRounds.find((r) => r.id === b?.roundId);
+    if (!reviewer) return fail(c, "reviewer not found", 404);
+    if (!round || !round.reviewerIds.includes(reviewer.id)) return fail(c, "reviewer is not invited to that round");
+    store.reviewerInvites ||= [];
+    const invite = {
+      token: crypto.randomUUID(), eventId: EVENT_ID, reviewerId: reviewer.id,
+      roundId: round.id, email: reviewer.email, createdAt: new Date().toISOString(),
+    };
+    store.reviewerInvites.push(invite);
+    await persist();
+    const invitePath = `/r?invite=${encodeURIComponent(invite.token)}`;
+    return c.json({ data: { invitePath, inviteUrl: `${new URL(c.req.url).origin}${invitePath}`, mode: "demo_persona_link", reviewer, roundId: round.id } }, 201);
+  });
+
+  app.get("/api/public/reviewer-invites/:token", (c) => {
+    const invite = (store.reviewerInvites || []).find((x) => x.token === c.req.param("token"));
+    if (!invite || invite.eventId !== EVENT_ID || invite.revokedAt || (invite.expiresAt && Date.parse(invite.expiresAt) <= Date.now())) return fail(c, "Reviewer demo access link is invalid or expired", 404);
+    const reviewer = store.personas.find((p) => p.id === invite.reviewerId && p.role === "reviewer" && p.email === invite.email);
+    const round = store.reviewRounds.find((r) => r.id === invite.roundId && r.reviewerIds.includes(invite.reviewerId));
+    if (!reviewer || !round) return fail(c, "Reviewer demo access link is invalid or expired", 404);
+    return c.json({ data: { reviewer, eventId: invite.eventId, roundId: invite.roundId, mode: "demo_persona_link" } });
+  });
+
   app.get("/api/events/:eventId/command", async (c) => {
     if (c.req.param("eventId") !== EVENT_ID) return fail(c, "event not found", 404);
     // Schedule projection is the canonical source for the command-center schedule KPI.
@@ -240,7 +270,6 @@ export function createApp(deps: AppDeps = {}) {
     if (typeof b.maxPerUser === "number") store.form.maxPerUser = b.maxPerUser;
     if (Array.isArray(b.fields)) {
       const allowed = new Set(["text", "textarea", "select", "checkbox", "file", "speaker_block"]);
-      const keys = new Set<string>();
       const fields = b.fields.map((raw: any) => {
         const field: any = {
           key: String(raw.key || "").trim(),
@@ -258,7 +287,21 @@ export function createApp(deps: AppDeps = {}) {
           };
         }
         return field;
-      }).filter((field: any) => field.key && field.label && allowed.has(field.type) && !keys.has(field.key) && keys.add(field.key));
+      });
+      const invalid = fields.find((field: any) => !field.key || !field.label || !allowed.has(field.type));
+      if (invalid) return fail(c, "every form field needs a key, label, and supported type");
+      const keys = new Set<string>();
+      for (const field of fields) {
+        if (keys.has(field.key)) return fail(c, `duplicate form field key: ${field.key}`);
+        keys.add(field.key);
+      }
+      for (const field of fields) {
+        if (!field.visibleWhen) continue;
+        if (field.visibleWhen.key === field.key) return fail(c, `field ${field.key} cannot conditionally depend on itself`);
+        const trigger = fields.find((candidate: any) => candidate.key === field.visibleWhen.key);
+        if (!trigger) return fail(c, `conditional trigger field not found: ${field.visibleWhen.key}`);
+        if (trigger.options?.length && !trigger.options.includes(field.visibleWhen.equals)) return fail(c, `conditional value is not an option for ${trigger.key}: ${field.visibleWhen.equals}`);
+      }
       if (!fields.some((field: any) => field.key === "title")) return fail(c, "title field is required");
       store.form.fields = fields as typeof store.form.fields;
     }

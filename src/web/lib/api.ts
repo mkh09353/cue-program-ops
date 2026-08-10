@@ -215,6 +215,8 @@ export const api = {
   createReviewRound: (body: any) => mut(`/api/events/${EVENT_ID}/review-rounds`, { method: "POST", body: JSON.stringify(body) }),
   updateReviewRound: (id:string,body:any) => mut(`/api/events/${EVENT_ID}/review-rounds/${id}`,{method:"PUT",body:JSON.stringify(body)}),
   inviteReviewer: (id:string,body:any) => mut(`/api/events/${EVENT_ID}/review-rounds/${id}/reviewers`,{method:"POST",body:JSON.stringify(body)}),
+  issueReviewerInviteLink: (reviewerId:string,roundId:string) => mut<{data:{invitePath:string;inviteUrl:string;mode:"demo_persona_link";reviewer:Persona;roundId:string}}>(`/api/events/${EVENT_ID}/reviewers/${reviewerId}/invite-link`,{method:"POST",body:JSON.stringify({roundId})}),
+  resolveReviewerInvite: (token:string) => req<{data:{reviewer:Persona;eventId:string;roundId:string;mode:"demo_persona_link"}}>(`/api/public/reviewer-invites/${encodeURIComponent(token)}`),
   assignReviews: (body: any) => mut<{data:any[]}>(`/api/events/${EVENT_ID}/review-assignments`, { method: "POST", body: JSON.stringify(body) }),
   reviewerQueue: () => req<{data:any[]}>(`/api/events/${EVENT_ID}/reviewer-queue`),
   reviewerAssignment: (id: string) => req<{data:any}>(`/api/events/${EVENT_ID}/reviewer-queue/${id}`),
@@ -297,13 +299,40 @@ export const api = {
   editContentSpeaker: (id:string,body:any) => mut(`/api/events/${EVENT_ID}/content/speakers/${id}`,{method:"PATCH",body:JSON.stringify(body)}),
   restoreContentHistory: (id:string) => mut(`/api/events/${EVENT_ID}/content/history/${id}/restore`,{method:"POST",body:"{}"}),
   contentExportUrl: () => `/api/events/${EVENT_ID}/content/export`,
-  /** Download the latest-version ZIP and report how many files it contains. */
-  contentExportZip: async () => {
-    const r = await fetch(`/api/events/${EVENT_ID}/content/export`, { headers: headers() });
-    if (!r.ok) throw new Error(`Export failed (${r.status})`);
+  /**
+   * Download an archive of the SELECTED sessions/files at their current version.
+   * The selection and grouping are always sent explicitly — there is no "export
+   * everything" fallback on this path.
+   */
+  contentExportZip: async (selection: {
+    sessionIds?: string[];
+    fileIds?: string[];
+    grouping: "session" | "speaker";
+  }) => {
+    const r = await fetch(`/api/events/${EVENT_ID}/content/export`, {
+      method: "POST",
+      headers: headers(),
+      body: JSON.stringify({
+        sessionIds: selection.sessionIds || [],
+        fileIds: selection.fileIds || [],
+        grouping: selection.grouping,
+      }),
+    });
+    if (!r.ok) {
+      const text = await r.text();
+      let message = `Export failed (${r.status})`;
+      try {
+        const parsed = JSON.parse(text);
+        message = parsed?.error?.message || parsed?.error || message;
+      } catch {
+        if (text) message = text;
+      }
+      throw new Error(message);
+    }
     const fileCount = Number(r.headers.get("x-cue-file-count") || "0");
+    const grouping = r.headers.get("x-cue-grouping") || selection.grouping;
     const blob = await r.blob();
-    return { blob, fileCount, filename: "cue-latest-content.zip" };
+    return { blob, fileCount, grouping, filename: "cue-content-archive.zip" };
   },
   resource: (slug: string) =>
     req<{ data: any }>(`/api/speaker/events/${EVENT_ID}/resources/${slug}`),

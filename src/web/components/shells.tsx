@@ -257,7 +257,25 @@ export function OrganizerShell() {
 }
 
 export function ReviewerShell() {
-  const { ready, personaKey } = useRoleSync("reviewer");
+  const location = useLocation();
+  const navigate = useNavigate();
+  const persona = usePersona();
+  const inviteToken = new URLSearchParams(location.search).get("invite");
+  const [inviteState,setInviteState]=useState<{ready:boolean;error?:string}>({ready:!inviteToken});
+  useEffect(()=>{
+    let active=true;
+    if(!inviteToken){resolvePortalPersona("reviewer");restorePersonaFromSession();ensurePersonaForRole("reviewer");setInviteState({ready:true});return()=>{active=false};}
+    setInviteState({ready:false});
+    api.resolveReviewerInvite(inviteToken).then((r)=>{
+      if(!active)return;
+      setPersona(r.data.reviewer,{explicit:true});
+      setInviteState({ready:true});
+      navigate("/r",{replace:true});
+    }).catch((e)=>{if(active)setInviteState({ready:false,error:e?.message||"Reviewer demo access link is invalid"})});
+    return()=>{active=false};
+  },[inviteToken]);
+  const ready=inviteState.ready, personaKey=persona.id;
+  if(inviteState.error){return <div className="grid min-h-screen place-items-center bg-canvas p-6"><div className="max-w-md rounded-[24px] border border-line bg-paper p-6 text-center"><h1 className="text-xl font-semibold">Reviewer demo access link unavailable</h1><p className="mt-2 text-sm text-mid">{inviteState.error}</p><p className="mt-2 text-xs text-mid">No reviewer persona was selected. Ask the organizer for a new demo access link.</p></div></div>}
   if (!ready) {
     return (
       <div className="grid min-h-screen place-items-center bg-canvas text-sm text-mid">

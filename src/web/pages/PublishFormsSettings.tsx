@@ -396,6 +396,15 @@ const BOARD_OPTIONS = [
   { id: "workshop", label: "Workshop" },
 ];
 
+export function createCustomCfpField(existingFields: Array<{key:string}>) {
+  const used = new Set(existingFields.map((field) => field.key));
+  let key = "";
+  do key = `custom_${crypto.randomUUID()}`; while (used.has(key));
+  // Build from a clean literal: never clone a neighboring seeded field's options,
+  // condition, or help text.
+  return { key, label: "New field", type: "text", required: false, section: "Proposal" };
+}
+
 export function FormsPage() {
   const [form, setForm] = useState<any>(null);
   const [savedSnap, setSavedSnap] = useState("");
@@ -881,13 +890,9 @@ export function FormsPage() {
             variant="secondary"
             className="mt-3"
             onClick={() => {
-              const key = `custom_${Date.now()}`;
               setForm({
                 ...form,
-                fields: [
-                  ...form.fields,
-                  { key, label: "New field", type: "text", required: false, section: "Proposal" },
-                ],
+                fields: [...form.fields, createCustomCfpField(form.fields)],
               });
               toast("Field added — auto-saving changes");
             }}
@@ -1177,7 +1182,7 @@ export function SettingsPage() {
   const [tracks, setTracks] = useState<any[]>([]);
   const [rounds, setRounds] = useState<any[]>([]);
   const [invite, setInvite] = useState({ name: "", email: "", roundId: "" });
-  const [inviteMsg, setInviteMsg] = useState("");
+  const [inviteMsg, setInviteMsg] = useState<any>(null);
 
   // A failed/slow bootstrap used to leave this page on a permanent spinner; the shared
   // loader surfaces a timed error with Retry instead.
@@ -1334,11 +1339,14 @@ export function SettingsPage() {
                 disabled={!invite.roundId || !invite.name.trim() || !invite.email.trim()}
                 onClick={async () => {
                   try {
-                    await api.inviteReviewer(invite.roundId, {
+                    const invited:any = await api.inviteReviewer(invite.roundId, {
                       name: invite.name.trim(),
                       email: invite.email.trim(),
                     });
-                    setInviteMsg(`Invited ${invite.name.trim()} · ${invite.email.trim()}`);
+                    const linked = await api.issueReviewerInviteLink(invited.data.reviewer.id, invite.roundId);
+                    const absoluteUrl = linked.data.inviteUrl || `${window.location.origin}${linked.data.invitePath}`;
+                    setInviteMsg({name:invited.data.reviewer.name,email:invited.data.reviewer.email,roundId:invite.roundId,url:absoluteUrl});
+                    settings.reload();
                     toast(`Reviewer invited: ${invite.name.trim()}`);
                     setInvite((x) => ({ ...x, name: "", email: "" }));
                   } catch (e: any) {
@@ -1351,8 +1359,14 @@ export function SettingsPage() {
             </div>
           </div>
           {inviteMsg ? (
-            <Notice tone="ok" onClose={() => setInviteMsg("")}>
-              {inviteMsg}
+            <Notice tone="ok" onClose={() => setInviteMsg(null)}>
+              <div data-testid="reviewer-demo-access-link">
+                <b>Reviewer invited: {inviteMsg.name}</b> · {inviteMsg.email}<br/>
+                <span className="text-xs">Round: {rounds.find((r:any)=>r.id===inviteMsg.roundId)?.name||inviteMsg.roundId}</span>
+                <Input className="mt-2" readOnly aria-label="Reviewer demo access link" value={inviteMsg.url}/>
+                <Button className="mt-2" size="sm" variant="secondary" onClick={async()=>{await navigator.clipboard.writeText(inviteMsg.url);toast("Reviewer access link copied")}}>Copy reviewer access link</Button>
+                <p className="mt-2 text-xs">This is a credential-free <b>demo reviewer persona access link</b>. It is not password authentication or a production login.</p>
+              </div>
             </Notice>
           ) : null}
           <p className="mt-2 text-xs text-mid">

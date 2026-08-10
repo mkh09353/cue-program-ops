@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { createApp } from "../src/app.js";
 import { EVENT_ID, store } from "../src/lifecycle.js";
 import { MemoryRepository } from "../src/repository.js";
-import { equivalentDeliverables, isEquivalentDeliverable } from "../src/content.js";
+import { contentReadiness, equivalentDeliverables, isEquivalentDeliverable } from "../src/content.js";
 
 const h = (id: string) => ({ "content-type": "application/json", "x-demo-persona": id });
 const parse = async (res: Response) => ({ res, body: (await res.json()) as any });
@@ -48,6 +48,7 @@ test("organizer file-request task reuses an existing same-kind deliverable slot"
 
   // The reused slot picks up the organizer's new instructions/deadline.
   assert.equal(store.deliverableTasks.find((t) => t.id === seededId)!.dueAt, "2027-05-01T23:59:59.000Z");
+  assert.equal(created.body.data[0].status, "incomplete", "re-request opens a fresh collection cycle");
 
   // Upload → versions accrue on that single canonical slot.
   const personaId = store.personas.find((p) => p.speakerId === speakerId)!.id;
@@ -79,6 +80,121 @@ test("organizer file-request task reuses an existing same-kind deliverable slot"
   );
   assert.equal(orgRows.length, 1);
   assert.equal(orgRows[0].uploadCount, 2);
+});
+
+test("re-requesting a populated canonical slot preserves history but requires one newer upload", async () => {
+  const app = createApp({ repo: new MemoryRepository() });
+  const task = store.deliverableTasks.find((t) => t.id === "deliverable-slides-ada")!;
+  const file = store.contentFiles.find((f) => f.taskId === task.id)!;
+  const versionsBefore = structuredClone(file.versions);
+  const commentsBefore = structuredClone(file.comments);
+  assert.ok(versionsBefore.length > 0, "fixture: canonical slot is populated");
+  assert.equal(task.status, "complete", "fixture: seeded populated slot starts complete");
+
+  const requested = await parse(await app.request(`/api/events/${EVENT_ID}/content/tasks`, {
+    method: "POST",
+    headers: h("org-swyx"),
+    body: JSON.stringify({
+      name: "Upload refreshed session presentation",
+      instructions: "A newer deck is required for this collection cycle.",
+      dueAt: "2027-06-01T23:59:59.000Z",
+      speakerIds: [task.speakerId],
+      sessionIds: [task.sessionId],
+      acceptedTypes: ["application/pdf"],
+    }),
+  }));
+  assert.equal(requested.res.status, 201);
+  assert.equal(requested.body.data[0].id, task.id);
+  assert.equal(requested.body.data[0].reused, true);
+  assert.equal(slotsFor(task.speakerId, task.sessionId).length, 1);
+  assert.equal(file.versions.length, versionsBefore.length, "re-request does not remove versions");
+  assert.deepEqual(file.comments, commentsBefore, "re-request does not remove comments");
+
+  const outstanding = (await parse(await app.request(`/api/events/${EVENT_ID}/content`, { headers: h("org-swyx") }))).body.data.tasks.find((row: any) => row.id === task.id);
+  assert.equal(outstanding.status, "incomplete");
+  assert.equal(outstanding.uploadCount, versionsBefore.length);
+  assert.equal(outstanding.collectionCycle.baselineVersionCount, versionsBefore.length);
+  assert.equal(outstanding.collectionCycle.baselineCurrentVersionId, versionsBefore.find((v) => v.current)?.id || versionsBefore.at(-1)?.id);
+
+  const uploaded = await app.request(`/api/speaker/events/${EVENT_ID}/deliverables/${task.id}/upload`, {
+    method: "POST",
+    headers: h(store.personas.find((p) => p.speakerId === task.speakerId)!.id),
+    body: JSON.stringify({ ...pdf, dataBase64: "JVBERi0xLjQgZGVtbyB2Mg==", kind: "slides" }),
+  });
+  assert.equal(uploaded.status, 201);
+  const complete = (await parse(await app.request(`/api/speaker/events/${EVENT_ID}/deliverables/${task.id}`, { headers: h(store.personas.find((p) => p.speakerId === task.speakerId)!.id) }))).body.data;
+  assert.equal(complete.status, "complete");
+  assert.equal(complete.uploadCount, versionsBefore.length + 1);
+  assert.equal(file.versions.filter((version) => version.current).length, 1);
+  assert.equal(file.versions.at(-1)?.current, true);
+  assert.deepEqual(file.comments, commentsBefore);
+});
+
+test("unrequested seeded complete slot stays complete", () => {
+  const task = {
+    id: "deliverable-unrequested-seeded", name: "Seeded artifact", instructions: "", dueAt: "2028-01-01T00:00:00Z",
+    speakerId: "spk-ada", sessionId: "ses-analytical", fileRequired: true, acceptedTypes: ["text/plain"],
+    status: "complete" as const, createdAt: "2027-01-01T00:00:00Z",
+  };
+  const file = {
+    id: "content-unrequested-seeded", speakerId: task.speakerId, sessionId: task.sessionId, taskId: task.id,
+    kind: "document" as const, status: "submitted" as const, comments: [], versions: [{
+      id: "version-unrequested-seeded", version: 1, name: "seed.txt", mime: "text/plain", size: 1,
+      dataBase64: "eA==", uploadedBy: task.speakerId, uploadedAt: "2027-01-01T00:00:00Z", current: true,
+    }],
+  };
+  store.deliverableTasks.push(task); store.contentFiles.push(file);
+  try {
+    assert.equal((task as any).collectionCycle, undefined);
+    const projected = contentReadiness(store).find((row: any) => row.id === task.id);
+    assert.equal(projected.status, "complete");
+    assert.equal(projected.uploadCount, 1);
+  } finally {
+    store.deliverableTasks = store.deliverableTasks.filter((row) => row.id !== task.id);
+    store.contentFiles = store.contentFiles.filter((row) => row.id !== file.id);
+  }
+});
+
+test("all-speaker re-request cycles complete independently without multiplying slots", async () => {
+  const app = createApp({ repo: new MemoryRepository() });
+  const speakerIds = ["spk-ada", "spk-sam"];
+  const request = async () => parse(await app.request(`/api/events/${EVENT_ID}/content/tasks`, {
+    method: "POST", headers: h("org-swyx"), body: JSON.stringify({
+      name: "Upload release notes", dueAt: "2027-07-01T23:59:59.000Z", speakerIds, acceptedTypes: ["text/plain"],
+    }),
+  }));
+  const first = await request();
+  assert.equal(first.res.status, 201);
+  const ids = new Map(first.body.data.map((row: any) => [row.speakerId, row.id]));
+  assert.equal(first.body.data.length, 2);
+
+  const uploadFor = async (speakerId: string, taskId: string) => app.request(`/api/speaker/events/${EVENT_ID}/deliverables/${taskId}/upload`, {
+    method: "POST", headers: h(store.personas.find((p) => p.speakerId === speakerId)!.id),
+    body: JSON.stringify({ name: "notes.txt", mime: "text/plain", size: 1, dataBase64: "eA==", kind: "document" }),
+  });
+  assert.equal((await uploadFor("spk-ada", ids.get("spk-ada") as string)).status, 201);
+  let rows = contentReadiness(store).filter((row) => [...ids.values()].includes(row.id));
+  assert.equal(rows.find((row) => row.speakerId === "spk-ada")?.status, "complete");
+  assert.equal(rows.find((row) => row.speakerId === "spk-sam")?.status, "incomplete");
+
+  const repeated = await request();
+  assert.equal(repeated.body.data.length, 2);
+  assert.deepEqual(new Set(repeated.body.data.map((row: any) => row.id)), new Set(ids.values()), "same two canonical slots reused");
+  rows = contentReadiness(store).filter((row) => [...ids.values()].includes(row.id));
+  assert.ok(rows.every((row) => row.status === "incomplete"), "each speaker gets an independent fresh cycle");
+
+  assert.equal((await uploadFor("spk-ada", ids.get("spk-ada") as string)).status, 201);
+  rows = contentReadiness(store).filter((row) => [...ids.values()].includes(row.id));
+  assert.equal(rows.find((row) => row.speakerId === "spk-ada")?.status, "complete");
+  assert.equal(rows.find((row) => row.speakerId === "spk-sam")?.status, "incomplete");
+  assert.equal((await uploadFor("spk-sam", ids.get("spk-sam") as string)).status, 201);
+  rows = contentReadiness(store).filter((row) => [...ids.values()].includes(row.id));
+  assert.ok(rows.every((row) => row.status === "complete"));
+  for (const [speakerId, taskId] of ids) assert.equal(slotsFor(speakerId, undefined, "text/plain").filter((row) => row.id === taskId).length, 1);
+  // Keep the shared lifecycle fixture isolated for the remaining focused tests.
+  const madeIds = new Set(ids.values());
+  store.deliverableTasks = store.deliverableTasks.filter((row) => !madeIds.has(row.id));
+  store.contentFiles = store.contentFiles.filter((row) => !madeIds.has(row.taskId));
 });
 
 /** Assigning the same task twice (or to all speakers repeatedly) stays idempotent. */

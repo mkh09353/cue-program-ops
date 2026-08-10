@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { api, subscribeData } from "../lib/api";
+import { api, getPersona, subscribeData } from "../lib/api";
 import { EVENT_ID, EVENT_TZ, PROGRAM_DAYS, cn, programDaysFromRange, type ProgramDay, fmtDate, fmtTime, fmtTzLabel, formatStatus } from "../lib/utils";
 import { isoToZonedWallTime, zonedDayKey, zonedWallTimeToIso } from "../../timezone";
+import { capacityWarningMessage } from "../../schedule";
 import {
   Badge,
   Button,
@@ -82,7 +83,7 @@ export function capacityWarning(
   room: { name?: string; capacity?: number } | undefined,
 ) {
   if (!session?.capacity || !room?.capacity || session.capacity <= room.capacity) return "";
-  return `${session.capacity} expected attendees exceeds ${room.name}'s ${room.capacity} capacity.`;
+  return capacityWarningMessage(session.capacity, room.name || "this room", room.capacity);
 }
 
 export function SchedulePage() {
@@ -97,7 +98,11 @@ export function SchedulePage() {
   const [agenda,setAgenda]=useState<any[]>([]);
   const [constraints,setConstraints]=useState({dayStartHour:9,dayEndHour:17,slotMinutes:30,breakMinutes:15});
   const [newRoom, setNewRoom] = useState("");
+  const [newRoomCapacity, setNewRoomCapacity] = useState("");
   const [newTrack, setNewTrack] = useState("");
+  /** Inline rename state: { kind, id, name } while an organizer edits a room/track. */
+  const [renaming, setRenaming] = useState<{ kind: "room" | "track"; id: string; name: string } | null>(null);
+  const [renameBusy, setRenameBusy] = useState(false);
   const [showRoomForm, setShowRoomForm] = useState(false);
   const [showTrackForm, setShowTrackForm] = useState(false);
   const [programDays, setProgramDays] = useState<ProgramDay[]>(() => [...PROGRAM_DAYS]);
@@ -158,6 +163,42 @@ export function SchedulePage() {
       /* ignore */
     }
   }, [selectedDay]);
+
+  /**
+   * Rename a canonical room/track in place. Ids are stable, so existing slot
+   * placements stay linked; the server owns validation (blank/duplicate/unknown).
+   */
+  const submitRename = async () => {
+    if (!renaming) return;
+    const name = renaming.name.trim();
+    if (!name) {
+      setErr("Name cannot be blank.");
+      return;
+    }
+    setRenameBusy(true);
+    try {
+      const persona = getPersona();
+      const path = renaming.kind === "room" ? "rooms" : "tracks";
+      const res = await fetch(`/api/events/${EVENT_ID}/agenda/${path}/${encodeURIComponent(renaming.id)}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json", "x-demo-persona": persona.id, "x-demo-role": persona.role },
+        body: JSON.stringify({ name }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.error?.message || body?.error || `Rename failed (${res.status})`);
+      }
+      toast(`${renaming.kind === "room" ? "Room" : "Track"} renamed to ${name}`);
+      setRenaming(null);
+      setErr("");
+      load();
+    } catch (e: any) {
+      setErr(e?.message || "Rename failed");
+      toast(e?.message || "Rename failed", "danger");
+    } finally {
+      setRenameBusy(false);
+    }
+  };
 
   const session = (id: string) => d?.sessions.find((x: any) => x.id === id);
   const scheduled = useMemo(() => new Set((d?.slots || []).map((x: any) => x.sessionId)), [d]);
@@ -509,15 +550,27 @@ export function SchedulePage() {
               aria-label="New room name"
             />
           </Field>
+          <Field label="Capacity (optional)">
+            <Input
+              type="number"
+              min={1}
+              value={newRoomCapacity}
+              onChange={(e) => setNewRoomCapacity(e.target.value)}
+              placeholder="e.g. 150"
+              aria-label="New room capacity"
+            />
+          </Field>
           <Button
             size="sm"
             disabled={!newRoom.trim()}
             onClick={async () => {
               const name = newRoom.trim();
               if (!name) return;
-              await api.createAgendaRoom({ name });
+              const capacity = Number(newRoomCapacity);
+              await api.createAgendaRoom(capacity > 0 ? { name, capacity } : { name });
               toast("Room added and ready for scheduling");
               setNewRoom("");
+              setNewRoomCapacity("");
               setShowRoomForm(false);
               load();
             }}
@@ -664,7 +717,12 @@ export function SchedulePage() {
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
                       {capacityWarning(s, d.rooms.find((r: any) => r.id === slot.roomId)) ? (
-                        <Badge tone="warn">Capacity warning</Badge>
+                        <span className="flex flex-wrap items-center gap-1" data-testid={`capacity-warning-list-${slot.sessionId}`}>
+                          <Badge tone="warn">Capacity warning</Badge>
+                          <span className="text-[11px] text-mid">
+                            {capacityWarning(s, d.rooms.find((r: any) => r.id === slot.roomId))}
+                          </span>
+                        </span>
                       ) : null}
                       <Badge tone="ok">{formatStatus(s?.publishStatus || "published")}</Badge>
                       <Button
@@ -741,7 +799,12 @@ export function SchedulePage() {
                                 {fmtTime(slot.startsAt)} · {d.rooms.find((r: any) => r.id === slot.roomId)?.name}
                               </div>
                               {capacityWarning(s, d.rooms.find((r: any) => r.id === slot.roomId)) ? (
-                                <Badge tone="warn">Capacity warning</Badge>
+                                <div className="mt-1" data-testid={`capacity-warning-week-${slot.sessionId}`}>
+                                  <Badge tone="warn">Capacity warning</Badge>
+                                  <p className="mt-1 text-[10px] text-mid">
+                                    {capacityWarning(s, d.rooms.find((r: any) => r.id === slot.roomId))}
+                                  </p>
+                                </div>
                               ) : null}
                               <Button
                                 size="sm"
@@ -788,8 +851,43 @@ export function SchedulePage() {
                     setDrag(null);
                   }}
                 >
-                  <div className="mb-2 flex items-center justify-between">
-                    <h3 className="text-sm font-bold">{lane.name}</h3>
+                  <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                    {renaming && renaming.kind === (view === "track" ? "track" : "room") && renaming.id === lane.id ? (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Input
+                          className="max-w-56"
+                          aria-label={`Rename ${lane.name}`}
+                          value={renaming.name}
+                          onChange={(e) => setRenaming({ ...renaming, name: e.target.value })}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") void submitRename();
+                            if (e.key === "Escape") setRenaming(null);
+                          }}
+                        />
+                        <Button size="sm" disabled={renameBusy || !renaming.name.trim()} onClick={() => void submitRename()}>
+                          {renameBusy ? "Saving…" : "Save name"}
+                        </Button>
+                        <Button size="sm" variant="outline" disabled={renameBusy} onClick={() => setRenaming(null)}>
+                          Cancel
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="text-sm font-bold">{lane.name}</h3>
+                        {view !== "track" && lane.capacity ? (
+                          <span className="text-[11px] text-mid">seats {lane.capacity}</span>
+                        ) : null}
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          aria-label={`Rename ${lane.name}`}
+                          data-testid={`rename-${view === "track" ? "track" : "room"}-${lane.id}`}
+                          onClick={() => setRenaming({ kind: view === "track" ? "track" : "room", id: lane.id, name: lane.name })}
+                        >
+                          Rename
+                        </Button>
+                      </div>
+                    )}
                     <span className="text-[11px] text-mid">Drop → {hour}:00 · {fmtTzLabel()}</span>
                   </div>
                   <div className="min-h-16 rounded-lg border border-dashed border-line bg-soft/50 p-2">

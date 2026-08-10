@@ -17,6 +17,11 @@ import { EVENT_TIME_ZONE, zonedDayKey } from "./timezone.js";
 const ms=(v:string)=>Date.parse(v);
 /** Half-open [start,end) intersection; equal endpoints deliberately do not overlap. */
 export const overlaps=(a:{startsAt:string;endsAt:string},b:{startsAt:string;endsAt:string})=>ms(a.startsAt)<ms(b.endsAt)&&ms(b.startsAt)<ms(a.endsAt);
+/** Single source of the advisory capacity sentence (server conflicts + organizer cards). */
+export function capacityWarningMessage(expected:number,roomName:string,capacity:number){
+ return `Expected attendance ${expected} exceeds ${roomName} capacity ${capacity} (over by ${expected-capacity}) \u2014 advisory only, placement is allowed.`;
+}
+
 const conflict=(severity:ConflictSeverity,code:ConflictCode,relatedIds:string[],message:string):ScheduleConflict=>({id:`${code}:${[...relatedIds].sort().join(":")}`,severity,code,relatedIds:[...relatedIds].sort(),message});
 export function validateSlot(data:ScheduleData, candidate:AgendaSlot):Validation {
  const s=data.sessions.find(x=>x.id===candidate.sessionId); const room=data.rooms.find(x=>x.id===candidate.roomId); const cs:ScheduleConflict[]=[];
@@ -42,7 +47,9 @@ export function validateSlot(data:ScheduleData, candidate:AgendaSlot):Validation
    const os=data.sessions.find(x=>x.id===other.sessionId); const shared=[...new Set(s.speakerIds.filter(id=>os?.speakerIds.includes(id)))].sort();
    if(shared.length) cs.push(conflict("hard","SPEAKER_OVERLAP",[candidate.sessionId,other.sessionId,...shared],`${shared.map(id=>data.speakers.find(x=>x.id===id)?.name??id).join(", ")} is already speaking during this time.`));
   }
-  if(s.capacity && room.capacity && s.capacity>room.capacity) cs.push(conflict("warning","CAPACITY",[s.id,room.id],`${s.capacity} expected attendees exceeds ${room.name}'s ${room.capacity} capacity.`));
+  // Capacity is ADVISORY: it never blocks a placement, so the copy states the numbers,
+  // the overage and that the organizer may proceed.
+  if(s.capacity && room.capacity && s.capacity>room.capacity) cs.push(conflict("warning","CAPACITY",[s.id,room.id],capacityWarningMessage(s.capacity,room.name,room.capacity)));
   for(const tid of [...s.trackIds].sort()) { const t=data.tracks.find(x=>x.id===tid); if(t?.maxConcurrent) { const n=data.slots.filter(x=>{const os=data.sessions.find(q=>q.id===x.sessionId);return x.sessionId!==s.id&&overlaps(x,candidate)&&!!os?.trackIds.includes(tid)}).length+1; if(n>t.maxConcurrent)cs.push(conflict("hard","TRACK_CONCURRENCY",[s.id,tid],`${t.name} allows only ${t.maxConcurrent} concurrent session${t.maxConcurrent===1?"":"s"}.`)); } }
  }
  const alternatives:SuggestedSlot[]=[];
