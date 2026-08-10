@@ -311,7 +311,7 @@ export function ReviewStudioPage() {
             <Badge tone="info">Board · {data.reviewBoard}</Badge>
           </div>
           <h2 className="text-2xl font-bold tracking-tight">{data.title}</h2>
-          <div className="mt-2 rounded-[18px] border border-line p-3 text-sm"><b>Speakers</b><ul className="mt-1 space-y-1"><li>{data.name} · {data.email} <Badge tone="muted">lead</Badge></li>{(data.additionalSpeakers||[]).map((p:any)=><li key={p.id}>{p.name} · {p.email} <Badge tone="muted">co-presenter</Badge></li>)}</ul></div>
+          <div className="mt-2 rounded-[18px] border border-line p-3 text-sm"><b>Speakers</b><ul className="mt-1 space-y-1"><li>{data.name} · {data.email} <Badge tone="muted">lead</Badge></li>{(data.additionalSpeakers||[]).map((p:any)=><li key={p.id}>{p.name} · {p.email} <Badge tone="muted">{p.role==="co-author"?"co-author":"co-presenter"}</Badge></li>)}</ul></div>
           <p className="mt-4 whitespace-pre-wrap text-sm leading-relaxed text-ink-soft">{data.abstract}</p>
           {data.answers?.workshopPlan ? (
             <div className="mt-4 rounded-[18px] bg-canvas p-3 text-sm">

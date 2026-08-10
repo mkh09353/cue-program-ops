@@ -222,10 +222,10 @@ export const api = {
   recuseAssignment: (id: string, reason: string) => mut(`/api/events/${EVENT_ID}/reviewer-queue/${id}/recuse`, {method:"POST",body:JSON.stringify({reason})}),
   reviewRecusals: () => req<{ data: any[] }>(`/api/events/${EVENT_ID}/review-recusals`),
   reinstateAssignment: (id: string) => mut<{ data: any }>(`/api/events/${EVENT_ID}/review-assignments/${id}/reinstate`, { method: "POST", body: "{}" }),
-  reviewProgress: () => req<{data:any[]}>(`/api/events/${EVENT_ID}/review-progress`),
+  reviewProgress: (roundId?:string) => req<{data:any[]}>(`/api/events/${EVENT_ID}/review-progress${roundId?`?roundId=${encodeURIComponent(roundId)}`:""}`),
   automation: () => req<{data:any}>(`/api/events/${EVENT_ID}/automation`),
   reviewReminders: (reviewerIds: string[]) => mut<{data:any[]}>(`/api/events/${EVENT_ID}/review-reminders`, {method:"POST",body:JSON.stringify({reviewerIds})}),
-  reviewResults: () => req<{data:any[]}>(`/api/events/${EVENT_ID}/review-results`),
+  reviewResults: (roundId?:string) => req<{data:any[]}>(`/api/events/${EVENT_ID}/review-results${roundId?`?roundId=${encodeURIComponent(roundId)}`:""}`),
   reviewResultsCsv: () => `/api/events/${EVENT_ID}/review-results.csv`,
   saveReview: (id: string, body: any) =>
     mut(`/api/events/${EVENT_ID}/reviews/${id}`, { method: "POST", body: JSON.stringify(body) }),

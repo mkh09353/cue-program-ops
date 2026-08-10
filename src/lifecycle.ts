@@ -55,7 +55,7 @@ export interface Submission {
   createdAt: string;
   updatedAt?: string;
   editToken?: string;
-  additionalSpeakers?: { id: string; name: string; email: string }[];
+  additionalSpeakers?: { id: string; name: string; email: string; role?: "co-presenter" | "co-author" }[];
 }
 
 export interface Review {

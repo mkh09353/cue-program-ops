@@ -399,8 +399,8 @@ export function PublicCfpPage() {
               <Field label="Email">
                 <Input required type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
               </Field>
-              <div className="mb-4 rounded-[18px] border border-line bg-paper p-4"><div className="flex items-center justify-between"><b>Co-authors / co-presenters</b><Button type="button" size="sm" variant="outline" onClick={()=>setAnswers(a=>({...a,additionalSpeakers:[...(a.additionalSpeakers||[]),{name:"",email:""}]}))}>Add co-author</Button></div>
-                {(answers.additionalSpeakers||[]).map((person:any,i:number)=><div key={i} className="mt-3 grid gap-2 sm:grid-cols-[1fr_1fr_auto]"><Input aria-label={`Co-author ${i+1} name`} placeholder="Name" value={person.name} onChange={e=>setAnswers(a=>({...a,additionalSpeakers:a.additionalSpeakers.map((x:any,n:number)=>n===i?{...x,name:e.target.value}:x)}))}/><Input aria-label={`Co-author ${i+1} email`} type="email" placeholder="Email" value={person.email} onChange={e=>setAnswers(a=>({...a,additionalSpeakers:a.additionalSpeakers.map((x:any,n:number)=>n===i?{...x,email:e.target.value}:x)}))}/><Button type="button" variant="outline" onClick={()=>setAnswers(a=>({...a,additionalSpeakers:a.additionalSpeakers.filter((_:any,n:number)=>n!==i)}))}>Remove</Button></div>)}
+              <div className="mb-4 rounded-[18px] border border-line bg-paper p-4"><div className="flex items-center justify-between"><b>Co-authors / co-presenters</b><Button type="button" size="sm" variant="outline" onClick={()=>setAnswers(a=>({...a,additionalSpeakers:[...(a.additionalSpeakers||[]),{name:"",email:"",role:"co-presenter"}]}))}>Add person</Button></div>
+                {(answers.additionalSpeakers||[]).map((person:any,i:number)=><div key={i} className="mt-3 grid gap-2 sm:grid-cols-[1fr_1fr_150px_auto]"><Input aria-label={`Additional speaker ${i+1} name`} placeholder="Name" value={person.name} onChange={e=>setAnswers(a=>({...a,additionalSpeakers:a.additionalSpeakers.map((x:any,n:number)=>n===i?{...x,name:e.target.value}:x)}))}/><Input aria-label={`Additional speaker ${i+1} email`} type="email" placeholder="Email" value={person.email} onChange={e=>setAnswers(a=>({...a,additionalSpeakers:a.additionalSpeakers.map((x:any,n:number)=>n===i?{...x,email:e.target.value}:x)}))}/><Select aria-label={`Additional speaker ${i+1} role`} value={person.role||"co-presenter"} onChange={e=>setAnswers(a=>({...a,additionalSpeakers:a.additionalSpeakers.map((x:any,n:number)=>n===i?{...x,role:e.target.value}:x)}))}><option value="co-presenter">Co-presenter</option><option value="co-author">Co-author</option></Select><Button type="button" variant="outline" onClick={()=>setAnswers(a=>({...a,additionalSpeakers:a.additionalSpeakers.filter((_:any,n:number)=>n!==i)}))}>Remove</Button></div>)}
                 {Object.entries(fieldErrors)
                   .filter(([k]) => k.startsWith("coauthor-"))
                   .map(([k, message]) => (
@@ -491,7 +491,7 @@ export function PublicCfpPage() {
                     {name} · {email}
                   </dd>
                 </div>
-                {(answers.additionalSpeakers||[]).map((person:any,i:number)=><div key={i}><dt className="text-xs text-mid">Co-author</dt><dd className="font-semibold">{person.name} · {person.email}</dd></div>)}
+                {(answers.additionalSpeakers||[]).map((person:any,i:number)=><div key={i}><dt className="text-xs text-mid">{person.role==="co-author"?"Co-author":"Co-presenter"}</dt><dd className="font-semibold">{person.name} · {person.email}</dd></div>)}
                 {visibleFields.map((f: any) => {
                   const raw = answers[f.key];
                   const display =

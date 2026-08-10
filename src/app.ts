@@ -1039,7 +1039,7 @@ async function mirrorAcceptedToSchedule(repo: Repository, s: Submission) {
 }
 
 function normalizeAdditionalSpeakers(value:unknown,previous:Submission["additionalSpeakers"]=[]) {
-  return (Array.isArray(value)?value:[]).map((x:any,i)=>({id:previous[i]?.id||`spk-co-${crypto.randomUUID().slice(0,8)}`,name:String(x?.name||"").trim(),email:String(x?.email||"").trim().toLowerCase()})).filter(x=>x.name&&/^\S+@\S+\.\S+$/.test(x.email));
+  return (Array.isArray(value)?value:[]).map((x:any,i)=>({id:previous[i]?.id||`spk-co-${crypto.randomUUID().slice(0,8)}`,name:String(x?.name||"").trim(),email:String(x?.email||"").trim().toLowerCase(),role:x?.role==="co-author"?"co-author" as const:"co-presenter" as const})).filter(x=>x.name&&/^\S+@\S+\.\S+$/.test(x.email));
 }
 
 export function configuredClient(env: Record<string, string | undefined>): AcceleventsClient {

@@ -73,6 +73,8 @@ function RoundEditor({ round, personas, saved }: { round: any; personas: any[]; 
   const [draft, setDraft] = useState(() => structuredClone(round));
   const [invite, setInvite] = useState({ name: "", email: "" });
   const criteria = draft.criteria || [];
+  useEffect(()=>setDraft(structuredClone(round)),[round]);
+  const reviewers=[...new Map(personas.filter(p=>p.role==="reviewer").map(p=>[String(p.email||p.id).trim().toLowerCase(),p])).values()];
 
   return (
     <Card className="p-5">
@@ -216,8 +218,7 @@ function RoundEditor({ round, personas, saved }: { round: any; personas: any[]; 
 
       <h3 className="mt-4 text-xs font-bold uppercase tracking-wide text-mid">Reviewer pool</h3>
       <div className="mt-2 flex flex-wrap gap-2">
-        {personas
-          .filter((p) => p.role === "reviewer")
+        {reviewers
           .map((p) => (
             <label key={p.id} className="rounded-full border px-3 py-1 text-sm">
               <input
@@ -260,7 +261,8 @@ function RoundEditor({ round, personas, saved }: { round: any; personas: any[]; 
       <Button
         className="mt-4"
         onClick={async () => {
-          await api.updateReviewRound(round.id, draft);
+          const savedRound:any=await api.updateReviewRound(round.id, draft);
+          setDraft(structuredClone(savedRound.data));
           toast("Round saved");
           saved();
         }}
@@ -538,7 +540,9 @@ export function AssignmentsPage() {
 }
 
 export function ReviewProgressPage() {
-  const { data, reload } = useData(api.reviewProgress);
+  const {data:rounds}=useData(api.reviewRounds);const [roundId,setRoundId]=useState("");
+  useEffect(()=>{if(!roundId&&rounds.length)setRoundId(rounds.find(r=>r.status==="open")?.id||rounds[0].id)},[rounds,roundId]);
+  const { data, reload } = useData(()=>api.reviewProgress(roundId||undefined));
   const { data: automationRows } = useData(async()=>{const r=await api.automation();return {data:[r.data]}});
   const automation=automationRows[0];
   const [message, setMessage] = useState("");
@@ -563,6 +567,7 @@ export function ReviewProgressPage() {
           </Button>
         }
       />
+      <Card className="mb-4 p-4"><Field label="Round"><Select aria-label="Progress round" value={roundId} onChange={e=>setRoundId(e.target.value)}>{rounds.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</Select></Field></Card>
       <Card className="mb-4 p-4"><b>Automation</b><p className="text-sm text-mid">{automation?.enabled?"Enabled":"Disabled"} · hourly ({automation?.schedule||"0 * * * *"})</p><p className="text-sm">Last run: {automation?.lastRunAt?new Date(automation.lastRunAt).toLocaleString():"Not run yet"} · speakers {automation?.speakerSent||0} · reviewers {automation?.reviewerSent||0} · {automation?.status||"never"}</p></Card>
       {message ? <Notice tone="ok">{message}</Notice> : null}
       {data.map((r) => (
@@ -595,7 +600,8 @@ export function sortResults(rows: any[], sort: "score-desc" | "score-asc" | "tit
 }
 
 export function ResultsPage() {
-  const { data, loading, timedOut, error, reload } = useData(api.reviewResults);
+  const {data:rounds}=useData(api.reviewRounds);const [roundId,setRoundId]=useState("");
+  const { data, loading, timedOut, error, reload } = useData(()=>api.reviewResults(roundId||undefined));
   const [exportMsg, setExportMsg] = useState("");
   const [exporting, setExporting] = useState(false);
   const [sort, setSort] = useState<"score-desc" | "score-asc" | "title" | "reviews-desc">("score-desc");
@@ -651,6 +657,7 @@ export function ResultsPage() {
         <LoadState loading={loading} timedOut={timedOut} error={error} onRetry={reload} label="review results" />
       ) : null}
       <div className="mb-3 flex flex-wrap items-center gap-2">
+        <label className="flex items-center gap-2 text-sm font-medium text-mid">Round<Select aria-label="Results round" value={roundId} onChange={e=>setRoundId(e.target.value)}><option value="">All rounds</option>{rounds.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</Select></label>
         <label className="flex items-center gap-2 text-sm font-medium text-mid">
           Sort by
           <Select

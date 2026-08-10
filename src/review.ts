@@ -8,9 +8,11 @@ export function blindSubmission(submission: Submission, blind: boolean) {
 }
 
 export function weightedScore(criteria: ReviewCriterion[], responses: Record<string, string | number>) {
-  const numeric = criteria.filter((c) => c.type === "rating" && Number(c.weight) > 0 && Number.isFinite(Number(responses[c.id])));
-  const weight = numeric.reduce((sum, c) => sum + c.weight, 0);
-  return weight ? numeric.reduce((sum, c) => sum + Number(responses[c.id]) * c.weight, 0) / weight : null;
+  const values=Object.entries(responses).filter(([,value])=>typeof value==="number"&&Number.isFinite(value)).map(([id,value])=>({id,value:Number(value),criterion:criteria.find(c=>c.id===id&&c.type==="rating")}));
+  if(!values.length)return null;
+  const weighted=values.filter(x=>x.criterion&&Number(x.criterion.weight)>0);
+  if(weighted.length===values.length){const total=weighted.reduce((sum,x)=>sum+Number(x.criterion!.weight),0);return weighted.reduce((sum,x)=>sum+x.value*Number(x.criterion!.weight),0)/total}
+  return values.reduce((sum,x)=>sum+x.value,0)/values.length;
 }
 
 export function assignSpecific(assignments: ReviewAssignment[], round: ReviewRound, submissionIds: string[], reviewerId: string, cap = Infinity) {
