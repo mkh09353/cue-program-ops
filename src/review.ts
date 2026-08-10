@@ -17,7 +17,15 @@ export function assignSpecific(assignments: ReviewAssignment[], round: ReviewRou
   if (!round.reviewerIds.includes(reviewerId)) throw new Error("reviewer is not in this round's pool");
   const active = assignments.filter((a) => a.roundId === round.id && a.reviewerId === reviewerId && a.status !== "recused").length;
   const room = Math.max(0, cap - active);
-  return submissionIds.slice(0, room).filter((submissionId) => !assignments.some((a) => a.roundId === round.id && a.submissionId === submissionId && a.reviewerId === reviewerId && a.status !== "recused")).map((submissionId) => ({ id: `assignment-${crypto.randomUUID().slice(0, 8)}`, roundId: round.id, submissionId, reviewerId, status: "assigned" as const, createdAt: new Date().toISOString() }));
+  // Drop already-assigned ids BEFORE applying the cap: a duplicate must not consume a
+  // slot (selecting 2 where 1 was already assigned used to yield 0-1 new assignments).
+  const deduped = [...new Set(submissionIds)].filter(
+    (submissionId) =>
+      !assignments.some(
+        (a) => a.roundId === round.id && a.submissionId === submissionId && a.reviewerId === reviewerId && a.status !== "recused",
+      ),
+  );
+  return deduped.slice(0, room).map((submissionId) => ({ id: `assignment-${crypto.randomUUID().slice(0, 8)}`, roundId: round.id, submissionId, reviewerId, status: "assigned" as const, createdAt: new Date().toISOString() }));
 }
 
 export function autoDistribute(assignments: ReviewAssignment[], round: ReviewRound, submissionIds: string[], cap: number) {

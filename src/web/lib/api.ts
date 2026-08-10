@@ -309,11 +309,15 @@ export const api = {
   commsLog: () => req<{ data: any[] }>(`/api/events/${EVENT_ID}/comms/log`),
   sendComms: (body: any) =>
     mut(`/api/events/${EVENT_ID}/comms/send`, { method: "POST", body: JSON.stringify(body) }),
+  previewDecision: (body:any)=>req<{data:any}>(`/api/events/${EVENT_ID}/comms/decisions/preview`,{method:"POST",body:JSON.stringify(body)}),
+  sendDecisions: (body:any)=>mut<{data:any[]}>(`/api/events/${EVENT_ID}/comms/decisions/send`,{method:"POST",body:JSON.stringify(body)}),
   schedule: () => req<any>(`/api/events/${EVENT_ID}/schedule`),
   validateSlot: (slot: any) =>
     req(`/api/events/${EVENT_ID}/schedule/validate`, { method: "POST", body: JSON.stringify(slot) }),
   moveSlot: (body: any) =>
     mut(`/api/events/${EVENT_ID}/schedule/move`, { method: "POST", body: JSON.stringify(body) }),
+  createScheduleSession:(body:any)=>mut<{data:any}>(`/api/events/${EVENT_ID}/schedule/sessions`,{method:"POST",body:JSON.stringify(body)}),
+  updateScheduleSession:(id:string,body:any)=>mut<{data:any}>(`/api/events/${EVENT_ID}/schedule/sessions/${id}`,{method:"PATCH",body:JSON.stringify(body)}),
   agendaProposals: () => req<{data:any[]}>(`/api/events/${EVENT_ID}/agenda/proposals`),
   generateAgenda: (body:any) => mut<{data:any}>(`/api/events/${EVENT_ID}/agenda/proposals/generate`,{method:"POST",body:JSON.stringify(body)}),
   decideAgendaPlacement: (proposalId:string,placementId:string,decision:"accept"|"reject") => mut(`/api/events/${EVENT_ID}/agenda/proposals/${proposalId}/placements/${placementId}/${decision}`,{method:"POST",body:"{}"}),

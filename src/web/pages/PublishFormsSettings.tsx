@@ -23,6 +23,10 @@ export function PublishPage() {
   const [widget, setWidget] = useState<"sessions" | "speakers" | "agenda" | "itinerary" | "gallery">("sessions");
   const [configs,setConfigs]=useState<any[]>([]),[configName,setConfigName]=useState(""),[trackFilter,setTrackFilter]=useState("");
   const [formatFilter,setFormatFilter]=useState(""),[dayFilter,setDayFilter]=useState(""),[accent,setAccent]=useState("#12141A"),[configErr,setConfigErr]=useState("");
+  const [cardFields,setCardFields]=useState({speakers:true,room:true,track:true,description:true});
+  const [configSaved,setConfigSaved]=useState("");
+  const [configBusy,setConfigBusy]=useState(false);
+  const loadConfigs=()=>api.embedConfigs().then(r=>setConfigs(r.data)).catch(()=>{});
   const [facets,setFacets]=useState<{tracks:string[];formats:string[];rooms:string[];days:string[]}>({tracks:[],formats:[],rooms:[],days:[]});
   const origin = typeof window !== "undefined" ? window.location.origin : "";
 
@@ -53,7 +57,7 @@ export function PublishPage() {
 
   useEffect(() => {
     loadRuns();
-    api.embedConfigs().then(r=>setConfigs(r.data)).catch(()=>{});
+    void loadConfigs();
     // Facet values come from the same canonical published program the widgets render.
     fetch(`/e/${EVENT_SLUG}/public/feed.json`)
       .then(r=>r.json())
@@ -113,16 +117,42 @@ export function PublishPage() {
               </div>
             </Field>
             <div className="flex items-end">
-              <Button onClick={async()=>{
-                setConfigErr("");
+              <Button disabled={configBusy} onClick={async()=>{
+                setConfigErr("");setConfigSaved("");setConfigBusy(true);
                 try{
-                  const r=await api.createEmbedConfig({name:configName.trim()||`${widget} embed`,widget,filters:{track:trackFilter||undefined,format:formatFilter||undefined,day:dayFilter||undefined},theme:{accent}});
-                  setConfigs([...configs,r.data]);setConfigName("");
+                  const r=await api.createEmbedConfig({name:configName.trim()||`${widget} embed`,widget,filters:{track:trackFilter||undefined,format:formatFilter||undefined,day:dayFilter||undefined},theme:{accent},fields:cardFields});
+                  // Optimistic add AND authoritative re-fetch: the saved config must be
+                  // visible immediately on the first click, not after a later interaction.
+                  setConfigs((prev:any[])=>prev.some(x=>x.id===r.data.id)?prev:[...prev,r.data]);
+                  await loadConfigs();
+                  setConfigName("");
+                  setConfigSaved(`Saved "${r.data.name}" · ${r.data.widget} · embed URL ready below`);
                   toast("Embed configuration saved");
                 }catch(e:any){setConfigErr(e?.message||"Save failed");toast(e?.message||"Save failed","danger")}
-              }}>Save config</Button>
+                finally{setConfigBusy(false)}
+              }}>{configBusy?"Saving…":"Save config"}</Button>
             </div>
           </div>
+          <div className="mt-3 rounded-[18px] border border-line p-3">
+            <b className="text-xs uppercase tracking-wide text-mid">Card fields to display</b>
+            <p className="mt-1 text-xs text-mid">Unchecked fields are omitted from the rendered cards in this embed.</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {([
+                ["speakers","Speakers"],
+                ["room","Room"],
+                ["track","Track"],
+                ["description","Description"],
+              ] as const).map(([key,label])=>{
+                const id=`embed-field-${key}`;
+                const checked=(cardFields as any)[key];
+                return <label key={key} htmlFor={id} className={`flex cursor-pointer items-center gap-2 rounded-[18px] border px-3 py-2 text-sm ${checked?"border-ink bg-soft":"border-line bg-white"}`}>
+                  <input id={id} type="checkbox" aria-label={`Show ${label}`} checked={checked} onChange={e=>setCardFields(prev=>({...prev,[key]:e.target.checked}))}/>
+                  {label}
+                </label>;
+              })}
+            </div>
+          </div>
+          {configSaved?<Notice tone="ok" onClose={()=>setConfigSaved("")}>{configSaved}</Notice>:null}
           {configErr?<Notice tone="danger" onClose={()=>setConfigErr("")}>{configErr}</Notice>:null}
           {configs.map(c=>{
             const url=`${origin}/e/${EVENT_SLUG}/public/${c.widget}?config=${c.id}`;
@@ -141,6 +171,7 @@ export function PublishPage() {
                 </div>
               </div>
               <p className="mt-1 text-xs text-mid">{filterBits.length?filterBits.join(" · "):"No filters — full published program"}</p>
+              {c.fields?<p className="text-xs text-mid">Fields: {Object.entries(c.fields).filter(([,v])=>v).map(([k])=>k).join(", ")||"title only"}</p>:null}
               <code className="mt-1 block break-all text-xs">{snippet}</code>
               <div className="mt-2 flex flex-wrap gap-2 text-xs">
                 <a className="underline" href={`${origin}/e/${EVENT_SLUG}/public/feed.json?config=${c.id}`} target="_blank" rel="noreferrer">JSON</a>

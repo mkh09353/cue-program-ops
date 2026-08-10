@@ -28,10 +28,18 @@ function TaskBuilder({data,reload}:{data:any;reload:()=>void}){
     </Notice>:null}
     {err?<Notice tone="danger" onClose={()=>setErr("")}>{err}</Notice>:null}
     {open?<div className="mt-4 grid gap-2 md:grid-cols-2">
-      <Field label="Task name"><Input value={form.name} onChange={e=>setForm({...form,name:e.target.value})}/></Field>
+      <Field label="Task name"><Input value={form.name} onChange={e=>{
+        const name=e.target.value;
+        // A task named "…headshot…" should collect images, not PDFs — switch the
+        // default accepted types unless the organizer already customised them.
+        const isHeadshot=/headshot|photo|portrait/i.test(name);
+        const defaults=isHeadshot?["image/png","image/jpeg"]:["application/pdf"];
+        const untouched=JSON.stringify(form.acceptedTypes)===JSON.stringify(["application/pdf"])||JSON.stringify(form.acceptedTypes)===JSON.stringify(["image/png","image/jpeg"]);
+        setForm({...form,name,acceptedTypes:untouched?defaults:form.acceptedTypes});
+      }}/></Field>
       <Field label="Due date"><Input type="date" value={form.dueAt} onChange={e=>setForm({...form,dueAt:e.target.value})}/></Field>
       <Field label="Instructions"><Textarea value={form.instructions} onChange={e=>setForm({...form,instructions:e.target.value})}/></Field>
-      <Field label="Accepted MIME types"><Input value={form.acceptedTypes.join(",")} onChange={e=>setForm({...form,acceptedTypes:e.target.value.split(",").map((x:string)=>x.trim()).filter(Boolean)})}/></Field>
+      <Field label="Accepted MIME types" hint={/headshot|photo|portrait/i.test(form.name)?"Headshot task — defaults to PNG/JPEG images.":"Comma separated MIME types (server enforces them on upload)."}><Input value={form.acceptedTypes.join(",")} onChange={e=>setForm({...form,acceptedTypes:e.target.value.split(",").map((x:string)=>x.trim()).filter(Boolean)})}/></Field>
       <div className="md:col-span-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <b className="text-xs uppercase tracking-wide text-mid">Assign to speakers ({form.speakerIds.length} selected)</b>

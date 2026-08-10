@@ -63,6 +63,8 @@ export type PublicProgram = {
   tracks: { id: string; name: string; color: string }[];
   formats: string[];
   facets: { tracks: string[]; formats: string[]; rooms: string[] };
+  /** Optional per-embed card field selection (set by a saved embed config). */
+  cardFields?: { speakers?: boolean; room?: boolean; track?: boolean; description?: boolean };
 };
 
 const splitName = (name: string) => {

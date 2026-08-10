@@ -37,6 +37,10 @@ export function SpeakersPage() {
     dueAt: "2026-09-20",
     type: "confirm",
   });
+  /** Assignees chosen inside the task dialog (seeded from the table selection). */
+  const [taskSpeakerIds, setTaskSpeakerIds] = useState<string[]>([]);
+  const [taskResult, setTaskResult] = useState<{ count: number; names: string[] } | null>(null);
+  const [taskBusy, setTaskBusy] = useState(false);
 
   const load = () =>
     Promise.all([
@@ -77,7 +81,16 @@ export function SpeakersPage() {
             <Button variant="secondary" onClick={() => setShowImport(true)}>
               Import CSV
             </Button>
-            <Button variant="secondary" onClick={() => setShowTask(true)} disabled={!selected.length && !rows.length}>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                // Seed the dialog with whatever is checked in the table (may be empty).
+                setTaskSpeakerIds(selected.length ? [...selected] : []);
+                setTaskResult(null);
+                setShowTask(true);
+              }}
+              disabled={!rows.length}
+            >
               Assign task
             </Button>
             <Button onClick={() => setShowAdd(true)}>Add speaker</Button>
@@ -299,7 +312,13 @@ export function SpeakersPage() {
       ) : null}
 
       {showTask ? (
-        <Modal title="Assign general task" onClose={() => setShowTask(false)}>
+        <Modal
+          title="Assign general task"
+          onClose={() => {
+            setShowTask(false);
+            setTaskResult(null);
+          }}
+        >
           <Field label="Title">
             <Input value={taskForm.title} onChange={(e) => setTaskForm({ ...taskForm, title: e.target.value })} />
           </Field>
@@ -320,24 +339,94 @@ export function SpeakersPage() {
               <option value="profile">Profile</option>
             </select>
           </Field>
-          <p className="mb-3 text-xs text-mid">
-            Assignees: {selected.length ? `${selected.length} selected` : `all ${rows.length} visible speakers`}
-          </p>
+          <div className="mb-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <b className="text-xs uppercase tracking-wide text-mid">
+                Assign to speakers ({taskSpeakerIds.length} selected)
+              </b>
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  type="button"
+                  data-testid="task-select-all-speakers"
+                  onClick={() =>
+                    setTaskSpeakerIds((prev) =>
+                      prev.length === rows.length ? [] : rows.map((r) => r.speakerId),
+                    )
+                  }
+                >
+                  {taskSpeakerIds.length === rows.length && rows.length ? "Clear all" : "All speakers"}
+                </Button>
+              </div>
+            </div>
+            <div className="mt-2 grid max-h-56 gap-1 overflow-y-auto">
+              {rows.map((r) => {
+                const id = `task-assign-${r.speakerId}`;
+                const checked = taskSpeakerIds.includes(r.speakerId);
+                return (
+                  <label
+                    key={r.speakerId}
+                    htmlFor={id}
+                    className={`flex cursor-pointer items-center gap-2 rounded-[18px] border px-3 py-2 text-sm ${
+                      checked ? "border-ink bg-soft" : "border-line bg-white"
+                    }`}
+                  >
+                    <input
+                      id={id}
+                      type="checkbox"
+                      aria-label={`Assign task to ${r.name}`}
+                      checked={checked}
+                      onChange={(e) =>
+                        setTaskSpeakerIds((prev) =>
+                          e.target.checked
+                            ? prev.includes(r.speakerId)
+                              ? prev
+                              : [...prev, r.speakerId]
+                            : prev.filter((x) => x !== r.speakerId),
+                        )
+                      }
+                    />
+                    <span className="min-w-0">
+                      <b className="block truncate">{r.name}</b>
+                      <span className="block truncate text-xs text-mid">{r.email || r.speakerId}</span>
+                    </span>
+                  </label>
+                );
+              })}
+              {!rows.length ? <p className="text-sm text-mid">No speakers match the current filters.</p> : null}
+            </div>
+            <p className="mt-2 text-xs text-mid">
+              {taskSpeakerIds.length
+                ? `Will create ${taskSpeakerIds.length} task(s).`
+                : "Select at least one speaker — nothing is assigned by default."}
+            </p>
+          </div>
+          {taskResult ? (
+            <Notice tone="ok" onClose={() => setTaskResult(null)}>
+              <b>{taskResult.count} task(s) assigned</b> · {taskResult.names.join(", ")}
+            </Notice>
+          ) : null}
           <Button
+            disabled={taskBusy || !taskSpeakerIds.length}
             onClick={async () => {
-              const speakerIds = selected.length ? selected : rows.map((r) => r.speakerId);
+              const speakerIds = [...taskSpeakerIds];
               const dueAt = taskForm.dueAt.includes("T") ? taskForm.dueAt : `${taskForm.dueAt}T23:59:59.000Z`;
+              setTaskBusy(true);
               try {
                 const r = await api.assignSpeakerTasks({ ...taskForm, dueAt, speakerIds });
-                toast(`Assigned ${r.data.length} task(s)`);
-                setShowTask(false);
+                const names = speakerIds.map((id) => rows.find((x) => x.speakerId === id)?.name || id);
+                setTaskResult({ count: r.data.length, names });
+                toast(`Assigned ${r.data.length} task(s) to ${names.length} speaker(s)`);
                 load();
               } catch (e: any) {
                 toast(e.message || "Assign failed", "danger");
+              } finally {
+                setTaskBusy(false);
               }
             }}
           >
-            Assign
+            {taskBusy ? "Assigning…" : `Assign to ${taskSpeakerIds.length} speaker(s)`}
           </Button>
         </Modal>
       ) : null}
@@ -360,6 +449,49 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
     </div>
   );
 }
+
+/**
+ * Organizer speaker record fields, explicitly labelled and grouped. Raw camelCase keys
+ * used to be rendered as labels, so logistics text was typed into the "website" box.
+ */
+export const PROFILE_FIELD_GROUPS: {
+  heading: string;
+  fields: { key: string; label: string; hint?: string; type?: string; placeholder?: string }[];
+}[] = [
+  {
+    heading: "Identity",
+    fields: [
+      { key: "name", label: "Full name" },
+      { key: "email", label: "Email address", type: "email" },
+      { key: "title", label: "Job title", placeholder: "Principal Engineer" },
+      { key: "company", label: "Company / organization", placeholder: "Analytical Engines" },
+    ],
+  },
+  {
+    heading: "Links",
+    fields: [
+      { key: "linkedin", label: "LinkedIn URL", type: "url", placeholder: "https://linkedin.com/in/…" },
+      { key: "website", label: "Personal website URL", type: "url", placeholder: "https://example.com" },
+    ],
+  },
+  {
+    heading: "Logistics",
+    fields: [
+      {
+        key: "travelPreference",
+        label: "Travel preference",
+        hint: "Arrival city, hotel needs, or travel constraints.",
+        placeholder: "Arrives Oct 11, needs hotel near venue",
+      },
+      {
+        key: "dietary",
+        label: "Dietary requirements",
+        hint: "Allergies and meal preferences for catering.",
+        placeholder: "Vegetarian, no nuts",
+      },
+    ],
+  },
+];
 
 export function SpeakerDetailPage() {
   const { id } = useParams();
@@ -440,10 +572,21 @@ export function SpeakerDetailPage() {
           <h3 className="text-xs font-bold uppercase tracking-wide text-mid">Profile</h3>
           {edit ? (
             <>
-              {(["name", "email", "title", "company", "linkedin", "website", "travelPreference", "dietary"] as const).map((k) => (
-                <Field key={k} label={k}>
-                  <Input value={edit[k]} onChange={(e) => setEdit({ ...edit, [k]: e.target.value })} />
-                </Field>
+              {PROFILE_FIELD_GROUPS.map((group) => (
+                <div key={group.heading} className="mb-2">
+                  <h4 className="mb-2 mt-3 text-[11px] font-bold uppercase tracking-wide text-mid">{group.heading}</h4>
+                  {group.fields.map((f) => (
+                    <Field key={f.key} label={f.label} hint={f.hint}>
+                      <Input
+                        aria-label={f.label}
+                        type={f.type || "text"}
+                        placeholder={f.placeholder}
+                        value={(edit as any)[f.key] || ""}
+                        onChange={(e) => setEdit({ ...edit, [f.key]: e.target.value })}
+                      />
+                    </Field>
+                  ))}
+                </div>
               ))}
               <Field label="Bio">
                 <Textarea rows={4} value={edit.bio} onChange={(e) => setEdit({ ...edit, bio: e.target.value })} />
@@ -632,6 +775,8 @@ export function CommsPage() {
   const [selected, setSelected] = useState<string[]>([]);
   const [preview, setPreview] = useState<any>(null);
   const [err, setErr] = useState("");
+  const [decision,setDecision]=useState({accepted:true,rejected:true,subject:"Decision for {{talk_title}}",body:"Hi {{name}},\n\nYour proposal {{talk_title}} was {{decision}}."});
+  const [decisionPreview,setDecisionPreview]=useState<any>(null);
 
   const load = async () => {
     const [t, l, s] = await Promise.all([api.templates(), api.commsLog(), api.speakers()]);
@@ -678,6 +823,7 @@ export function CommsPage() {
         }
       />
       {err ? <Notice tone="danger">{err}</Notice> : null}
+      <Card className="mb-4 p-4"><h2 className="text-lg font-bold">Decision emails</h2><p className="text-sm text-mid">Notify accepted/rejected cohorts. Merge fields: {"{{name}}"}, {"{{talk_title}}"}, {"{{decision}}"}.</p><div className="mt-3 flex gap-4"><label><input type="checkbox" checked={decision.accepted} onChange={e=>setDecision({...decision,accepted:e.target.checked})}/> Accepted</label><label><input type="checkbox" checked={decision.rejected} onChange={e=>setDecision({...decision,rejected:e.target.checked})}/> Rejected</label></div><div className="mt-3 grid gap-3"><Field label="Decision subject"><Input value={decision.subject} onChange={e=>setDecision({...decision,subject:e.target.value})}/></Field><Field label="Decision body"><Textarea rows={5} value={decision.body} onChange={e=>setDecision({...decision,body:e.target.value})}/></Field></div><div className="flex gap-2"><Button variant="secondary" onClick={async()=>{const sub=(await api.submissions()).data.find((x:any)=>(decision.accepted&&x.status==="accepted")||(decision.rejected&&x.status==="rejected"));if(sub)setDecisionPreview((await api.previewDecision({submissionId:sub.id,subject:decision.subject,body:decision.body})).data)}}>Preview decision email</Button><Button onClick={async()=>{const cohorts=[decision.accepted&&"accepted",decision.rejected&&"rejected"].filter(Boolean);const r=await api.sendDecisions({cohorts,subject:decision.subject,body:decision.body});toast(`Decision email sent to ${r.data.length} recipient(s)`);load()}}>Send decision notifications</Button></div>{decisionPreview?<Notice tone="info"><b>{decisionPreview.subject}</b><pre className="mt-2 whitespace-pre-wrap text-xs">{decisionPreview.body}</pre></Notice>:null}</Card>
 
       <div className="grid gap-4 lg:grid-cols-[200px_1fr_1fr]">
         <Card className="p-3">

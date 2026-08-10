@@ -204,6 +204,7 @@ export function SubmissionsListPage() {
                     <td className="px-4 py-3">{inboxScore(s)}</td>
                     <td className="px-4 py-3">
                       <StatusBadge status={s.status} />
+                      {s.decisionEmailAt ? <div className="mt-1 text-xs text-mid">Decision email sent · {new Date(s.decisionEmailAt).toLocaleString()}</div> : null}
                     </td>
                   </tr>
                 ))}

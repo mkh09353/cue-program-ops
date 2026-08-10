@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, getPersona } from "../lib/api";
 import {
   Badge,
@@ -6,24 +6,61 @@ import {
   Card,
   Field,
   Input,
+  LoadState,
   Notice,
   PageHeader,
   Select,
   Textarea,
   toast,
 } from "../components/ui";
+import { LOAD_TIMEOUT_MS } from "../lib/useAsyncData";
 
+/**
+ * Page loader with an explicit timeout: organizer screens must never sit on a bare
+ * "Loading…" forever — after LOAD_TIMEOUT_MS the caller renders <LoadState> with a
+ * Retry button (see LoadState in components/ui).
+ */
 function useData(load: () => Promise<any>) {
   const [data, setData] = useState<any[]>([]);
   const [error, setError] = useState("");
-  const reload = () =>
-    load()
-      .then((r) => setData(r.data))
-      .catch((e) => setError(e.message));
+  const [loading, setLoading] = useState(true);
+  const [timedOut, setTimedOut] = useState(false);
+  const runIdRef = useRef(0);
+  const loadRef = useRef(load);
+  loadRef.current = load;
+
+  const reload = useCallback(() => {
+    const runId = ++runIdRef.current;
+    setLoading(true);
+    setTimedOut(false);
+    setError("");
+    const timer = setTimeout(() => {
+      if (runIdRef.current === runId) {
+        setTimedOut(true);
+        setLoading(false);
+      }
+    }, LOAD_TIMEOUT_MS);
+    loadRef
+      .current()
+      .then((r) => {
+        if (runIdRef.current !== runId) return;
+        clearTimeout(timer);
+        setData(r.data);
+        setLoading(false);
+        setTimedOut(false);
+      })
+      .catch((e) => {
+        if (runIdRef.current !== runId) return;
+        clearTimeout(timer);
+        setError(e?.message || "Request failed");
+        setLoading(false);
+      });
+  }, []);
+
   useEffect(() => {
     void reload();
-  }, []);
-  return { data, error, reload };
+  }, [reload]);
+  return { data, error, reload, loading, timedOut };
 }
 
 function updateCriterion(criteria: any[], i: number, patch: Record<string, unknown>) {
@@ -288,32 +325,42 @@ export function AssignmentsPage() {
     return { data: x.data.personas };
   });
   const { data: recusals, reload: reloadRecusals } = useData(api.reviewRecusals);
+  const { loading: subsLoading, timedOut: subsTimedOut, error: subsError, reload: reloadSubs } = useData(api.submissions);
   const [roundId, setRound] = useState("round-initial");
   const [reviewerId, setReviewer] = useState("rev-ada");
   const [cap, setCap] = useState(5);
   const [selected, setSelected] = useState<string[]>([]);
   const [message, setMessage] = useState("");
+  const [assigned, setAssigned] = useState<{ titles: string[]; skipped: string[]; reviewer: string } | null>(null);
   const [assignBusy, setAssignBusy] = useState(false);
   const [invite,setInvite]=useState({name:"",email:""});
 
+  const titleOf = (id: string) => subs.find((s) => s.id === id)?.title || id;
+
   const run = async (method: string) => {
-    const ids = method === "specific" ? selected : subs.map((s) => s.id);
+    // Snapshot the exact ids we are sending so the confirmation can name every one.
+    const ids = method === "specific" ? [...selected] : subs.map((s) => s.id);
     if (!ids.length) {
       setMessage("Select at least one submission to assign.");
+      setAssigned(null);
       toast("Select submissions first", "warn");
       return;
     }
     setAssignBusy(true);
     try {
       const r = await api.assignReviews({ roundId, reviewerId, submissionIds: ids, method, cap });
-      const count = r.data?.length ?? 0;
-      const reviewerName =
-        boot.find((p) => p.id === reviewerId)?.name || reviewerId;
+      const made = r.data || [];
+      const count = made.length;
+      const reviewerName = boot.find((p) => p.id === reviewerId)?.name || reviewerId;
+      const assignedIds = new Set(made.map((a: any) => a.submissionId));
+      const titles = made.map((a: any) => titleOf(a.submissionId));
+      const skipped = ids.filter((id) => !assignedIds.has(id)).map(titleOf);
       const msg =
         count === 0
-          ? `No new assignments (cap or duplicates) for ${reviewerName}`
-          : `${count} assigned to ${reviewerName}`;
+          ? `No new assignments for ${reviewerName} — all ${ids.length} selected are already assigned or over the per-reviewer limit (${cap}).`
+          : `${count} of ${ids.length} selected assigned to ${reviewerName}`;
       setMessage(msg);
+      setAssigned({ titles, skipped, reviewer: reviewerName });
       toast(msg);
       if (method === "specific" && count > 0) setSelected([]);
       reloadRounds();
@@ -321,6 +368,7 @@ export function AssignmentsPage() {
     } catch (e: any) {
       const err = e?.message || "Assign failed";
       setMessage(err);
+      setAssigned(null);
       toast(err, "danger");
     } finally {
       setAssignBusy(false);
@@ -355,23 +403,61 @@ export function AssignmentsPage() {
         <Field label="Per-reviewer limit">
           <Input type="number" min={1} value={cap} onChange={(e) => setCap(Number(e.target.value))} />
         </Field>
-        <div className="flex flex-wrap gap-2 md:col-span-3">
+        <div className="flex flex-wrap items-center gap-2 md:col-span-3">
           <Button disabled={!selected.length || assignBusy} onClick={() => void run("specific")}>
             {assignBusy ? "Assigning…" : `Assign selected (${selected.length})`}
           </Button>
           <Button variant="outline" disabled={assignBusy} onClick={() => void run("auto")}>
             Auto-distribute
           </Button>
+          <Button
+            size="sm"
+            variant="secondary"
+            type="button"
+            onClick={() =>
+              setSelected((prev) => (prev.length === subs.length ? [] : subs.map((s) => s.id)))
+            }
+          >
+            {selected.length === subs.length && subs.length ? "Clear all" : "Select all"}
+          </Button>
+          <span className="text-sm text-mid" data-testid="assignment-selection-count">
+            {selected.length} of {subs.length} selected
+          </span>
         </div>
         {message ? (
           <div className="md:col-span-3" role="status" aria-live="polite">
             <Notice tone={message.toLowerCase().includes("fail") || message.toLowerCase().includes("select") ? "warn" : "ok"}>
-              {message}
+              <span className="block font-semibold">{message}</span>
+              {assigned?.titles.length ? (
+                <ul className="mt-1 list-disc pl-5" data-testid="assigned-titles">
+                  {assigned.titles.map((t) => (
+                    <li key={t}>
+                      {t} → {assigned.reviewer}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+              {assigned?.skipped.length ? (
+                <p className="mt-1 text-xs">
+                  Skipped (already assigned to {assigned.reviewer} or over the limit): {assigned.skipped.join(", ")}
+                </p>
+              ) : null}
             </Notice>
           </div>
         ) : null}
       </Card>
 
+      {subsLoading || subsTimedOut || subsError ? (
+        <div className="mt-4">
+          <LoadState
+            loading={subsLoading}
+            timedOut={subsTimedOut}
+            error={subsError}
+            onRetry={reloadSubs}
+            label="submissions"
+          />
+        </div>
+      ) : null}
       <div className="mt-4 overflow-x-auto rounded-[24px] border bg-paper">
         <table className="w-full text-left text-sm">
           <thead>
@@ -391,7 +477,15 @@ export function AssignmentsPage() {
                     type="checkbox"
                     checked={selected.includes(s.id)}
                     onChange={(e) =>
-                      setSelected(e.target.checked ? [...selected, s.id] : selected.filter((id) => id !== s.id))
+                      // Functional update: two checkboxes toggled in the same tick must
+                      // both survive (a stale `selected` closure dropped one before).
+                      setSelected((prev) =>
+                        e.target.checked
+                          ? prev.includes(s.id)
+                            ? prev
+                            : [...prev, s.id]
+                          : prev.filter((id) => id !== s.id),
+                      )
                     }
                   />
                 </td>
@@ -483,10 +577,29 @@ export function ReviewProgressPage() {
   );
 }
 
+/** Sort helper for the Results table (exported for tests). */
+export function sortResults(rows: any[], sort: "score-desc" | "score-asc" | "title" | "reviews-desc") {
+  const score = (r: any) => (typeof r.aggregateScore === "number" ? r.aggregateScore : null);
+  const copy = [...rows];
+  if (sort === "title") return copy.sort((a, b) => String(a.title).localeCompare(String(b.title)));
+  if (sort === "reviews-desc") return copy.sort((a, b) => (b.reviewerCount || 0) - (a.reviewerCount || 0));
+  return copy.sort((a, b) => {
+    const av = score(a);
+    const bv = score(b);
+    // Unscored rows always sort last, in both directions.
+    if (av == null && bv == null) return String(a.title).localeCompare(String(b.title));
+    if (av == null) return 1;
+    if (bv == null) return -1;
+    return sort === "score-asc" ? av - bv : bv - av;
+  });
+}
+
 export function ResultsPage() {
-  const { data } = useData(api.reviewResults);
+  const { data, loading, timedOut, error, reload } = useData(api.reviewResults);
   const [exportMsg, setExportMsg] = useState("");
   const [exporting, setExporting] = useState(false);
+  const [sort, setSort] = useState<"score-desc" | "score-asc" | "title" | "reviews-desc">("score-desc");
+  const sorted = useMemo(() => sortResults(data, sort), [data, sort]);
 
   const downloadCsv = async () => {
     setExporting(true);
@@ -534,18 +647,54 @@ export function ResultsPage() {
       />
       <Notice tone="info">Need evaluation help? AI drafts are advisory only. Open a submission in <a className="font-semibold underline" href="/app/submissions">Review Studio</a> and choose <b>AI draft review</b>; human reviewers retain responsibility.</Notice>
       {exportMsg ? <Notice tone="ok">{exportMsg}</Notice> : null}
+      {loading || timedOut || error ? (
+        <LoadState loading={loading} timedOut={timedOut} error={error} onRetry={reload} label="review results" />
+      ) : null}
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <label className="flex items-center gap-2 text-sm font-medium text-mid">
+          Sort by
+          <Select
+            aria-label="Sort results"
+            className="max-w-56"
+            value={sort}
+            onChange={(e) => setSort(e.target.value as any)}
+          >
+            <option value="score-desc">Score · high to low</option>
+            <option value="score-asc">Score · low to high</option>
+            <option value="reviews-desc">Review count · high to low</option>
+            <option value="title">Title · A to Z</option>
+          </Select>
+        </label>
+        <Button
+          size="sm"
+          variant="outline"
+          data-testid="toggle-score-sort"
+          onClick={() => setSort((cur) => (cur === "score-desc" ? "score-asc" : "score-desc"))}
+        >
+          Score {sort === "score-asc" ? "↑ ascending" : "↓ descending"}
+        </Button>
+        <span className="text-xs text-mid">Unscored submissions always sort last.</span>
+      </div>
       <div className="overflow-x-auto rounded-[24px] border bg-paper">
         <table className="w-full text-left text-sm">
           <thead>
             <tr>
               <th className="p-3">Submission</th>
-              <th>Score</th>
+              <th>
+                <button
+                  type="button"
+                  className="font-semibold underline-offset-2 hover:underline"
+                  onClick={() => setSort((cur) => (cur === "score-desc" ? "score-asc" : "score-desc"))}
+                >
+                  Score {sort === "score-desc" ? "↓" : sort === "score-asc" ? "↑" : ""}
+                </button>
+              </th>
               <th>Reviews</th>
               <th>Status</th>
             </tr>
           </thead>
-          <tbody>
-            {data.map((r) => (
+          <tbody data-testid="results-rows">
+            {sorted.map((r) => (
               <tr className="border-t" key={r.id}>
                 <td className="p-3">
                   <b>{r.title}</b>

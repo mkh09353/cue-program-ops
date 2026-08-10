@@ -193,6 +193,9 @@ export function PublicCfpPage() {
   const [step, setStep] = useState(0);
   const [result, setResult] = useState<any>(null);
   const [err, setErr] = useState("");
+  /** Load failures replace the page; submit/validation failures must NOT. */
+  const [loadErr, setLoadErr] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [saved, setSaved] = useState("");
   const [search] = useSearchParams();
   const nav = useNavigate();
@@ -203,9 +206,15 @@ export function PublicCfpPage() {
       .then(async (r) => {
         setData(r.data);
         const id=search.get("submission"),token=search.get("token");
-        if(id&&token){const saved=await api.publicSubmission(id,token);setName(saved.data.name);setEmail(saved.data.email);setAnswers(saved.data.answers||{});setResult({id,speakerId:saved.data.speakerId,editToken:token,status:saved.data.status,editing:true,editable:saved.data.editable});setStep(1)}
+        if(id&&token){const saved=await api.publicSubmission(id,token);setName(saved.data.name);setEmail(saved.data.email);
+          // Co-authors live on the submission record AND inside answers; merge both so a
+          // resumed draft/edit never loses them (and always re-sends them on save).
+          const storedCoAuthors=(saved.data.additionalSpeakers||[]).map((p:any)=>({name:p.name,email:p.email}));
+          const answerCoAuthors=(saved.data.answers?.additionalSpeakers||[]).map((p:any)=>({name:p.name,email:p.email}));
+          const merged=storedCoAuthors.length?storedCoAuthors:answerCoAuthors;
+          setAnswers({...(saved.data.answers||{}),additionalSpeakers:merged});setResult({id,speakerId:saved.data.speakerId,editToken:token,status:saved.data.status,editing:true,editable:saved.data.editable});setStep(1)}
       })
-      .catch((e) => setErr(e.message));
+      .catch((e) => setLoadErr(e.message));
   }, []);
 
   const visibleFields = useMemo(() => {
@@ -220,8 +229,8 @@ export function PublicCfpPage() {
     setAnswers((current)=>{const next={...current};for(const field of data.form.fields||[]){if(next[field.key]==null&&field.type==="select"&&field.options?.length)next[field.key]=field.options[0]}return next});
   },[data]);
 
-  if (!data && !err) return <Spinner />;
-  if (err) return <Notice tone="danger">{err}</Notice>;
+  if (!data && !loadErr) return <Spinner />;
+  if (!data) return <Notice tone="danger">{loadErr}</Notice>;
 
   if (result && !result.editing) {
     return (
@@ -271,22 +280,60 @@ export function PublicCfpPage() {
     );
   }
 
+  /** Per-field required checks used by both the Review step and Submit. */
+  const validate = () => {
+    const errors: Record<string, string> = {};
+    for (const f of visibleFields) {
+      if (f.required && !String(answers[f.key] ?? "").trim()) errors[f.key] = `${f.label} is required`;
+    }
+    for (const [i, person] of (answers.additionalSpeakers || []).entries()) {
+      if (person.name?.trim() && !/^\S+@\S+\.\S+$/.test(String(person.email || "").trim())) {
+        errors[`coauthor-${i}`] = `Co-author ${i + 1} needs a valid email`;
+      }
+    }
+    return errors;
+  };
+
+  /** Map a server error message back onto the field it refers to, when possible. */
+  const fieldForServerError = (message: string) => {
+    const match = visibleFields.find((f: any) => message.toLowerCase().startsWith(String(f.label).toLowerCase()));
+    return match?.key;
+  };
+
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setErr("");
+    const errors = validate();
+    if (Object.keys(errors).length) {
+      setFieldErrors(errors);
+      setErr(`Please fix ${Object.keys(errors).length} field${Object.keys(errors).length === 1 ? "" : "s"} below.`);
+      setStep(1);
+      toast("Some required fields are missing", "danger");
+      return;
+    }
+    setFieldErrors({});
     try {
-      const r = result?.editing ? await api.savePublicSubmission(result.id,{editToken:result.editToken,answers,status:"submitted"}) : await api.submitCfp({ name, email, answers });
+      const payload = { ...answers, additionalSpeakers: answers.additionalSpeakers || [] };
+      const r = result?.editing ? await api.savePublicSubmission(result.id,{editToken:result.editToken,answers:payload,status:"submitted"}) : await api.submitCfp({ name, email, answers: payload });
       setResult(r.data);
       toast("Proposal submitted");
     } catch (ex: any) {
-      setErr(ex.message);
-      toast(ex.message, "danger");
+      // Submit failures keep the filled form on screen with an inline banner + field error.
+      const message = ex?.message || "Submission failed";
+      setErr(message);
+      const key = fieldForServerError(message);
+      if (key) {
+        setFieldErrors({ [key]: message });
+        setStep(1);
+      }
+      toast(message, "danger");
     }
   };
 
   const saveDraft = async () => {
     try {
-      const r=result?.editing ? await api.savePublicSubmission(result.id,{editToken:result.editToken,answers,status:"draft"}) : await api.submitCfp({name,email,answers,status:"draft"});
+      const draftAnswers={...answers,additionalSpeakers:answers.additionalSpeakers||[]};
+      const r=result?.editing ? await api.savePublicSubmission(result.id,{editToken:result.editToken,answers:draftAnswers,status:"draft"}) : await api.submitCfp({name,email,answers:draftAnswers,status:"draft"});
       setResult({...r.data,editing:true,editable:true});setSaved(`Draft saved · reference ${r.data.id}`);toast("Draft saved — use this page link to resume");
       history.replaceState(null,"",r.data.editUrl||`?submission=${r.data.id}&token=${r.data.editToken}`);
     } catch(ex:any){setErr(ex.message)}
@@ -325,7 +372,19 @@ export function PublicCfpPage() {
         ))}
       </div>
 
-      {err ? <Notice tone="danger">{err}</Notice> : null}
+      {err ? (
+        <Notice tone="danger">
+          <span className="block font-semibold">{err}</span>
+          {Object.keys(fieldErrors).length ? (
+            <ul className="mt-1 list-disc pl-5 text-sm" data-testid="cfp-error-summary">
+              {Object.entries(fieldErrors).map(([key, message]) => (
+                <li key={key}>{message}</li>
+              ))}
+            </ul>
+          ) : null}
+          <span className="mt-1 block text-xs">Your answers are still here — correct the highlighted fields and submit again.</span>
+        </Notice>
+      ) : null}
       {saved ? <Notice tone="ok">{saved}. Bookmark the current edit link to resume.</Notice> : null}
       {result?.editing && !result.editable ? <Notice tone="warn">Editing closed. This submission is read-only after the CFP deadline.</Notice> : null}
 
@@ -341,6 +400,13 @@ export function PublicCfpPage() {
               </Field>
               <div className="mb-4 rounded-[18px] border border-line bg-paper p-4"><div className="flex items-center justify-between"><b>Co-authors / co-presenters</b><Button type="button" size="sm" variant="outline" onClick={()=>setAnswers(a=>({...a,additionalSpeakers:[...(a.additionalSpeakers||[]),{name:"",email:""}]}))}>Add co-author</Button></div>
                 {(answers.additionalSpeakers||[]).map((person:any,i:number)=><div key={i} className="mt-3 grid gap-2 sm:grid-cols-[1fr_1fr_auto]"><Input aria-label={`Co-author ${i+1} name`} placeholder="Name" value={person.name} onChange={e=>setAnswers(a=>({...a,additionalSpeakers:a.additionalSpeakers.map((x:any,n:number)=>n===i?{...x,name:e.target.value}:x)}))}/><Input aria-label={`Co-author ${i+1} email`} type="email" placeholder="Email" value={person.email} onChange={e=>setAnswers(a=>({...a,additionalSpeakers:a.additionalSpeakers.map((x:any,n:number)=>n===i?{...x,email:e.target.value}:x)}))}/><Button type="button" variant="outline" onClick={()=>setAnswers(a=>({...a,additionalSpeakers:a.additionalSpeakers.filter((_:any,n:number)=>n!==i)}))}>Remove</Button></div>)}
+                {Object.entries(fieldErrors)
+                  .filter(([k]) => k.startsWith("coauthor-"))
+                  .map(([k, message]) => (
+                    <p key={k} className="mt-2 text-sm font-semibold text-red-700" role="alert" data-field-error={k}>
+                      {message}
+                    </p>
+                  ))}
               </div>
               <Button type="button" onClick={() => setStep(1)} disabled={!name || !email}>
                 Continue
@@ -350,7 +416,7 @@ export function PublicCfpPage() {
 
           {step === 1 ? (
             <>
-              {visibleFields.map((f: any,idx:number) => (<div key={f.key}>{f.section && visibleFields[idx-1]?.section!==f.section?<h2 className="mb-3 mt-5 border-b pb-2 text-lg font-bold">{f.section}</h2>:null}
+              {visibleFields.map((f: any,idx:number) => (<div key={f.key} className={fieldErrors[f.key]?"rounded-[18px] border border-ink/40 bg-canvas p-3":""}>{f.section && visibleFields[idx-1]?.section!==f.section?<h2 className="mb-3 mt-5 border-b pb-2 text-lg font-bold">{f.section}</h2>:null}
                 <Field label={`${f.label}${f.required ? " *" : ""}`} hint={f.helpText}>
                   {f.type === "textarea" ? (
                     <Textarea
@@ -378,7 +444,13 @@ export function PublicCfpPage() {
                       onChange={(e) => setAnswers((a) => ({ ...a, [f.key]: e.target.value }))}
                     />
                   )}
-                </Field></div>
+                </Field>
+                {fieldErrors[f.key] ? (
+                  <p className="-mt-2 mb-3 text-sm font-semibold text-red-700" role="alert" data-field-error={f.key}>
+                    {fieldErrors[f.key]}
+                  </p>
+                ) : null}
+                </div>
               ))}
               {answers.format?.startsWith("Workshop") ? (
                 <Notice tone="info">Workshop plan + duration are visible because Format = Workshop.</Notice>
@@ -390,14 +462,14 @@ export function PublicCfpPage() {
                 <Button
                   type="button"
                   onClick={() => {
-                    const missing = visibleFields
-                      .filter((f: any) => f.required && !(String(answers[f.key] ?? "").trim()))
-                      .map((f: any) => f.label);
-                    if (missing.length) {
-                      setErr(`Complete required fields before review: ${missing.join(", ")}`);
-                      toast(`Missing: ${missing.join(", ")}`, "danger");
+                    const errors = validate();
+                    if (Object.keys(errors).length) {
+                      setFieldErrors(errors);
+                      setErr(`Complete required fields before review: ${Object.values(errors).join(", ")}`);
+                      toast(`Missing: ${Object.values(errors).join(", ")}`, "danger");
                       return;
                     }
+                    setFieldErrors({});
                     setErr("");
                     setStep(2);
                   }}

@@ -185,6 +185,7 @@ export interface Communication {
   status: "mock_sent" | "sent" | "failed";
   ics: string;
   createdAt: string;
+  submissionId?: string;
 }
 
 export interface Resource {
@@ -197,7 +198,9 @@ export interface Resource {
 }
 
 export interface ReminderPlan { speakerId: string; taskId: string; templateKey: "task_reminder"; dueAt: string; overdue: boolean }
-export interface EmbedConfig { id:string; name:string; widget:"sessions"|"speakers"|"agenda"|"itinerary"|"gallery"; filters:{track?:string;format?:string;room?:string;day?:string}; theme:{accent?:string}; createdAt:string }
+/** Which card fields a saved embed renders (all true when omitted). */
+export interface EmbedCardFields { speakers?:boolean; room?:boolean; track?:boolean; description?:boolean }
+export interface EmbedConfig { id:string; name:string; widget:"sessions"|"speakers"|"agenda"|"itinerary"|"gallery"; filters:{track?:string;format?:string;room?:string;day?:string}; theme:{accent?:string}; fields?:EmbedCardFields; createdAt:string }
 
 /** Named CSS colors accepted for embed branding (kept tiny and audit-able). */
 export const ACCENT_NAMED_COLORS = new Set([
@@ -1101,10 +1104,9 @@ export function ensureOnboarding(submission: Submission) {
  * dashboard are populated from the same canonical records.
  */
 export function ensureDeliverables(submission: Submission) {
-  if (store.deliverableTasks.some((t) => t.speakerId === submission.speakerId)) return;
   const sessionId = store.sessions.find((s) => s.submissionId === submission.id)?.id || `ses-${submission.id}`;
   const createdAt = new Date().toISOString();
-  store.deliverableTasks.push(
+  const canonical: DeliverableTask[] = [
     {
       id: `deliverable-slides-${submission.speakerId}`,
       name: "Upload Session Presentation",
@@ -1129,7 +1131,18 @@ export function ensureDeliverables(submission: Submission) {
       status: "incomplete",
       createdAt,
     },
-  );
+  ];
+  for (const task of canonical) {
+    const matches = store.deliverableTasks.filter((t) => t.speakerId === task.speakerId && t.sessionId === task.sessionId && t.acceptedTypes.some((type) => task.acceptedTypes.includes(type)));
+    if (!matches.length) { store.deliverableTasks.push(task); continue; }
+    const winner = matches.find((t)=>store.contentFiles.some((f)=>f.taskId===t.id)) || matches[0]!;
+    for (const duplicate of matches.filter((t)=>t.id!==winner.id)) {
+      const source=store.contentFiles.find((f)=>f.taskId===duplicate.id),target=store.contentFiles.find((f)=>f.taskId===winner.id);
+      if(source&&target){for(const v of source.versions){v.current=false;v.version=target.versions.length+1;target.versions.push(v)}store.contentFiles=store.contentFiles.filter((f)=>f.id!==source.id);if(target.versions.length)target.versions.at(-1)!.current=true}
+      else if(source)source.taskId=winner.id;
+      store.deliverableTasks=store.deliverableTasks.filter((t)=>t.id!==duplicate.id);
+    }
+  }
 }
 
 export function sendTemplate(

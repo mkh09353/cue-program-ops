@@ -47,6 +47,7 @@ export function SchedulePage() {
   const [selectedDay, setSelectedDay] = useState<string>(PROGRAM_DAYS[0].id);
   const [publishBusy, setPublishBusy] = useState(false);
   const [publishBanner, setPublishBanner] = useState("");
+  const [newSession,setNewSession]=useState({title:"",speakerIds:[] as string[],trackId:"",durationMinutes:45});
 
   const load = () =>
     api
@@ -171,6 +172,7 @@ export function SchedulePage() {
           {err}
         </Notice>
       ) : null}
+      <Card className="mb-4 p-4"><h2 className="font-bold">New session</h2><p className="text-sm text-mid">Create directly in the canonical schedule, then place it to test conflicts.</p><div className="mt-3 grid gap-3 md:grid-cols-4"><Field label="Title"><Input value={newSession.title} onChange={e=>setNewSession({...newSession,title:e.target.value})}/></Field><Field label="Speakers"><select multiple aria-label="Session speakers" className="min-h-24 rounded-[18px] border border-line p-2" value={newSession.speakerIds} onChange={e=>setNewSession({...newSession,speakerIds:Array.from(e.target.selectedOptions).map(x=>x.value)})}>{(d?.speakers||[]).map((s:any)=><option key={s.id} value={s.id}>{s.name}</option>)}</select></Field><Field label="Track"><select className="h-10 rounded-[18px] border border-line px-3" value={newSession.trackId} onChange={e=>setNewSession({...newSession,trackId:e.target.value})}><option value="">General</option>{(d?.tracks||[]).map((t:any)=><option key={t.id} value={t.id}>{t.name}</option>)}</select></Field><Field label="Duration"><Input type="number" value={newSession.durationMinutes} onChange={e=>setNewSession({...newSession,durationMinutes:Number(e.target.value)})}/></Field></div><Button className="mt-3" disabled={!newSession.title||!newSession.speakerIds.length} onClick={async()=>{await api.createScheduleSession(newSession);toast("Session created");setNewSession({title:"",speakerIds:[],trackId:"",durationMinutes:45});load()}}>Create session</Button></Card>
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
         {(["list", "day", "week", "track", "room"] as View[]).map((v) => (
@@ -346,6 +348,7 @@ export function SchedulePage() {
                 <div className="text-xs text-mid">
                   {x.speakerIds?.map((i: string) => d.speakers.find((q: any) => q.id === i)?.name).join(", ")}
                 </div>
+                <details className="mt-2 text-xs"><summary className="cursor-pointer font-semibold">Edit session speakers</summary><select multiple aria-label={`Edit speakers for ${x.title}`} className="mt-2 min-h-20 w-full rounded-[12px] border border-line p-2" value={x.speakerIds||[]} onChange={async e=>{await api.updateScheduleSession(x.id,{speakerIds:Array.from(e.target.selectedOptions).map(o=>o.value)});toast("Session speakers updated");load()}}>{(d.speakers||[]).map((s:any)=><option key={s.id} value={s.id}>{s.name}</option>)}</select></details>
                 <div className="mt-2 flex flex-wrap gap-1 md:hidden">
                   {(d.rooms || []).slice(0, 3).map((room: any) => (
                     <Button key={room.id} size="sm" variant="outline" onClick={() => move(x.id, room.id, hour, selectedDay)}>

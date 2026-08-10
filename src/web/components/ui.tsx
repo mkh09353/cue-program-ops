@@ -248,6 +248,44 @@ export function Spinner() {
   );
 }
 
+/**
+ * Standard load state for organizer pages: spinner while in flight, and an explicit
+ * error / timed-out panel with a Retry button instead of an endless "Loading…".
+ */
+export function LoadState({
+  loading,
+  timedOut,
+  error,
+  onRetry,
+  label = "this page",
+}: {
+  loading: boolean;
+  timedOut: boolean;
+  error?: string;
+  onRetry: () => void;
+  label?: string;
+}) {
+  if (loading) return <Spinner />;
+  if (!timedOut && !error) return null;
+  return (
+    <div className="rounded-[24px] border border-line bg-paper p-6" role="status" aria-live="polite">
+      <h3 className="text-base font-semibold text-ink">
+        {error ? `Could not load ${label}` : `Still loading ${label}`}
+      </h3>
+      <p className="mt-2 max-w-xl text-sm text-mid">
+        {error ||
+          "This is taking longer than expected. The server may be waking up or the request was dropped."}
+      </p>
+      <div className="mt-4 flex flex-wrap gap-2">
+        <Button onClick={onRetry}>Retry</Button>
+        <Button variant="outline" onClick={() => window.location.reload()}>
+          Reload page
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export function Markdown({ text, className }: { text: string; className?: string }) {
   return (
     <div

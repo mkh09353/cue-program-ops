@@ -149,7 +149,7 @@ export function createApp(deps: AppDeps = {}) {
     try{const plans=reminderPlans(),deliverableIds=store.deliverableTasks.filter(x=>x.status!=="complete"&&Date.parse(x.dueAt)<=Date.now()+7*86400000).map(x=>x.speakerId),speakerIds=[...new Set([...plans.map(x=>x.speakerId),...deliverableIds])];for(const speakerId of speakerIds){const row=sendTemplate("task_reminder",speakerId,"outstanding tasks and deliverables","reminder");await deliver(row);speakerSent++}for(const reviewerId of [...new Set(store.reviewAssignments.filter(a=>a.status==="assigned").map(a=>a.reviewerId))]){const p=store.personas.find(x=>x.id===reviewerId&&x.role==="reviewer");if(!p)continue;const outstanding=store.reviewAssignments.filter(a=>a.reviewerId===reviewerId&&a.status==="assigned").length,result=await mailer.send({to:p.email,subject:`${outstanding} CUE reviews outstanding`,text:`Please complete your ${outstanding} assigned reviews.`}).catch(()=>({status:"failed" as const}));store.communications.push({id:`comm-${crypto.randomUUID().slice(0,8)}`,speakerId:reviewerId,subject:`${outstanding} CUE reviews outstanding`,body:`Scheduled reviewer reminder for ${p.name}`,kind:"reminder",status:result.status,ics:"",createdAt:new Date().toISOString()});reviewerSent++}Object.assign(state,{lastRunAt:new Date().toISOString(),speakerSent,reviewerSent,status:"completed"});await persist();return c.json({data:state})}catch(error){Object.assign(state,{lastRunAt:new Date().toISOString(),speakerSent,reviewerSent,status:"failed"});await persist();return fail(c,error instanceof Error?error.message:"automation failed",500)}
   });
   app.get("/api/events/:eventId/embed-configs",(c)=>c.json({data:store.embedConfigs||[]}));
-  app.post("/api/events/:eventId/embed-configs",async(c)=>{if(actor(c)!=="organizer")return fail(c,"organizer role required",403);const b=await c.req.json().catch(()=>null) as any;if(!b?.name||!["sessions","speakers","agenda","itinerary","gallery"].includes(b.widget))return fail(c,"name and valid widget required");store.embedConfigs||=[];const accent=isSafeAccent(b.theme?.accent)?String(b.theme.accent).trim():undefined;if(b.theme?.accent&&!accent)return fail(c,"accent must be a hex color like #4B5563");const row={id:`embed-${crypto.randomUUID().slice(0,8)}`,name:String(b.name),widget:b.widget,filters:{track:b.filters?.track||undefined,format:b.filters?.format||undefined,room:b.filters?.room||undefined,day:b.filters?.day||undefined},theme:{accent},createdAt:new Date().toISOString()};store.embedConfigs.push(row);await persist();return c.json({data:row},201)});
+  app.post("/api/events/:eventId/embed-configs",async(c)=>{if(actor(c)!=="organizer")return fail(c,"organizer role required",403);const b=await c.req.json().catch(()=>null) as any;if(!b?.name||!["sessions","speakers","agenda","itinerary","gallery"].includes(b.widget))return fail(c,"name and valid widget required");store.embedConfigs||=[];const accent=isSafeAccent(b.theme?.accent)?String(b.theme.accent).trim():undefined;if(b.theme?.accent&&!accent)return fail(c,"accent must be a hex color like #4B5563");const row={id:`embed-${crypto.randomUUID().slice(0,8)}`,name:String(b.name),widget:b.widget,filters:{track:b.filters?.track||undefined,format:b.filters?.format||undefined,room:b.filters?.room||undefined,day:b.filters?.day||undefined},theme:{accent},fields:{speakers:b.fields?.speakers!==false,room:b.fields?.room!==false,track:b.fields?.track!==false,description:b.fields?.description!==false},createdAt:new Date().toISOString()};store.embedConfigs.push(row);await persist();return c.json({data:row},201)});
   app.delete("/api/events/:eventId/embed-configs/:id",async(c)=>{if(actor(c)!=="organizer")return fail(c,"organizer role required",403);const i=(store.embedConfigs||[]).findIndex(x=>x.id===c.req.param("id"));if(i<0)return fail(c,"embed config not found",404);store.embedConfigs.splice(i,1);await persist();return c.body(null,204)});
 
   app.get("/health", (c) =>
@@ -394,6 +394,7 @@ export function createApp(deps: AppDeps = {}) {
         ...(persona.role === "reviewer" ? blindSubmission(s, Boolean(store.reviewRounds.find((r) => r.id === store.reviewAssignments.find((a) => a.submissionId === s.id && a.reviewerId === persona.id)?.roundId)?.blind)) : s),
         avgScore: avgScore(s.id),
         reviews: reviewHistory(s.id),
+        decisionEmailAt: store.communications.find(x=>x.submissionId===s.id&&(x.kind==="acceptance"||x.kind==="rejection"))?.createdAt,
       })),
     });
   });
@@ -692,6 +693,17 @@ export function createApp(deps: AppDeps = {}) {
     return c.json({ data: t });
   });
   app.get("/api/events/:eventId/comms/log", (c) => c.json({ data: store.communications }));
+  app.post("/api/events/:eventId/comms/decisions/preview", async (c) => {
+    if (actor(c) !== "organizer") return fail(c, "organizer role required", 403);
+    const b=await c.req.json();const sub=store.submissions.find(s=>s.id===b.submissionId&&["accepted","rejected"].includes(s.status));if(!sub)return fail(c,"decided submission not found",404);
+    const merge=(text:string)=>text.replaceAll("{{name}}",sub.name).replaceAll("{{talk_title}}",sub.title).replaceAll("{{decision}}",sub.status);
+    return c.json({data:{submissionId:sub.id,to:sub.email,subject:merge(String(b.subject||"Decision for {{talk_title}}")),body:merge(String(b.body||"Hi {{name}}, your proposal {{talk_title}} was {{decision}}."))}});
+  });
+  app.post("/api/events/:eventId/comms/decisions/send", async (c) => {
+    if (actor(c) !== "organizer") return fail(c, "organizer role required", 403);
+    const b=await c.req.json(),cohorts=Array.isArray(b.cohorts)?b.cohorts:["accepted","rejected"],targets=store.submissions.filter(s=>cohorts.includes(s.status));const rows=[];
+    for(const sub of targets){const merge=(text:string)=>text.replaceAll("{{name}}",sub.name).replaceAll("{{talk_title}}",sub.title).replaceAll("{{decision}}",sub.status);const subject=merge(String(b.subject||"Decision for {{talk_title}}")),body=merge(String(b.body||"Hi {{name}}, your proposal {{talk_title}} was {{decision}}."));const result=await mailer.send({to:sub.email,subject,text:body}).catch(()=>({status:"failed" as const}));const row={id:`comm-${crypto.randomUUID()}`,speakerId:sub.speakerId,submissionId:sub.id,subject,body,kind:(sub.status==="accepted"?"acceptance":"rejection") as "acceptance"|"rejection",status:result.status,ics:"",createdAt:new Date().toISOString()};store.communications.unshift(row);rows.push(row)}await persist();return c.json({data:rows},201);
+  });
   app.post("/api/events/:eventId/comms/reminders/plan", (c) => {
     if (actor(c) !== "organizer") return fail(c, "organizer role required", 403);
     return c.json({ data: reminderPlans() });
@@ -786,6 +798,8 @@ export function createApp(deps: AppDeps = {}) {
     if (!s || !slot) return c.json({ error: "schedule and slot are required" }, 400);
     return c.json(validateSlot(s, slot));
   });
+  app.post("/api/events/:eventId/schedule/sessions",async(c)=>{if(actor(c)!=="organizer")return fail(c,"organizer role required",403);const r=repo as Repository&{getSchedule?:(id:string)=>Promise<any>;putSchedule?:(id:string,s:any)=>Promise<void>},s=await r.getSchedule?.(c.req.param("eventId")),b=await c.req.json();if(!s||!String(b.title||"").trim()||!Array.isArray(b.speakerIds)||!b.speakerIds.length)return fail(c,"title and speakers are required");const row={id:`session-${crypto.randomUUID().slice(0,8)}`,title:String(b.title),abstract:String(b.abstract||""),speakerIds:b.speakerIds.filter((id:string)=>s.speakers.some((x:any)=>x.id===id)),trackIds:b.trackId?[b.trackId]:[],durationMinutes:Number(b.durationMinutes||45),status:"accepted",publishStatus:"draft",slug:`session-${Date.now()}`};if(!row.speakerIds.length)return fail(c,"valid speakers are required");s.sessions.push(row);s.version++;await r.putSchedule?.(c.req.param("eventId"),s);await persist();return c.json({data:row},201)});
+  app.patch("/api/events/:eventId/schedule/sessions/:sessionId",async(c)=>{if(actor(c)!=="organizer")return fail(c,"organizer role required",403);const r=repo as Repository&{getSchedule?:(id:string)=>Promise<any>;putSchedule?:(id:string,s:any)=>Promise<void>},s=await r.getSchedule?.(c.req.param("eventId")),row=s?.sessions.find((x:any)=>x.id===c.req.param("sessionId")),b=await c.req.json();if(!row)return fail(c,"session not found",404);if(Array.isArray(b.speakerIds)){const ids=b.speakerIds.filter((id:string)=>s.speakers.some((x:any)=>x.id===id));if(!ids.length)return fail(c,"valid speakers are required");row.speakerIds=ids}if(b.title)row.title=String(b.title);if(b.trackId!==undefined)row.trackIds=b.trackId?[b.trackId]:[];if(b.durationMinutes)row.durationMinutes=Number(b.durationMinutes);s.version++;await r.putSchedule?.(c.req.param("eventId"),s);await persist();return c.json({data:row})});
   app.post("/api/events/:eventId/schedule/move", async (c) => {
     if (actor(c) !== "organizer") return fail(c, "organizer role required", 403);
     const r = repo as Repository & {
@@ -982,13 +996,15 @@ async function mirrorAcceptedToSchedule(repo: Repository, s: Submission) {
   const sched = await r.getSchedule(EVENT_ID);
   if (!sched) return;
   const sessionId = `ses-${s.id}`;
-  if (!sched.sessions.some((x: any) => x.id === sessionId || x.id === s.id || x.acceptedSubmissionId === s.id)) {
-    let track = sched.tracks.find((t: any) => t.name.trim().toLowerCase() === s.category.trim().toLowerCase())?.id;
-    if (!track && s.category.trim()) {
-      const base=`track-${s.category.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/(^-|-$)/g,"")||"general"}`;
-      track=sched.tracks.some((t:any)=>t.id===base)?`${base}-${crypto.randomUUID().slice(0,6)}`:base;
-      sched.tracks.push({id:track,name:s.category.trim(),color:"#64748b"});
-    }
+  let track = sched.tracks.find((t: any) => t.name.trim().toLowerCase() === s.category.trim().toLowerCase())?.id;
+  if (!track && s.category.trim()) {
+    const base=`track-${s.category.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/(^-|-$)/g,"")||"general"}`;
+    track=sched.tracks.some((t:any)=>t.id===base)?`${base}-${crypto.randomUUID().slice(0,6)}`:base;
+    sched.tracks.push({id:track,name:s.category.trim(),color:"#64748b"});
+  }
+  const existing=sched.sessions.find((x: any) => x.id === sessionId || x.id === s.id || x.acceptedSubmissionId === s.id);
+  if(existing){existing.trackIds=track?[track]:existing.trackIds;existing.speakerIds=[s.speakerId,...(s.additionalSpeakers||[]).map(x=>x.id)];await r.putSchedule(EVENT_ID,sched);return}
+  if (!existing) {
     sched.speakers = sched.speakers || [];
     const allSpeakers=[{id:s.speakerId,name:s.name,email:s.email},...(s.additionalSpeakers||[])];
     for(const person of allSpeakers) if (!sched.speakers.some((sp: any) => sp.id === person.id)) {

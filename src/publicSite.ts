@@ -197,6 +197,13 @@ function speakerChips(speakers: PublicSpeakerView[], base: string) {
 }
 
 function sessionCard(s: PublicSessionView, program: PublicProgram, base: string, opts?: { star?: boolean; detailHref?: string }) {
+  // A saved embed config can hide card fields (speakers / room / track / description).
+  const show = {
+    speakers: program.cardFields?.speakers !== false,
+    room: program.cardFields?.room !== false,
+    track: program.cardFields?.track !== false,
+    description: program.cardFields?.description !== false,
+  };
   // Always render a distinct Track badge — sessions without a track still get a
   // labelled "General" tag so track is never silently missing next to format/room.
   const trackPills = (s.trackNames.length ? s.trackNames : ["General"])
@@ -207,12 +214,12 @@ function sessionCard(s: PublicSessionView, program: PublicProgram, base: string,
     ? `<button type="button" class="star" data-star="${esc(s.id)}" aria-label="Add to my schedule" title="My Schedule">☆</button>`
     : "";
   return `<article class="card" data-session-id="${esc(s.id)}" data-title="${esc(s.title)}" data-tracks="${esc(s.trackNames.join("|"))}" data-format="${esc(s.format)}" data-room="${esc(s.room)}" data-speakers="${esc(s.speakers.map((x) => x.name).join(" | "))}">
-    <div class="pills">${trackPills}<span class="pill format" data-format-pill>Format · ${esc(s.format)}</span><span class="pill room" data-room-pill>Room · ${esc(s.room)}</span></div>
+    <div class="pills">${show.track ? trackPills : ""}<span class="pill format" data-format-pill>Format · ${esc(s.format)}</span>${show.room ? `<span class="pill room" data-room-pill>Room · ${esc(s.room)}</span>` : ""}</div>
     <h3><a href="${esc(detail)}">${esc(s.title)}</a></h3>
-    <div class="meta">${esc(fmtTimeRange(s.startsAt, s.endsAt, program.event.timezone))} · ${esc(s.room)}</div>
-    <p class="desc clamp" data-desc>${esc(s.abstract)}</p>
-    <button type="button" class="toggle" data-toggle-desc>Show more</button>
-    ${speakerChips(s.speakers, base)}
+    <div class="meta">${esc(fmtTimeRange(s.startsAt, s.endsAt, program.event.timezone))}${show.room ? ` · ${esc(s.room)}` : ""}</div>
+    ${show.description ? `<p class="desc clamp" data-desc>${esc(s.abstract)}</p>
+    <button type="button" class="toggle" data-toggle-desc>Show more</button>` : ""}
+    ${show.speakers ? speakerChips(s.speakers, base) : ""}
     <div class="row-actions">
       <a class="btn secondary sm" href="${esc(detail)}">View details</a>
       ${star}
@@ -762,8 +769,13 @@ function embedConfigFor(configId: string | undefined, widget: EmbedWidget) {
  * canonical program. Speakers are recomputed from the surviving sessions so the
  * speakers/gallery widgets stay consistent with the filtered catalog.
  */
-function applyEmbedFilters(program: PublicProgram, filters?: { track?: string; format?: string; room?: string; day?: string }) {
-  if (!filters || !(filters.track || filters.format || filters.room || filters.day)) return program;
+function applyEmbedFilters(
+  program: PublicProgram,
+  filters?: { track?: string; format?: string; room?: string; day?: string },
+  cardFields?: PublicProgram["cardFields"],
+) {
+  const withFields = (p: PublicProgram) => (cardFields ? { ...p, cardFields } : p);
+  if (!filters || !(filters.track || filters.format || filters.room || filters.day)) return withFields(program);
   const sessions = filterPublicSessions(program, filters).sessions;
   const unscheduledSessions = (program.unscheduledSessions || []).filter((s) => {
     if (filters.day) return false; // an unscheduled session has no day
@@ -773,12 +785,12 @@ function applyEmbedFilters(program: PublicProgram, filters?: { track?: string; f
     return true;
   });
   const keep = new Set([...sessions, ...unscheduledSessions].flatMap((s) => s.speakers.map((sp) => sp.id)));
-  return {
+  return withFields({
     ...program,
     sessions,
     unscheduledSessions,
     speakers: program.speakers.filter((sp) => keep.has(sp.id)),
-  };
+  });
 }
 
 /** Inject the embed accent (the single branding exception) into rendered HTML. */
@@ -874,7 +886,7 @@ export function createPublicSite(deps: PublicSiteDeps) {
     if (!loaded) return c.html(notFoundHtml(), 404);
     const config = embedConfigFor(c.req.query("config"), "sessions");
     if (config === null) return c.html(notFoundHtml("Embed configuration not found"), 404);
-    const program = applyEmbedFilters(loaded.program, config?.filters);
+    const program = applyEmbedFilters(loaded.program, config?.filters, config?.fields);
     return c.html(withAccent(renderSessionsPage(program, baseFor(loaded.slug)), config?.theme?.accent));
   });
 
@@ -904,7 +916,7 @@ export function createPublicSite(deps: PublicSiteDeps) {
     if (!loaded) return c.html(notFoundHtml(), 404);
     const config = embedConfigFor(c.req.query("config"), "speakers");
     if (config === null) return c.html(notFoundHtml("Embed configuration not found"), 404);
-    const program = applyEmbedFilters(loaded.program, config?.filters);
+    const program = applyEmbedFilters(loaded.program, config?.filters, config?.fields);
     return c.html(withAccent(renderSpeakersList(program, baseFor(loaded.slug), "list"), config?.theme?.accent));
   });
 
@@ -922,7 +934,7 @@ export function createPublicSite(deps: PublicSiteDeps) {
     if (!loaded) return c.html(notFoundHtml(), 404);
     const config = embedConfigFor(c.req.query("config"), "agenda");
     if (config === null) return c.html(notFoundHtml("Embed configuration not found"), 404);
-    const program = applyEmbedFilters(loaded.program, config?.filters);
+    const program = applyEmbedFilters(loaded.program, config?.filters, config?.fields);
     const day = c.req.query("day") || config?.filters?.day || undefined;
     return c.html(withAccent(renderAgenda(program, baseFor(loaded.slug), day), config?.theme?.accent));
   });
@@ -932,7 +944,7 @@ export function createPublicSite(deps: PublicSiteDeps) {
     if (!loaded) return c.html(notFoundHtml(), 404);
     const config = embedConfigFor(c.req.query("config"), "itinerary");
     if (config === null) return c.html(notFoundHtml("Embed configuration not found"), 404);
-    const program = applyEmbedFilters(loaded.program, config?.filters);
+    const program = applyEmbedFilters(loaded.program, config?.filters, config?.fields);
     return c.html(withAccent(renderItinerary(program, baseFor(loaded.slug)), config?.theme?.accent));
   });
 
@@ -941,7 +953,7 @@ export function createPublicSite(deps: PublicSiteDeps) {
     if (!loaded) return c.html(notFoundHtml(), 404);
     const config = embedConfigFor(c.req.query("config"), "gallery");
     if (config === null) return c.html(notFoundHtml("Embed configuration not found"), 404);
-    const program = applyEmbedFilters(loaded.program, config?.filters);
+    const program = applyEmbedFilters(loaded.program, config?.filters, config?.fields);
     return c.html(withAccent(renderSpeakersList(program, baseFor(loaded.slug), "gallery"), config?.theme?.accent));
   });
 
@@ -952,7 +964,7 @@ export function createPublicSite(deps: PublicSiteDeps) {
     if (!loaded) return c.text("event not found", 404);
     const config = embedConfigFor(c.req.query("config"), widget);
     if (config === null) return c.text("embed configuration not found", 404);
-    const program = applyEmbedFilters(loaded.program, config?.filters);
+    const program = applyEmbedFilters(loaded.program, config?.filters, config?.fields);
     return xmlResponse(c, programXml(program, scope));
   };
   app.get("/e/:slug/public/feed.xml", xmlHandler("program", "sessions"));
