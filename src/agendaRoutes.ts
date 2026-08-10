@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import type { Repository, ScheduleProjection } from "./domain.js";
 import type { AgendaProposal, LifecycleStore } from "./lifecycle.js";
 import { applyScheduleMove, validateSlot, type AgendaSlot } from "./schedule.js";
+import { EVENT_TIME_ZONE, zonedDayKey, zonedWallTimeToIso } from "./timezone.js";
 
 const fail=(c:any,message:string,status=400)=>c.json({error:{message}},status as any);
 type ScheduleRepo=Repository&{getSchedule?:(id:string)=>Promise<ScheduleProjection|undefined>;putSchedule?:(id:string,s:ScheduleProjection)=>Promise<void>};
@@ -51,6 +52,17 @@ export function humanizeAgendaConflict(
   return conflict.message || conflict.id || "Schedule warning";
 }
 
+/** Event-local wall-clock interpretation for agenda generation: the event timezone when present/valid, else the shared default. */
+function eventTimeZone(event: { timezone?: string }): string {
+  const timeZone = event?.timezone || EVENT_TIME_ZONE;
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone });
+    return timeZone;
+  } catch {
+    return EVENT_TIME_ZONE;
+  }
+}
+
 export function createAgendaRoutes(deps:{store:LifecycleStore;repo:Repository;persist:()=>Promise<void>;persona:(c:any)=>{role:string}}){
  const app=new Hono(),org=(c:any)=>deps.persona(c).role==="organizer",schedule=()=> (deps.repo as ScheduleRepo).getSchedule?.(deps.store.event.id);
  const guard=(c:any)=>org(c)?null:fail(c,"organizer role required",403);
@@ -63,10 +75,18 @@ export function createAgendaRoutes(deps:{store:LifecycleStore;repo:Repository;pe
   const constraints={dayStartHour:Number(body.dayStartHour??9),dayEndHour:Number(body.dayEndHour??17),slotMinutes:Number(body.slotMinutes??30),breakMinutes:Number(body.breakMinutes??0),speakerAvailability:body.speakerAvailability||{}};
   if(constraints.dayStartHour<0||constraints.dayEndHour>24||constraints.dayStartHour>=constraints.dayEndHour||constraints.slotMinutes<5||constraints.breakMinutes<0)return fail(c,"invalid agenda constraints");
   const working=structuredClone(data),placements:AgendaProposal["placements"]=[],scheduled=new Set(data.slots.map(x=>x.sessionId));
-  const days:string[]=[];for(let at=Date.parse(data.event.startsAt);at<Date.parse(data.event.endsAt);at+=86400000)days.push(new Date(at).toISOString().slice(0,10));
+  const tz=eventTimeZone(data.event);
+  // Event-local calendar days spanned by the event envelope: an early-morning UTC
+  // instant belongs to the previous LA civil day, and a late-evening one to the same.
+  // Walking the first-to-last day keys (inclusive) is DST-safe: no fixed 24h stepping.
+  const startDay=zonedDayKey(data.event.startsAt,tz),endDay=zonedDayKey(data.event.endsAt,tz),days:string[]=[];{
+   const base=Date.parse(`${startDay}T12:00:00.000Z`);for(let at=base;zonedDayKey(new Date(at).toISOString(),tz)<=endDay;at+=86400000)days.push(new Date(at).toISOString().slice(0,10));
+  }
   for(const session of [...data.sessions].filter(s=>s.status==="accepted"&&!scheduled.has(s.id)).sort((a,b)=>a.title.localeCompare(b.title))){let chosen:AgendaSlot|undefined;
    for(const day of days)for(let minute=constraints.dayStartHour*60;minute+session.durationMinutes<=constraints.dayEndHour*60;minute+=constraints.slotMinutes+constraints.breakMinutes)for(const room of [...data.rooms].sort((a,b)=>a.name.localeCompare(b.name))){
-    const startsAt=`${day}T${String(Math.floor(minute/60)).padStart(2,"0")}:${String(minute%60).padStart(2,"0")}:00.000Z`,endsAt=new Date(Date.parse(startsAt)+session.durationMinutes*60000).toISOString();const available=session.speakerIds.every(id=>{const ranges=constraints.speakerAvailability[id];return !ranges?.length||ranges.some((r:any)=>Date.parse(r.startsAt)<=Date.parse(startsAt)&&Date.parse(r.endsAt)>=Date.parse(endsAt))});if(!available)continue;
+    // Configured dayStartHour/dayEndHour/slotMinutes are event-timezone wall hours: convert the
+    // wall-clock candidate to a UTC ISO instant (DST-aware via the shared timezone contract).
+    const startsAt=zonedWallTimeToIso(day,`${String(Math.floor(minute/60)).padStart(2,"0")}:${String(minute%60).padStart(2,"0")}`,tz);const endsAt=new Date(Date.parse(startsAt)+session.durationMinutes*60000).toISOString();const available=session.speakerIds.every(id=>{const ranges=constraints.speakerAvailability[id];return !ranges?.length||ranges.some((r:any)=>Date.parse(r.startsAt)<=Date.parse(startsAt)&&Date.parse(r.endsAt)>=Date.parse(endsAt))});if(!available)continue;
     const trial={id:`ai-slot-${session.id}`,sessionId:session.id,roomId:room.id,startsAt,endsAt};if(!validateSlot(working,trial).conflicts.some(x=>x.severity==="hard")){chosen=trial;break;}}
    if(chosen){working.slots.push(chosen);const warningConflicts=validateSlot(data,chosen).conflicts.filter(x=>x.severity==="warning");const warnings=warningConflicts.map(x=>humanizeAgendaConflict(x,data));placements.push({id:`place-${crypto.randomUUID().slice(0,8)}`,sessionId:session.id,slot:chosen,status:"proposed",rationale:`Deterministic demo heuristic chose the earliest conflict-free ${data.rooms.find(r=>r.id===chosen!.roomId)?.name} slot; respected ${session.durationMinutes}-minute duration, room, track, speaker overlap, configured hours/breaks, and supplied availability.`,conflicts:warnings})}
   }

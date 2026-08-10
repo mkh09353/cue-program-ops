@@ -347,6 +347,47 @@ export function PortalTaskDetailPage() {
   const [profile, setProfile] = useState<any>(null);
   const [formAnswers, setFormAnswers] = useState<Record<string, string>>({});
   const [headshotFile, setHeadshotFile] = useState<File | null>(null);
+  /** Canonical deliverable slot backing this file task (versions, comments live there). */
+  const [deliverables, setDeliverables] = useState<any[]>([]);
+  const [linkedFile, setLinkedFile] = useState<any>(null);
+  const [taskComment, setTaskComment] = useState("");
+  const [uploadBusy, setUploadBusy] = useState(false);
+
+  const loadDeliverables = () =>
+    api
+      .deliverables()
+      .then((r) => setDeliverables(r.data || []))
+      .catch(() => setDeliverables([]));
+
+  useEffect(() => {
+    void loadDeliverables();
+    return subscribeData(loadDeliverables);
+  }, []);
+
+  // Pull versions + comments for the deliverable backing this task.
+  const linkedId = (() => {
+    const t = data?.tasks?.find((x: any) => x.id === id);
+    if (!t) return "";
+    const wanted =
+      t.type === "headshot" ? ["image/png", "image/jpeg"] : t.type === "slides" ? ["application/pdf"] : [];
+    const match = deliverables.find((dv: any) =>
+      wanted.length
+        ? (dv.acceptedTypes || []).some((x: string) => wanted.includes(x))
+        : (dv.acceptedTypes || []).some((x: string) => !x.startsWith("image/")),
+    );
+    return match?.id || "";
+  })();
+
+  useEffect(() => {
+    if (!linkedId) {
+      setLinkedFile(null);
+      return;
+    }
+    api
+      .deliverable(linkedId)
+      .then((r) => setLinkedFile(r.data?.file || null))
+      .catch(() => setLinkedFile(null));
+  }, [linkedId, deliverables]);
 
   useEffect(() => {
     if (data?.profile) setProfile({ ...data.profile });
@@ -378,6 +419,16 @@ export function PortalTaskDetailPage() {
   };
 
   const isFile = FILE_TYPES.has(task.type);
+  // Match this onboarding task to the canonical deliverable slot of the same kind so
+  // uploads, versions and comments all live on ONE record.
+  const wantedTypes =
+    task.type === "headshot" ? ["image/png", "image/jpeg"] : task.type === "slides" ? ["application/pdf"] : [];
+  const linkedDeliverable =
+    deliverables.find((d: any) =>
+      wantedTypes.length
+        ? (d.acceptedTypes || []).some((t: string) => wantedTypes.includes(t))
+        : (d.acceptedTypes || []).some((t: string) => !t.startsWith("image/")),
+    ) || null;
   const formSchema =
     task.formSchema ||
     (task.type === "form"
@@ -539,34 +590,69 @@ export function PortalTaskDetailPage() {
               are rejected by the server.
             </p>
             <Button
-              disabled={!fileName.trim() || task.status === "completed"}
+              disabled={!fileName.trim() || task.status === "completed" || uploadBusy}
               onClick={async () => {
                 if (!fileName.trim()) {
                   toast("Choose or name a file first", "warn");
                   return;
                 }
-                if (task.type === "headshot" && headshotFile) {
-                  const dataUrl = await new Promise<string>((resolve, reject) => {
-                    const r = new FileReader();
-                    r.onload = () => resolve(String(r.result || ""));
-                    r.onerror = reject;
-                    r.readAsDataURL(headshotFile);
-                  });
-                  await api.uploadHeadshot({ name: fileName.trim(), dataUrl, mime: headshotFile.type });
-                } else if (task.type === "headshot") {
-                  await api.uploadHeadshot({ name: fileName.trim() });
-                } else {
-                  await api.uploadFile({
-                    kind: kindMap[task.type],
-                    name: fileName.trim(),
-                    speakerId: data.speakerId,
-                  });
+                setUploadBusy(true);
+                try {
+                  const dataUrl = headshotFile
+                    ? await new Promise<string>((resolve, reject) => {
+                        const r = new FileReader();
+                        r.onload = () => resolve(String(r.result || ""));
+                        r.onerror = reject;
+                        r.readAsDataURL(headshotFile);
+                      })
+                    : "";
+                  if (task.type === "headshot" && headshotFile) {
+                    await api.uploadHeadshot({ name: fileName.trim(), dataUrl, mime: headshotFile.type });
+                  } else if (task.type === "headshot") {
+                    await api.uploadHeadshot({ name: fileName.trim() });
+                  } else {
+                    await api.uploadFile({
+                      kind: kindMap[task.type],
+                      name: fileName.trim(),
+                      speakerId: data.speakerId,
+                    });
+                  }
+                  // Mirror the bytes onto the canonical deliverable slot so the task
+                  // receipt and the versioned deliverable never diverge.
+                  let versioned = false;
+                  if (linkedDeliverable && headshotFile && dataUrl.includes(",")) {
+                    try {
+                      await api.uploadDeliverable(linkedDeliverable.id, {
+                        name: fileName.trim(),
+                        mime: headshotFile.type,
+                        size: headshotFile.size,
+                        dataBase64: dataUrl.split(",")[1] || "",
+                        kind: headshotFile.type.startsWith("image/")
+                          ? "headshot"
+                          : headshotFile.type === "application/pdf"
+                            ? "slides"
+                            : "document",
+                      });
+                      versioned = true;
+                    } catch (e: any) {
+                      toast(`Saved receipt, but versioning failed: ${e?.message || "upload rejected"}`, "warn");
+                    }
+                  }
+                  toast(
+                    versioned
+                      ? "Uploaded — task complete and a new version was saved"
+                      : "File recorded and task completed",
+                  );
+                  load();
+                  void loadDeliverables();
+                } catch (e: any) {
+                  toast(e?.message || "Upload failed", "danger");
+                } finally {
+                  setUploadBusy(false);
                 }
-                toast("File recorded and task completed");
-                load();
               }}
             >
-              Upload & complete
+              {uploadBusy ? "Uploading…" : "Upload & complete"}
             </Button>
           </>
         ) : null}
@@ -581,6 +667,86 @@ export function PortalTaskDetailPage() {
           >
             Mark complete
           </Button>
+        ) : null}
+
+        {isFile && linkedDeliverable ? (
+          <div className="mt-4 rounded-[18px] border border-line bg-soft p-4" data-testid="task-uploaded-panel">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <b className="text-sm">Uploaded file</b>
+              <Badge tone={linkedFile?.versions?.length ? "ok" : "warn"}>
+                {linkedFile?.versions?.length
+                  ? `${linkedFile.versions.length} version${linkedFile.versions.length === 1 ? "" : "s"}`
+                  : "No file yet"}
+              </Badge>
+            </div>
+            {linkedFile?.versions?.length ? (
+              <>
+                <p className="mt-1 text-sm">
+                  <b className="text-ink">{linkedFile.versions.find((v: any) => v.current)?.name || linkedFile.versions.at(-1)?.name}</b>
+                  {" · "}
+                  uploaded {new Date(linkedFile.versions.find((v: any) => v.current)?.uploadedAt || linkedFile.versions.at(-1)?.uploadedAt).toLocaleString()}
+                  {" · approval: "}
+                  {linkedFile.status}
+                </p>
+                <ul className="mt-2 space-y-1 text-xs">
+                  {[...linkedFile.versions].reverse().map((v: any) => (
+                    <li key={v.id} className="flex flex-wrap items-center justify-between gap-2 rounded bg-white p-2">
+                      <span>
+                        v{v.version} · {v.name} · {new Date(v.uploadedAt).toLocaleString()}
+                      </span>
+                      <span className="flex items-center gap-2">
+                        {v.current ? <Badge tone="ok">Current</Badge> : null}
+                        <a className="font-semibold text-ink underline" href={`/api/content/files/${linkedFile.id}/versions/${v.id}`}>
+                          View
+                        </a>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+                <div className="mt-3">
+                  <b className="text-xs uppercase tracking-wide text-mid">Comments</b>
+                  {(linkedFile.comments || []).map((c: any) => (
+                    <p key={c.id} className="mt-1 rounded bg-white p-2 text-xs">
+                      <b>{c.authorName}</b> · {new Date(c.createdAt).toLocaleString()}
+                      <br />
+                      {c.body}
+                    </p>
+                  ))}
+                  {!linkedFile.comments?.length ? (
+                    <p className="mt-1 text-xs text-mid">No comments yet.</p>
+                  ) : null}
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <Input
+                      aria-label="Add a comment on this file"
+                      placeholder="Add a comment for organizers"
+                      value={taskComment}
+                      onChange={(e) => setTaskComment(e.target.value)}
+                    />
+                    <Button
+                      size="sm"
+                      disabled={!taskComment.trim()}
+                      onClick={async () => {
+                        await api.addFileComment(linkedFile.id, taskComment.trim());
+                        setTaskComment("");
+                        toast("Comment added");
+                        const r = await api.deliverable(linkedId);
+                        setLinkedFile(r.data?.file || null);
+                      }}
+                    >
+                      Comment
+                    </Button>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <p className="mt-1 text-sm text-mid">
+                Uploading here also saves a version on your <b>{linkedDeliverable.name}</b> deliverable.
+              </p>
+            )}
+            <Button asChild size="sm" variant="outline" className="mt-3">
+              <Link to={`/p/deliverables/${linkedDeliverable.id}`}>Open deliverable · versions &amp; approval</Link>
+            </Button>
+          </div>
         ) : null}
 
         {task.status === "completed" && task.type !== "form" ? (
@@ -741,6 +907,7 @@ export function PortalProfilePage() {
         <Button
           onClick={async () => {
             const { _headshotFile, ...fields } = profile;
+            let headshot: { name: string; dataUrl: string; mime: string } | undefined;
             if (_headshotFile instanceof File) {
               const dataUrl = await new Promise<string>((resolve, reject) => {
                 const r = new FileReader();
@@ -748,11 +915,11 @@ export function PortalProfilePage() {
                 r.onerror = reject;
                 r.readAsDataURL(_headshotFile);
               });
-              await api.uploadHeadshot({ name: _headshotFile.name, dataUrl, mime: _headshotFile.type });
+              headshot = { name: _headshotFile.name, dataUrl, mime: _headshotFile.type };
             }
-            await api.saveProfile(fields);
+            const saved = await api.saveProfile({ ...fields, headshot });
+            setProfile({ ...saved.data.profile });
             toast("Profile saved");
-            load();
           }}
         >
           Save profile

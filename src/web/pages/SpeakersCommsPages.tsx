@@ -292,6 +292,16 @@ export function SpeakersPage() {
       {showImport ? (
         <Modal title="Import speakers CSV" onClose={() => setShowImport(false)}>
           <Field label="CSV" hint="Columns: name, email, title, company, bio (dedupes by email)">
+            <input
+              type="file"
+              accept=".csv,text/csv"
+              className="mb-3 block w-full rounded-lg border border-line bg-white px-3 py-2 text-sm text-ink"
+              aria-label="Upload speakers CSV"
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (file) setCsv(await file.text());
+              }}
+            />
             <Textarea className="font-mono text-xs" rows={8} value={csv} onChange={(e) => setCsv(e.target.value)} />
           </Field>
           <Button

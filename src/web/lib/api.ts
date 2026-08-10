@@ -247,7 +247,9 @@ export const api = {
   assignSpeakerTasks: (body: any) => mut<{ data: any }>(`/api/events/${EVENT_ID}/speakers/tasks`, { method: "POST", body: JSON.stringify(body) }),
   uploadHeadshot: (body: any) => mut<{ data: any }>(`/api/speaker/events/${EVENT_ID}/profile/headshot`, { method: "POST", body: JSON.stringify(body) }),
   submitTaskForm: (id: string, answers: any) => mut<{ data: any }>(`/api/speaker/events/${EVENT_ID}/tasks/${id}/form`, { method: "POST", body: JSON.stringify({ answers }) }),
-  commsPreview: (body: any) => mut<{ data: any }>(`/api/events/${EVENT_ID}/comms/preview`, { method: "POST", body: JSON.stringify(body) }),
+  // Preview is read-only: do not publish a data-change event that can refetch and
+  // replace the organizer's unsaved compose fields with the stored template.
+  commsPreview: (body: any) => req<{ data: any }>(`/api/events/${EVENT_ID}/comms/preview`, { method: "POST", body: JSON.stringify(body) }),
   runTaskReminders: () => mut<{ data: any }>(`/api/events/${EVENT_ID}/comms/reminders/run`, { method: "POST", body: "{}" }),
   speakersQuery: (params: Record<string, string | undefined> = {}) => {
     const q = new URLSearchParams();

@@ -552,6 +552,12 @@ export function outstandingTaskReminders(life: LifecycleStore = store, at = new 
 export function enrichSpeakerMgmtDemo(life: LifecycleStore = store) {
   for (const p of life.profiles) {
     const ext = p as SpeakerProfileExt;
+    // Repair snapshots produced by the former social/logistics field mapping.
+    // A social handle belongs in X/Twitter, never in travel preferences.
+    if (ext.travelPreference?.trim().startsWith("@")) {
+      if (!ext.x) ext.x = ext.travelPreference.trim();
+      ext.travelPreference = undefined;
+    }
     if (!ext.workflowStatus) {
       ext.workflowStatus = life.submissions.some((s) => s.speakerId === p.speakerId && s.status === "accepted")
         ? "accepted"

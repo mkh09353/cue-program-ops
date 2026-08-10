@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, subscribeData } from "../lib/api";
 import { EVENT_ID, EVENT_TZ, PROGRAM_DAYS, programDaysFromRange, type ProgramDay, fmtDate, fmtTime, fmtTzLabel, formatStatus } from "../lib/utils";
+import { isoToZonedWallTime, zonedDayKey, zonedWallTimeToIso } from "../../timezone";
 import {
   Badge,
   Button,
@@ -70,7 +71,8 @@ export function SchedulePage() {
   const [view, setView] = useState<View>(defaultView);
   const [drag, setDrag] = useState<string | null>(null);
   const [err, setErr] = useState("");
-  const [hour, setHour] = useState(18);
+  // Drop hour is EVENT wall time (see zonedWallTimeToIso); defaults inside day hours.
+  const [hour, setHour] = useState(10);
   const [pending, setPending] = useState<PendingMove | null>(null);
   const [busy, setBusy] = useState(false);
   const [agenda,setAgenda]=useState<any[]>([]);
@@ -144,7 +146,8 @@ export function SchedulePage() {
     if (!d) return;
     const s = session(sessionId);
     if (!s) return;
-    const startsAt = `${dayIso}T${String(startHour).padStart(2, "0")}:00:00.000Z`;
+    // The picked hour is EVENT wall time on that calendar day, not UTC.
+    const startsAt = zonedWallTimeToIso(dayIso, `${String(startHour).padStart(2, "0")}:00`);
     const endsAt = new Date(Date.parse(startsAt) + (s.durationMinutes || 45) * 60000).toISOString();
     const slot = {
       id: d.slots.find((x: any) => x.sessionId === sessionId)?.id ?? `slot-${sessionId}`,
@@ -187,7 +190,8 @@ export function SchedulePage() {
     const slot = d.slots.find((x: any) => x.sessionId === sessionId);
     const iso: string | undefined = slot?.startsAt;
     const options = timeOptions(constraints.dayStartHour, constraints.dayEndHour, constraints.slotMinutes);
-    const currentTime = iso ? String(iso).slice(11, 16) : "";
+    // Prefill from the stored instant as it reads in the event timezone.
+    const current = iso ? isoToZonedWallTime(iso) : null;
     setPlaceError("");
     setPlaceConflicts([]);
     setPlaceWarnings([]);
@@ -196,15 +200,16 @@ export function SchedulePage() {
       title: s.title,
       durationMinutes: s.durationMinutes || 45,
       mode,
-      day: (iso ? String(iso).slice(0, 10) : selectedDay) || programDays[0]?.id || selectedDay,
+      day: (current?.day || selectedDay) || programDays[0]?.id || selectedDay,
       // Keep the session's current time even if it is off the step grid.
-      time: currentTime || options[0] || "09:00",
+      time: current?.time || options[0] || "09:00",
       roomId: slot?.roomId || d.rooms?.[0]?.id || "",
     });
   };
 
   const placeSlot = (target: PlaceTarget) => {
-    const startsAt = `${target.day}T${target.time}:00.000Z`;
+    // Day + HH:MM are event wall time; storage stays a UTC ISO instant.
+    const startsAt = zonedWallTimeToIso(target.day, target.time);
     return {
       id: d?.slots.find((x: any) => x.sessionId === target.sessionId)?.id ?? `slot-${target.sessionId}`,
       sessionId: target.sessionId,
@@ -277,7 +282,7 @@ export function SchedulePage() {
   const unscheduled = (d?.sessions || []).filter((x: any) => !scheduled.has(x.id) && x.status === "accepted");
   const seedDayLabel = items[0]?.startsAt ? fmtDate(items[0].startsAt) : programDays[0]?.dateLabel || PROGRAM_DAYS[0].dateLabel;
   const activeDay = programDays.find((d) => d.id === selectedDay) || programDays[0] || PROGRAM_DAYS[0];
-  const dayItems = items.filter((slot: any) => String(slot.startsAt).startsWith(selectedDay) || String(slot.startsAt).slice(0, 10) === selectedDay);
+  const dayItems = items.filter((slot: any) => zonedDayKey(slot.startsAt) === selectedDay);
 
   const roomLanes = d?.rooms || [];
   const trackLanes = d?.tracks || [];
@@ -326,7 +331,10 @@ export function SchedulePage() {
             aria-label="Drop hour in event timezone"
             onChange={(e) => setHour(Number(e.target.value))}
           >
-            {[14, 15, 16, 17, 18, 19, 20, 21].map((h) => (
+            {Array.from(
+              { length: Math.max(1, constraints.dayEndHour - constraints.dayStartHour) },
+              (_, i) => constraints.dayStartHour + i,
+            ).map((h) => (
               <option key={h} value={h}>
                 {h}:00
               </option>
@@ -592,7 +600,7 @@ export function SchedulePage() {
           ) : view === "week" ? (
             <div className="grid gap-3 md:grid-cols-3">
               {programDays.map((day, idx) => {
-                const daySlots = items.filter((slot: any) => String(slot.startsAt).startsWith(day.id));
+                const daySlots = items.filter((slot: any) => zonedDayKey(slot.startsAt) === day.id);
                 const isSeedDay = idx === 0 || daySlots.length > 0;
                 return (
                   <section
@@ -678,10 +686,7 @@ export function SchedulePage() {
                     {items
                       .filter((slot: any) => {
                         const s = session(slot.sessionId);
-                        const onDay =
-                          view !== "day" ||
-                          String(slot.startsAt).startsWith(selectedDay) ||
-                          String(slot.startsAt).slice(0, 10) === selectedDay;
+                        const onDay = view !== "day" || zonedDayKey(slot.startsAt) === selectedDay;
                         if (!onDay) return false;
                         if (view === "track") return s?.trackIds?.includes(lane.id);
                         return slot.roomId === lane.id;

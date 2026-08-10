@@ -199,8 +199,15 @@ export function createSpeakerRoutes(deps: {
     if (!speakerId) return fail(c, "speaker persona required", 403);
     const b = await c.req.json().catch(() => null);
     if (!b) return fail(c, "JSON body required");
-    const updated = updateSpeakerSelf(speakerId, b, deps.store);
+    const { headshot, ...profileFields } = b as typeof b & {
+      headshot?: { name: string; mime?: string; dataBase64?: string; dataUrl?: string };
+    };
+    const updated = updateSpeakerSelf(speakerId, profileFields, deps.store);
     if (!updated.ok) return fail(c, updated.error);
+    if (headshot?.name) {
+      const applied = applyHeadshot(speakerId, headshot, deps.store);
+      if (!applied.ok) return fail(c, applied.error, 404);
+    }
     const profileTask = deps.store.tasks.find((t) => t.speakerId === speakerId && t.type === "profile");
     if (profileTask && (updated.profile.bio || "").trim().length > 20) profileTask.status = "completed";
     await syncProfileToSchedule(speakerId, deps.store, deps.repo);

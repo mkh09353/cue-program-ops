@@ -14,6 +14,7 @@ import {
   toast,
 } from "../components/ui";
 import { LOAD_TIMEOUT_MS } from "../lib/useAsyncData";
+import { isoToZonedWallTime, zonedWallTimeToIso } from "../../timezone";
 
 /**
  * Page loader with an explicit timeout: organizer screens must never sit on a bare
@@ -66,8 +67,10 @@ function useData(load: () => Promise<any>) {
 function updateCriterion(criteria: any[], i: number, patch: Record<string, unknown>) {
   return criteria.map((x: any, n: number) => (n === i ? { ...x, ...patch } : x));
 }
-export const eventDateTimeLocal=(iso:string)=>new Intl.DateTimeFormat("sv-SE",{timeZone:"America/Los_Angeles",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).format(new Date(iso)).replace(" ","T");
-export const eventLocalToIso=(value:string)=>{const [date,time]=value.split("T"),[y,m,d]=date!.split("-").map(Number),[h,min]=time!.split(":").map(Number);const guess=Date.UTC(y!,m!-1,d!,h!,min!),shown=new Intl.DateTimeFormat("en-US",{timeZone:"America/Los_Angeles",timeZoneName:"shortOffset"}).formatToParts(new Date(guess)).find(x=>x.type==="timeZoneName")?.value||"GMT-8",match=shown.match(/GMT([+-])(\d+)(?::(\d+))?/),offset=(match?(match[1]==="-"?-1:1)*(Number(match[2])*60+Number(match[3]||0)):-480);return new Date(guess-offset*60000).toISOString()};
+/** datetime-local value ("YYYY-MM-DDTHH:MM") for a stored instant, in the event timezone. */
+export const eventDateTimeLocal=(iso:string)=>{const {day,time}=isoToZonedWallTime(iso);return `${day}T${time}`};
+/** Inverse: a datetime-local value is EVENT wall time; store the matching UTC instant. */
+export const eventLocalToIso=(value:string)=>{const [day,time]=String(value).split("T");return zonedWallTimeToIso(day!,time!)};
 
 function RoundEditor({ round, personas, saved }: { round: any; personas: any[]; saved: () => void }) {
   const [draft, setDraft] = useState(() => structuredClone(round));

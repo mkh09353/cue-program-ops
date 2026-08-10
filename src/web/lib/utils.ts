@@ -1,5 +1,6 @@
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
+import { EVENT_TIME_ZONE } from "../../timezone";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -9,7 +10,7 @@ export const EVENT_ID = "evt-ai-summit-2026";
 export const EVENT_SLUG = "ai-engineer-summit";
 export const EVENT_NAME = "AI Engineer Summit";
 /** Event timezone used for organizer schedule + public widgets. */
-export const EVENT_TZ = "America/Los_Angeles";
+export const EVENT_TZ = EVENT_TIME_ZONE;
 
 /** Fallback program days when bootstrap event dates are unavailable. */
 export const PROGRAM_DAYS = [
@@ -89,7 +90,7 @@ export interface Persona {
 }
 
 export const DEFAULT_PERSONAS: Persona[] = [
-  { id: "org-swyx", role: "organizer", name: "Swyx", email: "swyx@ai.engineer" },
+  { id: "org-swyx", role: "organizer", name: "Jordan Alvarez", email: "jordan@ai.engineer" },
   {
     id: "rev-ada",
     role: "reviewer",

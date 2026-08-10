@@ -886,7 +886,7 @@ export function seedCrmDemo(life: LifecycleStore = store) {
       const path = pathToStage("prospect", row.stage);
       for (const step of path) moveStage(made.contact.id, step, { id: "system", name: "CUE" });
     }
-    addNote(made.contact.id, row.note, { id: "org-swyx", name: "Swyx" });
+    addNote(made.contact.id, row.note, { id: "org-swyx", name: "Jordan Alvarez" });
   }
 
   if (!crm.segments.some((s) => s.name === "AI Experts")) {

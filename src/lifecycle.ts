@@ -1,3 +1,6 @@
+// content.ts imports only types from this module, so this import is not a runtime cycle.
+import { upsertDeliverable } from "./content.js";
+
 export const EVENT_ID = "evt-ai-summit-2026";
 export const EVENT_SLUG = "ai-engineer-summit";
 
@@ -783,7 +786,7 @@ export const store: LifecycleStore = {
     { id: "track-workshop", name: "Workshop" },
   ],
   personas: [
-    { id: "org-swyx", role: "organizer", name: "Swyx", email: "swyx@ai.engineer" },
+    { id: "org-swyx", role: "organizer", name: "Jordan Alvarez", email: "jordan@ai.engineer" },
     {
       id: "rev-ada",
       role: "reviewer",
@@ -1132,17 +1135,9 @@ export function ensureDeliverables(submission: Submission) {
       createdAt,
     },
   ];
-  for (const task of canonical) {
-    const matches = store.deliverableTasks.filter((t) => t.speakerId === task.speakerId && t.sessionId === task.sessionId && t.acceptedTypes.some((type) => task.acceptedTypes.includes(type)));
-    if (!matches.length) { store.deliverableTasks.push(task); continue; }
-    const winner = matches.find((t)=>store.contentFiles.some((f)=>f.taskId===t.id)) || matches[0]!;
-    for (const duplicate of matches.filter((t)=>t.id!==winner.id)) {
-      const source=store.contentFiles.find((f)=>f.taskId===duplicate.id),target=store.contentFiles.find((f)=>f.taskId===winner.id);
-      if(source&&target){for(const v of source.versions){v.current=false;v.version=target.versions.length+1;target.versions.push(v)}store.contentFiles=store.contentFiles.filter((f)=>f.id!==source.id);if(target.versions.length)target.versions.at(-1)!.current=true}
-      else if(source)source.taskId=winner.id;
-      store.deliverableTasks=store.deliverableTasks.filter((t)=>t.id!==duplicate.id);
-    }
-  }
+  // Single shared resolver with the organizer file-request path (see content.ts):
+  // an equivalent slot is reused/extended, never duplicated.
+  for (const task of canonical) upsertDeliverable(store, task);
 }
 
 export function sendTemplate(

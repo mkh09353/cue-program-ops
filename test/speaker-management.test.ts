@@ -7,6 +7,7 @@ import {
   addSpeakerManual,
   applyHeadshot,
   assignGeneralTasks,
+  enrichSpeakerMgmtDemo,
   importSpeakersCsv,
   listRoster,
   outstandingTaskReminders,
@@ -82,6 +83,37 @@ test("profile edit propagates to organizer roster and public schedule projection
   });
   assert.equal(denied.status, 200);
   assert.notEqual(store.profiles.find((p) => p.speakerId === "spk-ada")!.bio, "Sam should not overwrite Ada");
+});
+
+test("single profile save atomically persists bio, socials, logistics, and headshot", async () => {
+  const app = createApp({ repo: new MemoryRepository() });
+  const bio = `SBEK-PORTAL-BIO-01 ${crypto.randomUUID()} full speaker biography`;
+  const put = await app.request(`/api/speaker/events/${EVENT_ID}/profile`, {
+    method: "PUT",
+    headers: speakerAda,
+    body: JSON.stringify({
+      bio,
+      linkedin: "https://linkedin.com/in/ada-atomic",
+      x: "@ada_atomic",
+      website: "https://ada.example.test",
+      travelPreference: "Aisle seat",
+      dietary: "Vegetarian",
+      headshot: { name: "headshot.png", mime: "image/png", dataUrl: "data:image/png;base64,YXRvbWlj" },
+    }),
+  });
+  assert.equal(put.status, 200);
+
+  const get = await app.request(`/api/speaker/events/${EVENT_ID}/home`, { headers: speakerAda });
+  assert.equal(get.status, 200);
+  const profile = (await get.json()).data.profile;
+  assert.equal(profile.bio, bio);
+  assert.equal(profile.linkedin, "https://linkedin.com/in/ada-atomic");
+  assert.equal(profile.x, "@ada_atomic");
+  assert.equal(profile.website, "https://ada.example.test");
+  assert.equal(profile.travelPreference, "Aisle seat");
+  assert.equal(profile.dietary, "Vegetarian");
+  assert.equal(profile.headshotName, "headshot.png");
+  assert.equal(profile.headshotUrl, "data:image/png;base64,YXRvbWlj");
 });
 
 test("form-task fill round-trip and general task assignment", async () => {
@@ -175,16 +207,19 @@ test("per-recipient comm log, merge preview, and ICS generation", async () => {
   assert.match(prev.subject, /Ada/);
   assert.match(prev.body, /portal/i);
 
+  const composedSubject = "Custom after preview {{first_name}}";
+  const composedBody = "Custom body after preview for {{talk_title}}";
   const send = await app.request(`/api/events/${EVENT_ID}/comms/send`, {
     method: "POST",
     headers: org,
-    body: JSON.stringify({ templateKey: "task_reminder", speakerIds: ["spk-ada", "spk-sam"] }),
+    body: JSON.stringify({ templateKey: "task_reminder", speakerIds: ["spk-ada", "spk-sam"], subject: composedSubject, body: composedBody }),
   });
   assert.equal(send.status, 201);
   const sent = (await send.json()).data;
   assert.ok(Array.isArray(sent));
   assert.equal(sent.length, 2);
   assert.ok(sent.every((s: any) => s.email && s.status));
+  assert.ok(sent.every((s: any) => s.subject.startsWith("Custom after preview")));
 
   const log = await app.request(`/api/events/${EVENT_ID}/comms/log`, { headers: org });
   assert.equal(log.status, 200);
@@ -289,6 +324,25 @@ test("domain helpers: CSV, merge, headshot", () => {
   );
   assert.ok(imp.created >= 1);
   assert.ok(store.profiles.length >= before);
+
+  const danaEmail = `dana.kowalski.${crypto.randomUUID()}@example.test`;
+  const danaCsv = `name,email,title\nDana Kowalski,${danaEmail},Engineer`;
+  const firstDana = importSpeakersCsv(danaCsv, { sendInvite: false });
+  const secondDana = importSpeakersCsv(danaCsv, { sendInvite: false });
+  assert.equal(firstDana.created, 1);
+  assert.equal(secondDana.updated, 1);
+  assert.equal(store.profiles.filter((p) => p.email === danaEmail).length, 1);
+
+  const adaProfile = store.profiles.find((p) => p.speakerId === "spk-ada") as any;
+  const previousX = adaProfile.x;
+  const previousTravel = adaProfile.travelPreference;
+  adaProfile.x = undefined;
+  adaProfile.travelPreference = "@ada_social";
+  enrichSpeakerMgmtDemo(store);
+  assert.equal(adaProfile.x, "@ada_social");
+  assert.notEqual(adaProfile.travelPreference, "@ada_social");
+  adaProfile.x = previousX;
+  adaProfile.travelPreference = previousTravel;
 
   const preview = renderMergePreview(
     { subject: "Hey {{first_name}}", body: "{{company}} / {{talk_title}}" },

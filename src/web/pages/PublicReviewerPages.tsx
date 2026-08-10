@@ -268,8 +268,8 @@ export function PublicCfpPage() {
               setPersona({
                 id: "org-swyx",
                 role: "organizer",
-                name: "Swyx",
-                email: "swyx@ai.engineer",
+                name: "Jordan Alvarez",
+                email: "jordan@ai.engineer",
               });
               nav("/app/submissions");
             }}
