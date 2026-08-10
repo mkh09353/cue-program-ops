@@ -657,7 +657,7 @@ export function PortalTaskDetailPage() {
           </>
         ) : null}
 
-        {task.type === "confirm" && task.status !== "completed" ? (
+        {!isFile && task.type !== "profile" && task.type !== "form" && task.status !== "completed" ? (
           <Button
             onClick={async () => {
               await api.completeTask(task.id);

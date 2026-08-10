@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import type { Repository, ScheduleProjection } from "./domain.js";
 import type { AgendaProposal, LifecycleStore } from "./lifecycle.js";
 import { applyScheduleMove, validateSlot, type AgendaSlot } from "./schedule.js";
+import { contentStateFor, findLinkedDraft } from "./sessionContent.js";
 import { EVENT_TIME_ZONE, zonedDayKey, zonedWallTimeToIso } from "./timezone.js";
 
 const fail=(c:any,message:string,status=400)=>c.json({error:{message}},status as any);
@@ -69,7 +70,21 @@ export function createAgendaRoutes(deps:{store:LifecycleStore;repo:Repository;pe
  app.get("/api/events/:eventId/agenda/proposals",async c=>{const denied=guard(c);if(denied)return denied;if(c.req.param("eventId")!==deps.store.event.id)return fail(c,"event not found",404);return c.json({data:deps.store.agendaProposals||[]})});
  app.post("/api/events/:eventId/agenda/rooms",async c=>{const denied=guard(c);if(denied)return denied;const data=await schedule(),b=await c.req.json().catch(()=>null) as any;if(!data||!b?.name?.trim())return fail(c,"room name is required");const room={id:b.id||`room-${crypto.randomUUID().slice(0,8)}`,name:String(b.name).trim(),capacity:b.capacity?Number(b.capacity):undefined,color:b.color||"#5B5CFF"};data.rooms.push(room);await (deps.repo as ScheduleRepo).putSchedule?.(deps.store.event.id,data);await deps.persist();return c.json({data:room},201)});
  app.post("/api/events/:eventId/agenda/tracks",async c=>{const denied=guard(c);if(denied)return denied;const data=await schedule(),b=await c.req.json().catch(()=>null) as any;if(!data||!b?.name?.trim())return fail(c,"track name is required");const track={id:b.id||`track-${crypto.randomUUID().slice(0,8)}`,name:String(b.name).trim(),color:b.color||"#5B5CFF",maxConcurrent:b.maxConcurrent?Number(b.maxConcurrent):undefined};data.tracks.push(track);await (deps.repo as ScheduleRepo).putSchedule?.(deps.store.event.id,data);await deps.persist();return c.json({data:track},201)});
- app.post("/api/events/:eventId/agenda/publish",async c=>{const denied=guard(c);if(denied)return denied;const data=await schedule();if(!data)return fail(c,"schedule not found",404);const scheduled=new Set(data.slots.map(x=>x.sessionId));let count=0;for(const session of data.sessions.filter(x=>scheduled.has(x.id))){session.status="published";session.publishStatus="published";count++}data.version++;const publishedAt=new Date().toISOString();const publicUrl=`/public/events/${deps.store.event.id}/itinerary`;(data as any).lastAgendaPublish={status:"published",count,publishedAt,publicUrl};await (deps.repo as ScheduleRepo).putSchedule?.(deps.store.event.id,data);await deps.persist();return c.json({data:{status:"published",count,publishedAt,publicUrl,message:`Published · ${count} session${count===1?"":"s"} · ${publishedAt}`}})});
+ app.post("/api/events/:eventId/agenda/publish",async c=>{const denied=guard(c);if(denied)return denied;const data=await schedule();if(!data)return fail(c,"schedule not found",404);
+  // Publish EVERY currently slotted session, whatever its prior status (accepted/draft),
+  // so freshly placed and AI-accepted placements reach the public agenda. Content
+  // approval gates only exclude sessions explicitly marked changes_requested.
+  const scheduled=new Set(data.slots.map(x=>x.sessionId));
+  // Approval is keyed on the canonical session id (with legacy lifecycle-id fallback).
+  const blocked=new Set(data.sessions.filter(x=>contentStateFor(deps.store,x.id,findLinkedDraft(deps.store,x,data)?.id)?.status==="changes_requested").map(x=>x.id));
+  let count=0;const published:string[]=[],held:string[]=[];
+  for(const session of data.sessions.filter(x=>scheduled.has(x.id))){
+   if(blocked.has(session.id)){session.publishStatus="draft";held.push(session.title);continue}
+   session.status="published";session.publishStatus="published";count++;published.push(session.title);
+  }
+  data.version++;const publishedAt=new Date().toISOString();const publicUrl=`/public/events/${deps.store.event.id}/itinerary`;(data as any).lastAgendaPublish={status:"published",count,publishedAt,publicUrl,held:held.length};await (deps.repo as ScheduleRepo).putSchedule?.(deps.store.event.id,data);await deps.persist();
+  const heldNote=held.length?` · ${held.length} held for content changes (${held.join(", ")})`:"";
+  return c.json({data:{status:"published",count,published,held,publishedAt,publicUrl,message:`Published · ${count} session${count===1?"":"s"} · ${publishedAt}${heldNote}`}})});
  app.post("/api/events/:eventId/agenda/proposals/generate",async c=>{
   const denied=guard(c);if(denied)return denied;const data=await schedule();if(!data)return fail(c,"schedule not found",404);const body=await c.req.json().catch(()=>({})) as any;
   const constraints={dayStartHour:Number(body.dayStartHour??9),dayEndHour:Number(body.dayEndHour??17),slotMinutes:Number(body.slotMinutes??30),breakMinutes:Number(body.breakMinutes??0),speakerAvailability:body.speakerAvailability||{}};

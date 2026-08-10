@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, subscribeData } from "../lib/api";
+import { useAsyncData } from "../lib/useAsyncData";
 import { EVENT_ID, EVENT_SLUG, adoptSaveResult, formatStatus } from "../lib/utils";
 import {
   Badge,
@@ -8,6 +9,7 @@ import {
   EmptyState,
   Field,
   Input,
+  LoadState,
   Markdown,
   Notice,
   PageHeader,
@@ -1165,27 +1167,48 @@ export function SettingsPage() {
   const [invite, setInvite] = useState({ name: "", email: "", roundId: "" });
   const [inviteMsg, setInviteMsg] = useState("");
 
-  useEffect(() => {
-    Promise.all([
-      api.bootstrap(),
-      api.schedule().catch(() => null),
-      api.reviewRounds().catch(() => ({ data: [] as any[] })),
-    ]).then(([b, s, rr]) => {
-      setEvent(b.data.event);
-      if (s) {
-        setRooms(s.rooms || []);
-        setTracks(s.tracks || []);
-      }
-      const list = rr?.data || [];
-      setRounds(list);
-      setInvite((inv) => ({
-        ...inv,
-        roundId: inv.roundId || list.find((r: any) => r.status === "open")?.id || list[0]?.id || "",
-      }));
-    });
-  }, []);
+  // A failed/slow bootstrap used to leave this page on a permanent spinner; the shared
+  // loader surfaces a timed error with Retry instead.
+  const settings = useAsyncData(
+    async () => {
+      const [b, s, rr] = await Promise.all([
+        api.bootstrap(),
+        api.schedule().catch(() => null),
+        api.reviewRounds().catch(() => ({ data: [] as any[] })),
+      ]);
+      return { event: b.data.event, schedule: s, rounds: rr?.data || [] };
+    },
+    [],
+  );
 
-  if (!event) return <Spinner />;
+  useEffect(() => {
+    const data = settings.data;
+    if (!data) return;
+    setEvent(data.event);
+    if (data.schedule) {
+      setRooms(data.schedule.rooms || []);
+      setTracks(data.schedule.tracks || []);
+    }
+    setRounds(data.rounds);
+    setInvite((inv) => ({
+      ...inv,
+      roundId: inv.roundId || data.rounds.find((r: any) => r.status === "open")?.id || data.rounds[0]?.id || "",
+    }));
+  }, [settings.data]);
+
+  if (!event)
+    return (
+      <div>
+        <PageHeader title="Settings" description="Event basics, CFP window, program structure, and review team." />
+        <LoadState
+          loading={settings.loading}
+          timedOut={settings.timedOut}
+          error={settings.error}
+          onRetry={settings.reload}
+          label="settings"
+        />
+      </div>
+    );
 
   return (
     <div>

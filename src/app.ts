@@ -39,6 +39,7 @@ import { createReviewRoutes } from "./reviewRoutes.js";
 import { createContentRoutes } from "./contentRoutes.js";
 import { createPublicSite } from "./publicSite.js";
 import { createCrmRoutes } from "./crmRoutes.js";
+import { applySessionEdit } from "./sessionContent.js";
 import { deleteFieldDefinition, listFieldDefinitions, saveFieldDefinition } from "./crm.js";
 import { createSpeakerRoutes } from "./speakerRoutes.js";
 import { blindSubmission } from "./review.js";
@@ -160,6 +161,11 @@ export function createApp(deps: AppDeps = {}) {
   // —— Bootstrap / command ——
   app.get("/api/events/:eventId/bootstrap", (c) => {
     if (c.req.param("eventId") !== EVENT_ID) return fail(c, "event not found", 404);
+    for (const profile of store.profiles) {
+      const persona=store.personas.find(p=>p.id===profile.speakerId);
+      if(persona) Object.assign(persona,{role:"speaker",name:profile.name,email:profile.email,speakerId:profile.speakerId});
+      else store.personas.push({id:profile.speakerId,role:"speaker",name:profile.name,email:profile.email,speakerId:profile.speakerId});
+    }
     return c.json({
       data: {
         event: store.event,
@@ -799,7 +805,19 @@ export function createApp(deps: AppDeps = {}) {
     return c.json(validateSlot(s, slot));
   });
   app.post("/api/events/:eventId/schedule/sessions",async(c)=>{if(actor(c)!=="organizer")return fail(c,"organizer role required",403);const r=repo as Repository&{getSchedule?:(id:string)=>Promise<any>;putSchedule?:(id:string,s:any)=>Promise<void>},s=await r.getSchedule?.(c.req.param("eventId")),b=await c.req.json();if(!s||!String(b.title||"").trim()||!Array.isArray(b.speakerIds)||!b.speakerIds.length)return fail(c,"title and speakers are required");const row={id:`session-${crypto.randomUUID().slice(0,8)}`,title:String(b.title),abstract:String(b.abstract||""),speakerIds:b.speakerIds.filter((id:string)=>s.speakers.some((x:any)=>x.id===id)),trackIds:b.trackId?[b.trackId]:[],durationMinutes:Number(b.durationMinutes||45),status:"accepted",publishStatus:"draft",slug:`session-${Date.now()}`};if(!row.speakerIds.length)return fail(c,"valid speakers are required");s.sessions.push(row);s.version++;await r.putSchedule?.(c.req.param("eventId"),s);await persist();return c.json({data:row},201)});
-  app.patch("/api/events/:eventId/schedule/sessions/:sessionId",async(c)=>{if(actor(c)!=="organizer")return fail(c,"organizer role required",403);const r=repo as Repository&{getSchedule?:(id:string)=>Promise<any>;putSchedule?:(id:string,s:any)=>Promise<void>},s=await r.getSchedule?.(c.req.param("eventId")),row=s?.sessions.find((x:any)=>x.id===c.req.param("sessionId")),b=await c.req.json();if(!row)return fail(c,"session not found",404);if(Array.isArray(b.speakerIds)){const ids=b.speakerIds.filter((id:string)=>s.speakers.some((x:any)=>x.id===id));if(!ids.length)return fail(c,"valid speakers are required");row.speakerIds=ids}if(b.title)row.title=String(b.title);if(b.trackId!==undefined)row.trackIds=b.trackId?[b.trackId]:[];if(b.durationMinutes)row.durationMinutes=Number(b.durationMinutes);s.version++;await r.putSchedule?.(c.req.param("eventId"),s);await persist();return c.json({data:row})});
+  app.patch("/api/events/:eventId/schedule/sessions/:sessionId",async(c)=>{
+    if(actor(c)!=="organizer")return fail(c,"organizer role required",403);
+    const r=repo as Repository&{getSchedule?:(id:string)=>Promise<any>;putSchedule?:(id:string,s:any)=>Promise<void>};
+    const sched=await r.getSchedule?.(c.req.param("eventId"));
+    const b=await c.req.json().catch(()=>null) as any;if(!b)return fail(c,"JSON body required");
+    // Same shared mutation as the Content editor: canonical propagation + history.
+    const persona=personaOf(c);
+    const result=applySessionEdit({store,schedule:sched,id:c.req.param("sessionId"),patch:b,editor:{id:persona.id,name:persona.name}});
+    if(!result.ok)return fail(c,result.error,result.status);
+    if(sched){sched.version++;await r.putSchedule?.(c.req.param("eventId"),sched)}
+    await persist();
+    return c.json({data:result.session||result.draft});
+  });
   app.post("/api/events/:eventId/schedule/move", async (c) => {
     if (actor(c) !== "organizer") return fail(c, "organizer role required", 403);
     const r = repo as Repository & {

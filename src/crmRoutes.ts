@@ -22,6 +22,7 @@ import {
   type CrmContactQuery,
   type CrmStage,
 } from "./crm.js";
+import { ensureSpeakerPersona } from "./speakerMgmt.js";
 import type { LifecycleStore } from "./lifecycle.js";
 import type { Mailer } from "./mailer.js";
 
@@ -145,6 +146,7 @@ export function createCrmRoutes(deps: {
     }
     const result = addContactToEvent(c.req.param("id"), b, deps.store);
     if (!result.ok) return fail(c, result.error, result.error.includes("not found") ? 404 : 400);
+    const profile=deps.store.profiles.find(p=>p.speakerId===result.speakerId); if(profile)ensureSpeakerPersona(profile as any,deps.store);
     await deps.persist();
     return c.json({ data: result }, result.created ? 201 : 200);
   });

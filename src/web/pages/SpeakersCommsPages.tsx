@@ -31,6 +31,7 @@ export function SpeakersPage() {
   const [showTask, setShowTask] = useState(false);
   const [form, setForm] = useState({ name: "", email: "", title: "", company: "", bio: "", travelPreference: "" });
   const [csv, setCsv] = useState("name,email,title,company,bio\nDana Kowalski,dana.kowalski@example.test,Staff Engineer,Northwind,Systems thinker");
+  const [importDupes,setImportDupes]=useState<any[]>([]);
   const [taskForm, setTaskForm] = useState({
     title: "Confirm travel plans",
     description: "Reply with arrival city and hotel needs.",
@@ -70,6 +71,7 @@ export function SpeakersPage() {
     setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
 
   if (!loaded) return <Spinner />;
+  const duplicatePairs = rows.flatMap((row, index) => rows.slice(index + 1).filter(other => other.name.trim().toLowerCase() === row.name.trim().toLowerCase()).map(other => ({ primary: row, duplicate: other })));
 
   return (
     <div>
@@ -97,6 +99,7 @@ export function SpeakersPage() {
           </div>
         }
       />
+      {duplicatePairs.length ? <Card className="mb-4 border-line p-4"><h2 className="text-sm font-bold uppercase tracking-wide text-mid">Possible duplicate speakers</h2><p className="mt-1 text-xs text-mid">Same normalized name with different records. Confirm the emails, then merge into the primary record.</p><div className="mt-3 space-y-2">{duplicatePairs.map(pair=><div key={`${pair.primary.speakerId}-${pair.duplicate.speakerId}`} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line p-3 text-sm"><div><b>{pair.primary.name}</b><div className="text-xs text-mid">Keep {pair.primary.email} · merge {pair.duplicate.email}</div></div><Button size="sm" onClick={async()=>{await api.mergeSpeakers(pair.primary.speakerId,pair.duplicate.speakerId);toast("Speaker records merged");load();}}>Merge duplicate</Button></div>)}</div></Card>:null}
       {err ? <Notice tone="danger">{err}</Notice> : null}
 
       {progress ? (
@@ -309,7 +312,8 @@ export function SpeakersPage() {
               try {
                 const r = await api.importSpeakers(csv);
                 toast(`Import: ${r.data.created} created, ${r.data.updated} updated, ${r.data.skipped} skipped`);
-                setShowImport(false);
+                setImportDupes(r.data.nearDuplicates || []);
+                if(!r.data.nearDuplicates?.length)setShowImport(false);
                 load();
               } catch (e: any) {
                 toast(e.message || "Import failed", "danger");
@@ -318,6 +322,7 @@ export function SpeakersPage() {
           >
             Import
           </Button>
+          {importDupes.length ? <div className="mt-4 rounded-lg border border-line bg-soft p-3"><b className="text-sm">Possible duplicate speakers</b><p className="text-xs text-mid">Same name, different email. Review and merge the duplicate into the primary record.</p>{importDupes.map((pair:any)=><div key={pair.duplicate.speakerId} className="mt-2 rounded border border-line bg-white p-2 text-sm"><div>{pair.primary.name}: {pair.primary.email} / {pair.duplicate.email}</div><Button size="sm" className="mt-2" onClick={async()=>{await api.mergeSpeakers(pair.primary.speakerId,pair.duplicate.speakerId);toast("Speaker records merged");setImportDupes(x=>x.filter((d:any)=>d!==pair));load();}}>Merge duplicate</Button></div>)}</div>:null}
         </Modal>
       ) : null}
 
@@ -686,7 +691,7 @@ export function SpeakerDetailPage() {
             <ul className="mt-2 space-y-2 text-sm">
               {(row.sessions || []).map((s: any) => (
                 <li key={s.id} className="rounded-lg border border-line p-2">
-                  <b>{s.title}</b>
+                  <Input aria-label={`Session title for ${s.title}`} defaultValue={s.title} onBlur={async e=>{const title=e.target.value.trim();if(title&&title!==s.title){await api.editContentSession(s.id,{title});toast("Session renamed");load();}}}/>
                   <div className="text-xs text-mid">
                     {s.status}
                     {s.slot ? ` · ${s.slot.startsAt}` : " · unscheduled"}
@@ -695,6 +700,12 @@ export function SpeakerDetailPage() {
               ))}
               {!row.sessions?.length ? <li className="text-mid">No session assignment yet.</li> : null}
             </ul>
+            <Field label="Link speaker to an existing session" hint="Uses the canonical event session list.">
+              <select className="h-10 w-full rounded-lg border border-line bg-white px-3 text-sm" defaultValue="" onChange={async e=>{if(e.target.value){await api.linkSpeakerSession(row.speakerId,e.target.value);toast("Speaker linked to session");load();}}}>
+                <option value="">Choose session…</option>
+                {(row.availableSessions||[]).map((s:any)=><option key={s.id} value={s.id}>{s.title} · {s.status}</option>)}
+              </select>
+            </Field>
           </Card>
 
           <Card className="p-4">

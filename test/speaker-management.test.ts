@@ -113,7 +113,20 @@ test("single profile save atomically persists bio, socials, logistics, and heads
   assert.equal(profile.travelPreference, "Aisle seat");
   assert.equal(profile.dietary, "Vegetarian");
   assert.equal(profile.headshotName, "headshot.png");
-  assert.equal(profile.headshotUrl, "data:image/png;base64,YXRvbWlj");
+  assert.match(profile.headshotUrl, /^\/api\/content\/files\//);
+  const image = await app.request(profile.headshotUrl, { headers: speakerAda });
+  assert.equal(image.status, 200);
+  assert.match(image.headers.get("content-type") || "", /^image\//);
+});
+
+test("organizer-created speaker is registered in bootstrap and can open portal home", async () => {
+  const app=createApp({repo:new MemoryRepository()}); const email=`portal-${crypto.randomUUID()}@example.test`;
+  const made=await app.request(`/api/events/${EVENT_ID}/speakers`,{method:"POST",headers:org,body:JSON.stringify({name:"Dana Kowalski",email,sendInvite:false})});
+  assert.equal(made.status,201); const speakerId=(await made.json()).data.speakerId;
+  const bootstrap=await app.request(`/api/events/${EVENT_ID}/bootstrap`,{headers:org}); const personas=(await bootstrap.json()).data.personas;
+  assert.ok(personas.some((p:any)=>p.id===speakerId&&p.role==="speaker"&&p.email===email));
+  const home=await app.request(`/api/speaker/events/${EVENT_ID}/home`,{headers:{"x-demo-persona":speakerId}});
+  assert.equal(home.status,200); assert.equal((await home.json()).data.profile.email,email);
 });
 
 test("form-task fill round-trip and general task assignment", async () => {

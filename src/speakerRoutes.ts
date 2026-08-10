@@ -10,10 +10,12 @@ import type { Mailer } from "./mailer.js";
 import type { Repository } from "./domain.js";
 import {
   addSpeakerManual,
+  ensureSpeakerPersona,
   applyHeadshot,
   assignGeneralTasks,
   enrichSpeakerMgmtDemo,
   importSpeakersCsv,
+  mergeSpeakerRecords,
   listRoster,
   outstandingTaskReminders,
   progressMatrix,
@@ -25,6 +27,7 @@ import {
   updateSpeakerSelf,
   type SpeakerWorkflowStatus,
 } from "./speakerMgmt.js";
+import { addFileVersion, validateUpload } from "./content.js";
 
 const fail = (c: any, message: string, status = 400) =>
   c.json(
@@ -86,6 +89,7 @@ export function createSpeakerRoutes(deps: {
     return c.json({
       data: {
         ...row,
+        availableSessions: deps.store.sessions.map(s=>({id:s.id,title:s.title,speakerId:s.speakerId,status:s.status})),
         contentFiles: contentFiles.map((f: any) => ({
           ...f,
           currentVersion: f.versions?.find((v: any) => v.current),
@@ -179,6 +183,18 @@ export function createSpeakerRoutes(deps: {
     return c.json({ data: result });
   });
 
+  app.post("/api/events/:eventId/speakers/merge", async (c) => {
+    if (!eventOk(c)) return fail(c, "event not found", 404); const denied=requireOrg(c); if(denied)return denied;
+    const b=await c.req.json(); const merged=mergeSpeakerRecords(b.primaryId,b.secondaryId,deps.store);
+    if(!merged.ok)return fail(c,merged.error,merged.error.includes("not found")?404:400); await deps.persist(); return c.json({data:merged.profile});
+  });
+
+  app.post("/api/events/:eventId/speakers/:speakerId/sessions/:sessionId/link", async (c) => {
+    if (!eventOk(c)) return fail(c,"event not found",404); const denied=requireOrg(c);if(denied)return denied;
+    const profile=deps.store.profiles.find(p=>p.speakerId===c.req.param("speakerId")),session=deps.store.sessions.find(s=>s.id===c.req.param("sessionId"));
+    if(!profile||!session)return fail(c,"speaker or session not found",404); session.speakerId=profile.speakerId; await deps.persist(); return c.json({data:session});
+  });
+
   app.post("/api/events/:eventId/speakers/tasks", async (c) => {
     if (!eventOk(c)) return fail(c, "event not found", 404);
     boot();
@@ -204,9 +220,14 @@ export function createSpeakerRoutes(deps: {
     };
     const updated = updateSpeakerSelf(speakerId, profileFields, deps.store);
     if (!updated.ok) return fail(c, updated.error);
-    if (headshot?.name) {
-      const applied = applyHeadshot(speakerId, headshot, deps.store);
-      if (!applied.ok) return fail(c, applied.error, 404);
+    if (headshot?.name && headshot.dataUrl) {
+      const [prefix,dataBase64=""] = headshot.dataUrl.split(","); const mime=headshot.mime||prefix.match(/^data:([^;]+)/)?.[1]||"image/png";
+      const check=validateUpload({mime,size:atob(dataBase64).length,dataBase64},["image/png","image/jpeg"]); if(!check.ok)return fail(c,check.error);
+      let task=deps.store.deliverableTasks.find(t=>t.speakerId===speakerId&&t.acceptedTypes.some(x=>x.startsWith("image/")));
+      if(!task){task={id:`deliverable-headshot-${speakerId}`,name:"Upload Final Headshot",instructions:"Speaker profile headshot",dueAt:new Date().toISOString(),speakerId,sessionId:deps.store.sessions.find(s=>s.speakerId===speakerId)?.id,fileRequired:true,acceptedTypes:["image/png","image/jpeg"],status:"incomplete",createdAt:new Date().toISOString()};deps.store.deliverableTasks.push(task)}
+      const made=addFileVersion(deps.store,{task,name:headshot.name,mime,size:atob(dataBase64).length,dataBase64,uploadedBy:speakerId,kind:"headshot"});
+      updated.profile.headshotName=headshot.name; updated.profile.headshotUrl=`/api/content/files/${made.file.id}/versions/${made.version.id}`;
+      applyHeadshot(speakerId,{name:headshot.name},deps.store);
     }
     const profileTask = deps.store.tasks.find((t) => t.speakerId === speakerId && t.type === "profile");
     if (profileTask && (updated.profile.bio || "").trim().length > 20) profileTask.status = "completed";

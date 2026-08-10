@@ -244,6 +244,8 @@ export const api = {
   setSpeakerStatus: (id: string, status: string) => mut<{ data: any }>(`/api/events/${EVENT_ID}/speakers/${id}/status`, { method: "POST", body: JSON.stringify({ status }) }),
   inviteSpeaker: (id: string) => mut<{ data: any }>(`/api/events/${EVENT_ID}/speakers/${id}/invite`, { method: "POST", body: "{}" }),
   importSpeakers: (csv: string) => mut<{ data: any }>(`/api/events/${EVENT_ID}/speakers/import`, { method: "POST", body: JSON.stringify({ csv }) }),
+  mergeSpeakers: (primaryId:string,secondaryId:string) => mut(`/api/events/${EVENT_ID}/speakers/merge`,{method:"POST",body:JSON.stringify({primaryId,secondaryId})}),
+  linkSpeakerSession: (speakerId:string,sessionId:string) => mut(`/api/events/${EVENT_ID}/speakers/${speakerId}/sessions/${sessionId}/link`,{method:"POST",body:"{}"}),
   assignSpeakerTasks: (body: any) => mut<{ data: any }>(`/api/events/${EVENT_ID}/speakers/tasks`, { method: "POST", body: JSON.stringify(body) }),
   uploadHeadshot: (body: any) => mut<{ data: any }>(`/api/speaker/events/${EVENT_ID}/profile/headshot`, { method: "POST", body: JSON.stringify(body) }),
   submitTaskForm: (id: string, answers: any) => mut<{ data: any }>(`/api/speaker/events/${EVENT_ID}/tasks/${id}/form`, { method: "POST", body: JSON.stringify({ answers }) }),
@@ -324,12 +326,35 @@ export const api = {
    * the place/move dialog can render the server's own conflict text inline and tell
    * hard blocks (409) apart from acknowledgeable warnings (422) and stale versions.
    */
-  moveSlotDetailed: async (body: any) => {
-    const r = await fetch(`/api/events/${EVENT_ID}/schedule/move`, {
-      method: "POST",
-      headers: headers(),
-      body: JSON.stringify(body),
-    });
+  moveSlotDetailed: async (body: any, timeoutMs = 10000) => {
+    // A hung request must never leave the place/move dialog stuck on "Saving…" with no
+    // way out, so the call aborts itself and reports a timeout the UI can render.
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    let r: Response;
+    try {
+      r = await fetch(`/api/events/${EVENT_ID}/schedule/move`, {
+        method: "POST",
+        headers: headers(),
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+    } catch (e: any) {
+      clearTimeout(timer);
+      const timedOut = e?.name === "AbortError";
+      return {
+        ok: false,
+        status: timedOut ? 408 : 0,
+        error: timedOut
+          ? `The server did not respond within ${Math.round(timeoutMs / 1000)}s. Nothing was changed — close this dialog and try again.`
+          : e?.message || "Network error — nothing was changed.",
+        conflicts: [] as any[],
+        warnings: [] as any[],
+        version: undefined as number | undefined,
+        slot: undefined as any,
+      };
+    }
+    clearTimeout(timer);
     const text = await r.text();
     let data: any = null;
     try {

@@ -57,6 +57,25 @@ export function timeOptions(startHour: number, endHour: number, stepMinutes: num
   return out;
 }
 
+/**
+ * Human copy for a hard conflict, keyed on the server's code so the dialog never shows
+ * the generic invalid-range line for a room/speaker clash.
+ */
+export function conflictHeadline(conflict: { code?: string; message?: string } | undefined) {
+  if (!conflict) return "";
+  const label =
+    conflict.code === "ROOM_OVERLAP"
+      ? "Room already booked"
+      : conflict.code === "SPEAKER_OVERLAP"
+        ? "Speaker double-booked"
+        : conflict.code === "TRACK_CONCURRENCY"
+          ? "Track limit reached"
+          : conflict.code === "INVALID_RANGE"
+            ? "Invalid day, time or room"
+            : "Blocked";
+  return conflict.message ? `${label}: ${conflict.message}` : label;
+}
+
 /** Capacity (soft) warnings for an already-placed slot, derived from canonical data. */
 export function capacityWarning(
   session: { capacity?: number } | undefined,
@@ -230,12 +249,26 @@ export function SchedulePage() {
       setPlaceError("Choose a room.");
       return;
     }
+    let slot: any;
+    try {
+      slot = placeSlot(place);
+    } catch (e: any) {
+      // Bad day/time input is a local problem: report it without ever entering the
+      // saving state (this is what previously produced an unrecoverable dialog).
+      setPlaceError(e?.message || "Choose a valid day and time.");
+      setPlaceConflicts([]);
+      setPlaceWarnings([]);
+      return;
+    }
+    if (!(Date.parse(slot.endsAt) > Date.parse(slot.startsAt))) {
+      setPlaceError("The end time must be after the start time — check the session duration.");
+      return;
+    }
     setPlaceBusy(true);
     setPlaceError("");
     setPlaceConflicts([]);
     setPlaceWarnings([]);
     try {
-      const slot = placeSlot(place);
       const result = await api.moveSlotDetailed({ slot, version: d.version, acknowledge });
       if (result.ok) {
         toast(`${place.mode === "move" ? "Moved" : "Placed"} ${place.title}`);
@@ -266,7 +299,8 @@ export function SchedulePage() {
       setPlaceError(
         result.status === 422
           ? "This placement has soft warnings. Review them and confirm to place anyway."
-          : result.error || "Move rejected",
+          : // Lead with the server's specific reason (room vs speaker vs invalid range).
+            conflictHeadline(hard[0]) || result.error || "Move rejected",
       );
       toast(hard[0]?.message || result.error || "Move rejected", "danger");
     } catch (e: any) {
@@ -490,7 +524,7 @@ export function SchedulePage() {
                 <div className="text-xs text-mid">
                   {x.speakerIds?.map((i: string) => d.speakers.find((q: any) => q.id === i)?.name).join(", ")}
                 </div>
-                <details className="mt-2 text-xs"><summary className="cursor-pointer font-semibold">Edit session speakers</summary><select multiple aria-label={`Edit speakers for ${x.title}`} className="mt-2 min-h-20 w-full rounded-[12px] border border-line p-2" value={x.speakerIds||[]} onChange={async e=>{await api.updateScheduleSession(x.id,{speakerIds:Array.from(e.target.selectedOptions).map(o=>o.value)});toast("Session speakers updated");load()}}>{(d.speakers||[]).map((s:any)=><option key={s.id} value={s.id}>{s.name}</option>)}</select></details>
+                <details className="mt-2 text-xs"><summary className="cursor-pointer font-semibold">Edit session speakers</summary><p className="mt-2"><a className="font-semibold text-ink underline" href={`/app/content?session=${encodeURIComponent(x.id)}`} aria-label={`Open full editor for ${x.title}`}>Full editor · title, abstract &amp; approval ↗</a></p><select multiple aria-label={`Edit speakers for ${x.title}`} className="mt-2 min-h-20 w-full rounded-[12px] border border-line p-2" value={x.speakerIds||[]} onChange={async e=>{await api.updateScheduleSession(x.id,{speakerIds:Array.from(e.target.selectedOptions).map(o=>o.value)});toast("Session speakers updated");load()}}>{(d.speakers||[]).map((s:any)=><option key={s.id} value={s.id}>{s.name}</option>)}</select></details>
                 <div className="mt-2 flex flex-wrap gap-1">
                   <Button
                     size="sm"
@@ -728,6 +762,13 @@ export function SchedulePage() {
                             >
                               Move
                             </Button>
+                            <a
+                              className="ml-2 text-xs font-semibold text-ink underline"
+                              href={`/app/content?session=${encodeURIComponent(slot.sessionId)}`}
+                              aria-label={`Open full editor for ${s?.title || slot.sessionId}`}
+                            >
+                              Full editor ↗
+                            </a>
                           </article>
                         );
                       })}
@@ -741,12 +782,23 @@ export function SchedulePage() {
 
       <Dialog
         open={!!place}
-        onClose={() => !placeBusy && setPlace(null)}
+        onClose={() => {
+          setPlace(null);
+          setPlaceBusy(false);
+        }}
         title={place?.mode === "move" ? `Move ${place?.title}` : `Place ${place?.title || "session"}`}
         description="Choose a day, time and room. Placement goes through the canonical schedule check — hard room/speaker conflicts are refused."
         footer={
           <>
-            <Button variant="outline" disabled={placeBusy} onClick={() => setPlace(null)}>
+            {/* Always enabled: an in-flight save must never trap the organizer. */}
+            <Button
+              variant="outline"
+              onClick={() => {
+                setPlace(null);
+                setPlaceBusy(false);
+                setPlaceError("");
+              }}
+            >
               Cancel
             </Button>
             {placeWarnings.length ? (
@@ -828,8 +880,16 @@ export function SchedulePage() {
             </div>
             <p className="text-xs text-mid" data-testid="place-summary">
               Duration <b className="text-ink">{place.durationMinutes} minutes</b> · ends{" "}
-              {fmtTime(placeSlot(place).endsAt)} · slot interval {constraints.slotMinutes} min · times are{" "}
-              {fmtTzLabel()}.
+              {(() => {
+                // Never throw during render: a malformed day/time must show a hint, not
+                // blank the dialog behind a stuck "Saving…".
+                try {
+                  return fmtTime(placeSlot(place).endsAt);
+                } catch {
+                  return "—";
+                }
+              })()}{" "}
+              · slot interval {constraints.slotMinutes} min · times are {fmtTzLabel()}.
             </p>
             {placeError ? (
               <Notice tone={placeWarnings.length && !placeConflicts.length ? "warn" : "danger"}>
@@ -839,7 +899,7 @@ export function SchedulePage() {
                 {placeConflicts.length ? (
                   <ul className="mt-1 list-disc pl-5" data-testid="place-conflicts">
                     {placeConflicts.map((c: any) => (
-                      <li key={c.id}>{c.message}</li>
+                      <li key={c.id}>{conflictHeadline(c)}</li>
                     ))}
                   </ul>
                 ) : null}

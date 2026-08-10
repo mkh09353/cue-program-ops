@@ -236,12 +236,37 @@ export function addSpeakerManual(
   ensureOnboarding(sub);
   const p = life.profiles.find((x) => x.speakerId === speakerId) as SpeakerProfileExt;
   if (p && !p.workflowStatus) p.workflowStatus = "accepted";
+  ensureSpeakerPersona(p, life);
 
   let communication: Communication | undefined;
   if (input.sendInvite !== false) {
     communication = sendTemplate("accepted", speakerId!, sub.title, "acceptance");
   }
   return { ok: true, speakerId: speakerId!, profile: p, submission: sub, communication };
+}
+
+/** Keep the demo identity catalog aligned with the canonical event speaker roster. */
+export function ensureSpeakerPersona(profile: SpeakerProfileExt, life: LifecycleStore = store) {
+  const existing = life.personas.find((p) => p.id === profile.speakerId || p.email.trim().toLowerCase() === profile.email.trim().toLowerCase());
+  if (existing) Object.assign(existing, { id: profile.speakerId, role: "speaker", name: profile.name, email: profile.email, speakerId: profile.speakerId });
+  else life.personas.push({ id: profile.speakerId, role: "speaker", name: profile.name, email: profile.email, speakerId: profile.speakerId });
+}
+
+export function mergeSpeakerRecords(primaryId: string, secondaryId: string, life: LifecycleStore = store) {
+  if (primaryId === secondaryId) return { ok: false as const, error: "choose two different speakers" };
+  const primary = life.profiles.find(p => p.speakerId === primaryId) as SpeakerProfileExt | undefined;
+  const secondary = life.profiles.find(p => p.speakerId === secondaryId) as SpeakerProfileExt | undefined;
+  if (!primary || !secondary) return { ok: false as const, error: "speaker not found" };
+  primary.bio ||= secondary.bio; primary.title ||= secondary.title; primary.company ||= secondary.company;
+  primary.linkedin ||= secondary.linkedin; primary.x ||= secondary.x; primary.website ||= secondary.website;
+  for (const rows of [life.submissions, life.tasks, life.files, life.sessions, life.deliverableTasks, life.contentFiles] as any[][]) {
+    for (const row of rows) if (row.speakerId === secondaryId) row.speakerId = primaryId;
+  }
+  life.communications.forEach(row => { if (row.speakerId === secondaryId) row.speakerId = primaryId; });
+  life.profiles = life.profiles.filter(p => p.speakerId !== secondaryId);
+  life.personas = life.personas.filter(p => p.id !== secondaryId);
+  ensureSpeakerPersona(primary, life);
+  return { ok: true as const, profile: primary };
 }
 
 export function updateSpeakerOrganizer(
@@ -400,7 +425,10 @@ export function importSpeakersCsv(
     else created++;
     results.push({ row: i + 1, ok: true, speakerId: made.speakerId, action: existed ? "updated" : "created" });
   }
-  return { created, updated, skipped, results };
+  const byName = new Map<string, { speakerId:string; name:string; email:string }[]>();
+  for (const p of life.profiles) { const key=p.name.trim().toLowerCase().replace(/\s+/g," "); const rows=byName.get(key)||[]; rows.push({speakerId:p.speakerId,name:p.name,email:p.email}); byName.set(key,rows); }
+  const nearDuplicates=[...byName.values()].filter(rows=>rows.length>1).flatMap(rows=>rows.slice(1).map(row=>({primary:rows[0],duplicate:row,reason:"Same normalized name with a different email"})));
+  return { created, updated, skipped, results, nearDuplicates };
 }
 
 function splitCsv(line: string): string[] {

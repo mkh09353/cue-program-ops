@@ -16,7 +16,19 @@ export const overlaps=(a:{startsAt:string;endsAt:string},b:{startsAt:string;ends
 const conflict=(severity:ConflictSeverity,code:ConflictCode,relatedIds:string[],message:string):ScheduleConflict=>({id:`${code}:${[...relatedIds].sort().join(":")}`,severity,code,relatedIds:[...relatedIds].sort(),message});
 export function validateSlot(data:ScheduleData, candidate:AgendaSlot):Validation {
  const s=data.sessions.find(x=>x.id===candidate.sessionId); const room=data.rooms.find(x=>x.id===candidate.roomId); const cs:ScheduleConflict[]=[];
- if(!s || !room || !Number.isFinite(ms(candidate.startsAt)) || !Number.isFinite(ms(candidate.endsAt)) || ms(candidate.endsAt)<=ms(candidate.startsAt)) cs.push(conflict("hard","INVALID_RANGE",[candidate.sessionId,candidate.roomId],"Choose a valid room and an end time after the start time."));
+ // INVALID_RANGE must only fire for genuinely invalid input, and must say WHICH part
+ // is wrong — organizers were shown "choose a valid room and end time" for placements
+ // whose real problem was an unknown session id or a room that had not synced yet.
+ const invalidReason = !s
+   ? `Session ${candidate.sessionId} is not on this schedule yet — reload the schedule and try again.`
+   : !room
+     ? `Room ${candidate.roomId} is not on this schedule yet — reload the schedule and try again.`
+     : !Number.isFinite(ms(candidate.startsAt)) || !Number.isFinite(ms(candidate.endsAt))
+       ? "Start and end times must be valid timestamps."
+       : ms(candidate.endsAt)<=ms(candidate.startsAt)
+         ? "The end time must be after the start time."
+         : "";
+ if(invalidReason) cs.push(conflict("hard","INVALID_RANGE",[candidate.sessionId,candidate.roomId],invalidReason));
  if(s&&room) {
   for(const other of data.slots.filter(x=>x.sessionId!==candidate.sessionId && overlaps(x,candidate)).sort((a,b)=>a.sessionId.localeCompare(b.sessionId))) {
    if(other.roomId===candidate.roomId) cs.push(conflict("hard","ROOM_OVERLAP",[candidate.sessionId,other.sessionId,candidate.roomId],`${room.name} is already occupied during this time.`));
