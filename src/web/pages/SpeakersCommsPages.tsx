@@ -42,6 +42,7 @@ export function SpeakersPage() {
   const [taskSpeakerIds, setTaskSpeakerIds] = useState<string[]>([]);
   const [taskResult, setTaskResult] = useState<{ count: number; names: string[] } | null>(null);
   const [taskBusy, setTaskBusy] = useState(false);
+  const [inviteSuccess, setInviteSuccess] = useState<Record<string, string>>({});
 
   const load = () =>
     Promise.all([
@@ -200,7 +201,7 @@ export function SpeakersPage() {
                 <div className="flex gap-3">
                   <input type="checkbox" checked={selected.includes(s.speakerId)} onChange={() => toggle(s.speakerId)} />
                   {s.headshotUrl || s.profile?.headshotUrl ? (
-                    <img src={s.headshotUrl || s.profile?.headshotUrl} alt="" className="h-12 w-12 rounded-full object-cover" />
+                    <img key={s.headshotUrl || s.profile?.headshotUrl} src={s.headshotUrl || s.profile?.headshotUrl} alt={`${s.name} headshot`} className="h-12 w-12 rounded-full object-cover" />
                   ) : (
                     <div className="grid h-12 w-12 place-items-center rounded-full bg-canvas text-sm font-bold text-ink">
                       {(s.name || "?").slice(0, 1)}
@@ -237,9 +238,16 @@ export function SpeakersPage() {
                   size="sm"
                   variant="secondary"
                   onClick={async () => {
-                    await api.inviteSpeaker(s.speakerId);
-                    toast(`Portal invite logged for ${s.name}`);
-                    load();
+                    try {
+                      const response = await api.inviteSpeaker(s.speakerId);
+                      const communication = response.data.communication;
+                      const message = `Portal invite logged for ${s.name} (${communication.status})`;
+                      setInviteSuccess((current) => ({ ...current, [s.speakerId]: message }));
+                      toast(message);
+                      await load();
+                    } catch (error: any) {
+                      toast(error.message || "Portal invite failed", "danger");
+                    }
                   }}
                 >
                   Send invite
@@ -256,6 +264,7 @@ export function SpeakersPage() {
                   Nudge
                 </Button>
               </div>
+              {inviteSuccess[s.speakerId] ? <p className="mt-2 text-xs font-semibold text-ink" role="status">{inviteSuccess[s.speakerId]} · Communication history updated.</p> : null}
             </Card>
           ))}
         </div>

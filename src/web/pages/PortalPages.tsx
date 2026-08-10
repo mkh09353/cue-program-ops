@@ -278,12 +278,35 @@ export function PortalDeliverablesPage() {
 export function PortalDeliverableDetailPage() {
   const {id}=useParams();const[data,setData]=useState<any>(null),[err,setErr]=useState(""),[comment,setComment]=useState("");
   const persona=getPersona();
+  // Re-selecting the SAME file must fire another change event, so the file input is
+  // remounted (and its value cleared) after every upload.
+  const [uploadNonce,setUploadNonce]=useState(0);
+  const [uploadBusy,setUploadBusy]=useState(false);
+  const [uploadResult,setUploadResult]=useState("");
   const load=()=>api.deliverable(id!).then(r=>setData(r.data)).catch(e=>setErr(e.message));useEffect(()=>{setData(null);setErr("");void load()},[id,persona.id]);
-  const upload=async(file:File)=>{const dataBase64=await new Promise<string>((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(String(r.result).split(",")[1]||"");r.onerror=reject;r.readAsDataURL(file)});await api.uploadDeliverable(id!,{name:file.name,mime:file.type,size:file.size,dataBase64,kind:file.type.startsWith("image/")?"headshot":file.type==="application/pdf"?"slides":"document"});toast("Upload saved as a new version");load()};
+  const upload=async(file:File)=>{
+    setUploadBusy(true);setUploadResult("");
+    try{
+      const dataBase64=await new Promise<string>((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(String(r.result).split(",")[1]||"");r.onerror=reject;r.readAsDataURL(file)});
+      const made:any=await api.uploadDeliverable(id!,{name:file.name,mime:file.type,size:file.size,dataBase64,kind:file.type.startsWith("image/")?"headshot":file.type==="application/pdf"?"slides":"document"});
+      const version=made?.data?.version?.version;
+      setUploadResult(version?`Uploaded ${file.name} as version ${version}.`:`Uploaded ${file.name}.`);
+      toast(version&&version>1?`New version v${version} saved`:"Upload saved as a new version");
+      await load();
+    }catch(e:any){
+      setUploadResult("");
+      toast(e?.message||"Upload failed","danger");
+      setErr("");
+    }finally{
+      setUploadBusy(false);
+      // Remount the input so the same file can be chosen again for v2, v3, …
+      setUploadNonce(n=>n+1);
+    }
+  };
   if(!data&&!err)return <Spinner/>;
   if(err)return <PersonaScopeNotice what="deliverable" error={err} backTo="/p/deliverables" backLabel="All my deliverables"/>;
   const file=data.file;
-  return <div><PageHeader title={data.name} description={`${data.session?.title||"Speaker deliverable"} · Due ${data.dueAt.slice(0,10)}`}/><Card className="p-5"><StatusBadge status={data.overdue?"overdue":data.status}/><p className="mt-3 text-sm">{data.instructions}</p><div className="mt-4 rounded-[18px] border border-dashed p-4"><b>Upload file</b><p className="mb-2 text-xs text-mid">Accepted: {data.acceptedTypes.join(", ")} · Maximum 2 MB. Re-uploading creates a new version.</p><Input type="file" accept={data.acceptedTypes.join(",")} onChange={e=>{const f=e.target.files?.[0];if(f)void upload(f)}}/></div>{file?<div className="mt-5"><h2 className="font-bold">{file.versions.find((v:any)=>v.current)?.name}</h2><p className="text-sm text-mid">Approval: {file.status} · {file.versions.length} versions</p>{[...file.versions].reverse().map((v:any)=><div key={v.id} className="mt-2 flex justify-between rounded bg-soft p-2 text-sm"><span>v{v.version} · {new Date(v.uploadedAt).toLocaleString()}</span><span>{v.current?<Badge tone="ok">Current</Badge>:null} <a className="text-ink underline" href={`/api/content/files/${file.id}/versions/${v.id}`}>View</a></span></div>)}<h3 className="mt-4 text-xs font-bold uppercase text-mid">Comments</h3>{file.comments.map((c:any)=><p key={c.id} className="mt-2 rounded bg-soft p-2 text-sm"><b>{c.authorName}</b> · {new Date(c.createdAt).toLocaleString()}<br/>{c.body}</p>)}<div className="mt-2 flex gap-2"><Input value={comment} onChange={e=>setComment(e.target.value)} placeholder="Add a comment"/><Button onClick={async()=>{await api.addFileComment(file.id,comment);setComment("");load()}}>Comment</Button></div></div>:null}</Card></div>;
+  return <div><PageHeader title={data.name} description={`${data.session?.title||"Speaker deliverable"} · Due ${data.dueAt.slice(0,10)}`}/><Card className="p-5"><StatusBadge status={data.overdue?"overdue":data.status}/><p className="mt-3 text-sm">{data.instructions}</p><div className="mt-4 rounded-[18px] border border-dashed p-4"><b>Upload file</b><p className="mb-2 text-xs text-mid">Accepted: {data.acceptedTypes.join(", ")} · Maximum 2 MB. Re-uploading creates a new version.</p><Input key={`deliverable-upload-${uploadNonce}`} type="file" aria-label="Choose a file to upload" disabled={uploadBusy} accept={data.acceptedTypes.join(",")} onChange={e=>{const f=e.target.files?.[0];e.target.value="";if(f)void upload(f)}}/>{uploadBusy?<p className="mt-2 text-xs font-semibold text-ink">Uploading…</p>:null}{uploadResult?<Notice tone="ok" onClose={()=>setUploadResult("")}><span data-testid="upload-result">{uploadResult}</span></Notice>:null}</div>{file?<div className="mt-5"><h2 className="font-bold">{file.versions.find((v:any)=>v.current)?.name}</h2><p className="text-sm text-mid">Approval: {file.status} · <span data-testid="version-count">{file.versions.length}</span> version{file.versions.length===1?"":"s"}</p>{[...file.versions].reverse().map((v:any)=><div key={v.id} className="mt-2 flex justify-between rounded bg-soft p-2 text-sm"><span>v{v.version} · {new Date(v.uploadedAt).toLocaleString()}</span><span>{v.current?<Badge tone="ok">Current</Badge>:null} <a className="text-ink underline" href={`/api/content/files/${file.id}/versions/${v.id}`}>View</a></span></div>)}<h3 className="mt-4 text-xs font-bold uppercase text-mid">Comments</h3>{file.comments.map((c:any)=><p key={c.id} className="mt-2 rounded bg-soft p-2 text-sm"><b>{c.authorName}</b> · {new Date(c.createdAt).toLocaleString()}<br/>{c.body}</p>)}<div className="mt-2 flex gap-2"><Input value={comment} onChange={e=>setComment(e.target.value)} placeholder="Add a comment"/><Button onClick={async()=>{await api.addFileComment(file.id,comment);setComment("");load()}}>Comment</Button></div></div>:null}</Card></div>;
 }
 
 const FILE_TYPES = new Set(["headshot", "slides", "supporting_doc"]);
@@ -343,6 +366,8 @@ function PersonaScopeNotice({
 export function PortalTaskDetailPage() {
   const { id } = useParams();
   const { data, err, load } = useSpeakerHome();
+  const [detailTask, setDetailTask] = useState<any>(null);
+  const [detailErr, setDetailErr] = useState("");
   const [fileName, setFileName] = useState("");
   const [profile, setProfile] = useState<any>(null);
   const [formAnswers, setFormAnswers] = useState<Record<string, string>>({});
@@ -352,6 +377,8 @@ export function PortalTaskDetailPage() {
   const [linkedFile, setLinkedFile] = useState<any>(null);
   const [taskComment, setTaskComment] = useState("");
   const [uploadBusy, setUploadBusy] = useState(false);
+  /** Bumped after each upload so re-choosing the SAME file fires a fresh change event. */
+  const [taskUploadNonce, setTaskUploadNonce] = useState(0);
 
   const loadDeliverables = () =>
     api
@@ -363,6 +390,13 @@ export function PortalTaskDetailPage() {
     void loadDeliverables();
     return subscribeData(loadDeliverables);
   }, []);
+
+  useEffect(() => {
+    if (!id) return;
+    setDetailTask(null);
+    setDetailErr("");
+    api.speakerTask(id).then((r) => setDetailTask(r.data.task)).catch((e) => setDetailErr(e.message));
+  }, [id, data]);
 
   // Pull versions + comments for the deliverable backing this task.
   const linkedId = (() => {
@@ -401,12 +435,12 @@ export function PortalTaskDetailPage() {
 
   if (!data && !err) return <Spinner />;
   if (err) return <Notice tone="danger">{err}</Notice>;
-  const task = data.tasks.find((t: any) => t.id === id);
+  const task = detailTask || data.tasks.find((t: any) => t.id === id);
   if (!task)
     return (
       <PersonaScopeNotice
         what="task"
-        error="Task not found for the speaker you are viewing as."
+        error={detailErr || "Task not found for the speaker you are viewing as."}
         backTo="/p/tasks"
         backLabel="All my tasks"
       />
@@ -574,6 +608,7 @@ export function PortalTaskDetailPage() {
               {UPLOAD_HINTS[task.type]?.extra ? <> · {UPLOAD_HINTS[task.type].extra}</> : null}
             </div>
             <input
+              key={`task-upload-${taskUploadNonce}`}
               type="file"
               accept={UPLOAD_HINTS[task.type]?.accept}
               className="mb-1 block w-full text-sm"
@@ -590,7 +625,7 @@ export function PortalTaskDetailPage() {
               are rejected by the server.
             </p>
             <Button
-              disabled={!fileName.trim() || task.status === "completed" || uploadBusy}
+              disabled={!fileName.trim() || uploadBusy || (task.status === "completed" && !linkedDeliverable)}
               onClick={async () => {
                 if (!fileName.trim()) {
                   toast("Choose or name a file first", "warn");
@@ -606,16 +641,23 @@ export function PortalTaskDetailPage() {
                         r.readAsDataURL(headshotFile);
                       })
                     : "";
-                  if (task.type === "headshot" && headshotFile) {
-                    await api.uploadHeadshot({ name: fileName.trim(), dataUrl, mime: headshotFile.type });
-                  } else if (task.type === "headshot") {
-                    await api.uploadHeadshot({ name: fileName.trim() });
-                  } else {
-                    await api.uploadFile({
-                      kind: kindMap[task.type],
-                      name: fileName.trim(),
-                      speakerId: data.speakerId,
-                    });
+                  // The receipt completes the onboarding task; re-uploading an already
+                  // complete task must still reach the versioned deliverable below, so a
+                  // receipt failure never blocks the new version.
+                  try {
+                    if (task.type === "headshot" && headshotFile) {
+                      await api.uploadHeadshot({ name: fileName.trim(), dataUrl, mime: headshotFile.type });
+                    } else if (task.type === "headshot") {
+                      await api.uploadHeadshot({ name: fileName.trim() });
+                    } else {
+                      await api.uploadFile({
+                        kind: kindMap[task.type],
+                        name: fileName.trim(),
+                        speakerId: data.speakerId,
+                      });
+                    }
+                  } catch (receiptError: any) {
+                    if (task.status !== "completed") throw receiptError;
                   }
                   // Mirror the bytes onto the canonical deliverable slot so the task
                   // receipt and the versioned deliverable never diverge.
@@ -645,6 +687,10 @@ export function PortalTaskDetailPage() {
                   );
                   load();
                   void loadDeliverables();
+                  // Reset the picker so uploading the same file again creates v2.
+                  setTaskUploadNonce((n) => n + 1);
+                  setHeadshotFile(null);
+                  setFileName("");
                 } catch (e: any) {
                   toast(e?.message || "Upload failed", "danger");
                 } finally {
@@ -652,7 +698,7 @@ export function PortalTaskDetailPage() {
                 }
               }}
             >
-              {uploadBusy ? "Uploading…" : "Upload & complete"}
+              {uploadBusy ? "Uploading…" : task.status === "completed" ? "Upload new version" : "Upload & complete"}
             </Button>
           </>
         ) : null}
@@ -854,7 +900,7 @@ export function PortalProfilePage() {
       <PageHeader title="Profile" description="Bio, social links, headshot, and travel preferences sync to the organizer roster." />
       <Card className="p-5">
         {profile.headshotUrl ? (
-          <img src={profile.headshotUrl} alt="" className="mb-4 h-24 w-24 rounded-full object-cover" />
+          <img key={profile.headshotUrl} src={profile.headshotUrl} alt={`${profile.name || "Speaker"} headshot`} className="mb-4 h-24 w-24 rounded-full object-cover" />
         ) : null}
         <Field label="Name">
           <Input value={profile.name || ""} onChange={(e) => setProfile({ ...profile, name: e.target.value })} />

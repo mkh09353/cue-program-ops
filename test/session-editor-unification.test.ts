@@ -77,17 +77,40 @@ test("title edited through the schedule session API reaches Content, public and 
   assert.ok((await feed(app)).sessions.some((s: any) => s.title === title));
 });
 
-/** No empty history entries when nothing meaningful changed. */
-test("a no-op save records no history entry", async () => {
+/**
+ * Every save request that carries editable fields gets its own timestamped entry (the
+ * organizer needs one restore point per save); approval-only patches record nothing.
+ */
+test("each field-bearing save records its own entry; approval-only saves record none", async () => {
   const app = createApp({ repo: new MemoryRepository() });
   const before = (await content(app)).sessions.find((r: any) => r.canonicalId === "ses-analytical");
-  await patch(app, `/api/events/${EVENT_ID}/content/sessions/ses-analytical`, { title: before.title, abstract: before.abstract });
-  const after = (await content(app)).sessions.find((r: any) => r.canonicalId === "ses-analytical");
-  assert.equal(after.history.length, before.history.length, "unchanged fields must not create history");
 
-  // Approval-only changes also leave the edit history clean.
+  // Two rapid successive saves → two distinct, individually restorable entries.
+  await patch(app, `/api/events/${EVENT_ID}/content/sessions/ses-analytical`, { title: "First save", abstract: before.abstract });
+  await patch(app, `/api/events/${EVENT_ID}/content/sessions/ses-analytical`, { title: "Second save", abstract: before.abstract });
+  const twoSaves = (await content(app)).sessions.find((r: any) => r.canonicalId === "ses-analytical");
+  const added = twoSaves.history.slice(before.history.length);
+  assert.equal(added.length, 2, "two saves must produce two history entries");
+  assert.deepEqual(added.map((h: any) => h.after.title), ["First save", "Second save"]);
+  assert.ok(
+    new Date(added[1].createdAt).getTime() > new Date(added[0].createdAt).getTime(),
+    "rapid successive saves still get strictly increasing timestamps",
+  );
+  assert.equal(new Set(added.map((h: any) => h.id)).size, 2, "entry ids are distinct");
+
+  // A re-save with identical values is still a save (own entry), flagged as no-change.
+  await patch(app, `/api/events/${EVENT_ID}/content/sessions/ses-analytical`, { title: "Second save" });
+  const resaved = (await content(app)).sessions.find((r: any) => r.canonicalId === "ses-analytical");
+  assert.equal(resaved.history.length, twoSaves.history.length + 1);
+  assert.equal(resaved.history.at(-1).noChange, true);
+
+  // Approval-only changes leave the edit history untouched.
   await patch(app, `/api/events/${EVENT_ID}/content/sessions/ses-analytical`, { contentStatus: "submitted" });
-  assert.equal((await content(app)).sessions.find((r: any) => r.canonicalId === "ses-analytical").history.length, before.history.length);
+  assert.equal(
+    (await content(app)).sessions.find((r: any) => r.canonicalId === "ses-analytical").history.length,
+    resaved.history.length,
+    "approval-only patches record no edit history",
+  );
 });
 
 /** (3) Runtime-created schedule session: editable, approvable, publishable, revocable. */

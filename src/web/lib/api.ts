@@ -273,6 +273,7 @@ export const api = {
   savePublicSubmission: (id:string,body:any) => mut<{data:any}>(`/api/public/events/ai-engineer-summit/submissions/${id}`,{method:"PUT",body:JSON.stringify(body)}),
   editSpeakerSubmission: (id:string,body:any) => mut<{data:any}>(`/api/speaker/events/${EVENT_ID}/submissions/${id}`,{method:"PUT",body:JSON.stringify(body)}),
   speakerHome: () => req<{ data: any }>(`/api/speaker/events/${EVENT_ID}/home`),
+  speakerTask: (id: string) => req<{ data: { task: any; readiness: any } }>(`/api/speaker/events/${EVENT_ID}/tasks/${id}`),
   completeTask: (id: string) =>
     mut(`/api/speaker/events/${EVENT_ID}/tasks/${id}`, {
       method: "PATCH",

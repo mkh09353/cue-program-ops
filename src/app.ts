@@ -161,16 +161,16 @@ export function createApp(deps: AppDeps = {}) {
   // —— Bootstrap / command ——
   app.get("/api/events/:eventId/bootstrap", (c) => {
     if (c.req.param("eventId") !== EVENT_ID) return fail(c, "event not found", 404);
-    for (const profile of store.profiles) {
-      const persona=store.personas.find(p=>p.id===profile.speakerId);
-      if(persona) Object.assign(persona,{role:"speaker",name:profile.name,email:profile.email,speakerId:profile.speakerId});
-      else store.personas.push({id:profile.speakerId,role:"speaker",name:profile.name,email:profile.email,speakerId:profile.speakerId});
-    }
+    // Compatibility projection for old snapshots without speaker personas. Keep GET
+    // pure: current mutations register personas at write time, while legacy profiles
+    // are projected into this response without changing the lifecycle singleton.
+    const personas=[...store.personas];
+    for(const profile of store.profiles)if(!personas.some(p=>p.id===profile.speakerId))personas.push({id:profile.speakerId,role:"speaker",name:profile.name,email:profile.email,speakerId:profile.speakerId});
     return c.json({
       data: {
         event: store.event,
         actor: actor(c),
-        personas: store.personas,
+        personas,
         form: store.form,
         boards: store.boards,
         rooms: store.rooms,
@@ -475,7 +475,7 @@ export function createApp(deps: AppDeps = {}) {
     return c.json({ data: target });
   });
 
-  app.post("/api/events/:eventId/reviews/:id/ai-assist", (c) => {
+  app.post("/api/events/:eventId/reviews/:id/ai-assist", async (c) => {
     let r = store.reviews.find((x) => x.id === c.req.param("id"));
     // Runtime-invited reviewers may have an assignment before their Review row
     // exists. The scorecard can request a draft with the assignment id.
@@ -507,6 +507,7 @@ export function createApp(deps: AppDeps = {}) {
     r.source = "ai_draft";
     // Keep assigned — human must submit
     r.status = "assigned";
+    await persist();
     return c.json({ data: { aiDraft: r.aiDraft, scores: r.scores, notes: r.notes, advisory: true } });
   });
 
@@ -591,6 +592,14 @@ export function createApp(deps: AppDeps = {}) {
     const speakerId = speakerIdOf(c);
     if (!speakerId) return fail(c, "speaker persona required", 403);
     return c.json({ data: { tasks: store.tasks.filter((t) => t.speakerId === speakerId), readiness: readiness(speakerId) } });
+  });
+
+  app.get("/api/speaker/events/:eventId/tasks/:id", (c) => {
+    const speakerId = speakerIdOf(c);
+    if (!speakerId) return fail(c, "speaker persona required", 403);
+    const task = store.tasks.find((t) => t.id === c.req.param("id") && t.speakerId === speakerId);
+    if (!task) return fail(c, "task not found", 404);
+    return c.json({ data: { task, readiness: readiness(speakerId) } });
   });
 
   app.patch("/api/speaker/events/:eventId/tasks/:id", async (c) => {
@@ -791,9 +800,14 @@ export function createApp(deps: AppDeps = {}) {
 
   // —— Schedule (preserve engines) ——
   app.get("/api/events/:eventId/schedule", async (c) => {
+    // Compatibility repair for accepted lifecycle submissions created by older
+    // snapshots. If the read materializes/repairs canonical rows, immediately
+    // snapshot the result rather than leaving an unsaved read-side mutation.
+    const before=JSON.stringify(await (repo as any).getSchedule?.(c.req.param("eventId")));
     for (const accepted of store.submissions.filter((x) => x.status === "accepted")) await mirrorAcceptedToSchedule(repo, accepted);
     const r = repo as Repository & { getSchedule?: (id: string) => Promise<any> };
     const s = await r.getSchedule?.(c.req.param("eventId"));
+    if(s&&JSON.stringify(s)!==before)await persist();
     return s ? c.json({ ...s, warnings: scheduleWarnings(s) }) : c.json({ error: "event not found" }, 404);
   });
   app.post("/api/events/:eventId/schedule/validate", async (c) => {
@@ -912,7 +926,8 @@ export function createApp(deps: AppDeps = {}) {
   app.post("/sync/runs/:id/retry", async (c) => {
     const old = await repo.getRun(c.req.param("id"));
     if (!old) return c.json({ error: "run not found" }, 404);
-    return c.json(await sync.execute(old.eventId, "live", old.id), 201);
+    const result=await sync.execute(old.eventId, "live", old.id); await persist();
+    return c.json(result, 201);
   });
 
   return app;

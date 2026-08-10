@@ -239,6 +239,21 @@ function snapshot(session: ScheduleSession | undefined, draft: SessionDraft | un
 const changed = (a: Record<string, unknown>, b: Record<string, unknown>) =>
   TRACKED_FIELDS.some((key) => JSON.stringify(a[key] ?? "") !== JSON.stringify(b[key] ?? ""));
 
+/** Does this patch represent a content SAVE (as opposed to an approval-only change)? */
+const isFieldSave = (patch: SessionEditPatch) =>
+  TRACKED_FIELDS.some((key) => (patch as Record<string, unknown>)[key] !== undefined);
+
+/**
+ * Rapid successive saves must each get their own entry with a distinct, increasing
+ * timestamp — `new Date()` alone can repeat inside one millisecond.
+ */
+let lastHistoryStamp = 0;
+function nextHistoryTimestamp() {
+  const now = Date.now();
+  lastHistoryStamp = now > lastHistoryStamp ? now : lastHistoryStamp + 1;
+  return new Date(lastHistoryStamp).toISOString();
+}
+
 export type SessionEditResult =
   | { ok: false; error: string; status: number }
   | {
@@ -335,7 +350,10 @@ export function applySessionEdit(input: {
   }
 
   const after = snapshot(session, draft);
-  const recorded = changed(before, after);
+  // One entry per SAVE REQUEST that carries editable fields, so two successive saves are
+  // always two timestamped, individually restorable entries. Approval-only patches (no
+  // editable fields) still record nothing.
+  const recorded = isFieldSave(patch);
   if (recorded) {
     store.contentHistory.push({
       id: `history-${crypto.randomUUID().slice(0, 8)}`,
@@ -343,10 +361,11 @@ export function applySessionEdit(input: {
       entityId: canonicalId,
       editorId: editor.id,
       editorName: editor.name,
-      createdAt: new Date().toISOString(),
+      createdAt: nextHistoryTimestamp(),
       before,
       after,
-    });
+      ...(changed(before, after) ? {} : { noChange: true }),
+    } as ContentEditHistory);
   }
   return {
     ok: true,

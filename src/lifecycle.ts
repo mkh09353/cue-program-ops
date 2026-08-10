@@ -166,6 +166,8 @@ export interface ContentFile {
 export interface ContentEditHistory {
   id: string; entityType: "session" | "speaker"; entityId: string; editorId: string; editorName: string;
   createdAt: string; before: Record<string, unknown>; after: Record<string, unknown>;
+  /** True when the save carried fields but nothing actually differed. */
+  noChange?: boolean;
 }
 export interface SessionContentState { sessionId: string; status: ContentApprovalStatus; approvalComment?: string }
 

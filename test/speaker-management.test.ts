@@ -18,6 +18,7 @@ import {
 } from "../src/speakerMgmt.js";
 import { icsForSession } from "../src/lifecycle.js";
 import { publicSchedule } from "../src/schedule.js";
+import { readFile } from "node:fs/promises";
 
 const org = { "x-demo-role": "organizer", "content-type": "application/json" };
 const speakerSam = { "x-demo-persona": "spk-sam", "content-type": "application/json" };
@@ -117,6 +118,12 @@ test("single profile save atomically persists bio, socials, logistics, and heads
   const image = await app.request(profile.headshotUrl, { headers: speakerAda });
   assert.equal(image.status, 200);
   assert.match(image.headers.get("content-type") || "", /^image\//);
+  const browserImage = await app.request(profile.headshotUrl);
+  assert.equal(browserImage.status, 200, "a browser img request has no persona headers");
+
+  const roster = await app.request(`/api/events/${EVENT_ID}/speakers`, { headers: org });
+  const organizerProfile = (await roster.json()).data.find((row: any) => row.speakerId === "spk-ada");
+  assert.equal(organizerProfile.headshotUrl, profile.headshotUrl);
 });
 
 test("organizer-created speaker is registered in bootstrap and can open portal home", async () => {
@@ -182,6 +189,35 @@ test("form-task fill round-trip and general task assignment", async () => {
   const t = row.tasks.find((x: any) => x.id === taskId);
   assert.equal(t.status, "completed");
   assert.equal(t.formAnswers.arrival_date, "2026-10-11");
+});
+
+test("organizer general task appears in portal list and speaker-scoped detail API", async () => {
+  const app = createApp({ repo: new MemoryRepository() });
+  const title = `Confirm participation ${crypto.randomUUID()}`;
+  const assigned = await app.request(`/api/events/${EVENT_ID}/speakers/tasks`, {
+    method: "POST",
+    headers: org,
+    body: JSON.stringify({ title, dueAt: "2026-12-01T00:00:00.000Z", type: "confirm", speakerIds: ["spk-sam"] }),
+  });
+  assert.equal(assigned.status, 201);
+  const task = (await assigned.json()).data[0];
+
+  const list = await app.request(`/api/speaker/events/${EVENT_ID}/tasks`, { headers: speakerSam });
+  assert.equal(list.status, 200);
+  assert.ok((await list.json()).data.tasks.some((row: any) => row.id === task.id && row.title === title));
+
+  const detail = await app.request(`/api/speaker/events/${EVENT_ID}/tasks/${task.id}`, { headers: speakerSam });
+  assert.equal(detail.status, 200);
+  assert.equal((await detail.json()).data.task.id, task.id);
+  const denied = await app.request(`/api/speaker/events/${EVENT_ID}/tasks/${task.id}`, { headers: speakerAda });
+  assert.equal(denied.status, 404);
+});
+
+test("portal router registers talks, task list, and task detail with their distinct components", async () => {
+  const source = await readFile(new URL("../src/web/main.tsx", import.meta.url), "utf8");
+  assert.match(source, /path="talks" element=\{<PortalTalksPage \/>\}/);
+  assert.match(source, /path="tasks" element=\{<PortalTasksPage \/>\}/);
+  assert.match(source, /path="tasks\/:id" element=\{<PortalTaskDetailPage \/>\}/);
 });
 
 test("outstanding-task derivation and progress matrix", () => {
@@ -304,7 +340,11 @@ test("manual add, CSV import, workflow status filter, invite", async () => {
     body: "{}",
   });
   assert.equal(invite.status, 200);
-  assert.ok((await invite.json()).data.communication?.id);
+  const invitedCommunication = (await invite.json()).data.communication;
+  assert.ok(invitedCommunication?.id);
+  const history = await app.request(`/api/events/${EVENT_ID}/comms/log`, { headers: org });
+  assert.equal(history.status, 200);
+  assert.ok((await history.json()).data.some((row: any) => row.id === invitedCommunication.id && row.speakerId === created.speakerId));
 
   // Organizer-only
   const denied = await app.request(`/api/events/${EVENT_ID}/speakers`, { headers: speakerSam });
@@ -345,6 +385,25 @@ test("domain helpers: CSV, merge, headshot", () => {
   assert.equal(firstDana.created, 1);
   assert.equal(secondDana.updated, 1);
   assert.equal(store.profiles.filter((p) => p.email === danaEmail).length, 1);
+
+  const existing = store.profiles.find((p) => p.email === danaEmail)!;
+  const existingId = existing.speakerId;
+  const normalizedUpdate = importSpeakersCsv(
+    `name,email,title,company\nDana Updated,  ${danaEmail.toUpperCase()}  ,Principal Engineer,Updated Co`,
+    { sendInvite: false },
+  );
+  assert.equal(normalizedUpdate.created, 0);
+  assert.equal(normalizedUpdate.updated, 1);
+  assert.equal(normalizedUpdate.results[0].action, "updated");
+  const matching = store.profiles.filter((p) => p.email.trim().toLowerCase() === danaEmail);
+  assert.equal(matching.length, 1);
+  assert.equal(matching[0]!.speakerId, existingId);
+  assert.equal(matching[0]!.title, "Principal Engineer");
+
+  const sameNameDifferentEmail = `dana.other.${crypto.randomUUID()}@example.test`;
+  const suggestion = importSpeakersCsv(`name,email\nDana Updated,${sameNameDifferentEmail}`, { sendInvite: false });
+  assert.equal(suggestion.created, 1);
+  assert.ok(suggestion.nearDuplicates.some((pair: any) => pair.duplicate.email === sameNameDifferentEmail));
 
   const adaProfile = store.profiles.find((p) => p.speakerId === "spk-ada") as any;
   const previousX = adaProfile.x;

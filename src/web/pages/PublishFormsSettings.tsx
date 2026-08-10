@@ -1026,16 +1026,16 @@ function CfpWindowSettingsCard() {
   const [err, setErr] = useState("");
   const [savedAt, setSavedAt] = useState("");
 
-  const load = () =>
-    api
-      .form()
-      .then((r) => setForm(r.data))
-      .catch((e) => setErr(e.message));
+  // Bounded load: this card used to render nothing at all while its fetch was pending
+  // or failed, which read as a stuck Settings page.
+  const cfp = useAsyncData(async () => (await api.form()).data, []);
+  const load = () => cfp.reload();
 
   useEffect(() => {
-    load();
-    return subscribeData(load);
-  }, []);
+    if (cfp.data) setForm(cfp.data);
+  }, [cfp.data]);
+
+  useEffect(() => subscribeData(() => cfp.reload()), [cfp.reload]);
 
   const toLocalInput = (iso?: string) => {
     if (!iso) return "";
@@ -1061,7 +1061,19 @@ function CfpWindowSettingsCard() {
     }
   };
 
-  if (!form) return null;
+  if (!form)
+    return (
+      <Card className="p-5 lg:col-span-2" data-testid="cfp-window-settings">
+        <h2 className="text-sm font-bold uppercase tracking-wide text-mid">CFP window</h2>
+        <LoadState
+          loading={cfp.loading}
+          timedOut={cfp.timedOut}
+          error={cfp.error}
+          onRetry={cfp.reload}
+          label="the CFP window"
+        />
+      </Card>
+    );
 
   return (
     <Card className="p-5 lg:col-span-2" id="cfp-window" data-testid="cfp-window-settings">
