@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, getPersona, subscribeData } from "../lib/api";
-import { calendarLinks, fmtTime, isProfessionalEmbed, taskTypeLabel } from "../lib/utils";
+import { calendarLinks, fmtTime, fmtTzLabel, isProfessionalEmbed, taskTypeLabel } from "../lib/utils";
 import {
   Badge,
   Button,
@@ -16,6 +16,24 @@ import {
   Textarea,
   toast,
 } from "../components/ui";
+
+/**
+ * Organizer-linked sessions carry the CANONICAL title the organizer edits. Until the
+ * organizer names a manually created record it stays a placeholder, which we say plainly
+ * instead of showing "<name> (manual)".
+ */
+export function sessionDisplayTitle(session: { title?: string; placeholderTitle?: boolean }) {
+  return session?.placeholderTitle ? "Session title to be confirmed" : session?.title || "Untitled session";
+}
+
+/** Time/room line for a linked session, in the event timezone (never a literal "UTC"). */
+export function sessionPlacementLine(session: { slot?: { startsAt: string; endsAt?: string }; roomName?: string }) {
+  if (!session?.slot?.startsAt) return "Awaiting schedule placement";
+  const time = session.slot.endsAt
+    ? `${fmtTime(session.slot.startsAt)}–${fmtTime(session.slot.endsAt)}`
+    : fmtTime(session.slot.startsAt);
+  return `${time} ${fmtTzLabel()}${session.roomName ? ` · ${session.roomName}` : ""}`;
+}
 
 function useSpeakerHome() {
   const [data, setData] = useState<any>(null);
@@ -40,6 +58,7 @@ export function PortalHomePage() {
   const open = data.tasks.filter((t: any) => t.status !== "completed");
   const next = open[0];
   const scheduled = data.sessions?.find((s: any) => s.slot);
+  const linkedDrafts = (data.sessions || []).filter((s: any) => !s.slot);
 
   return (
     <div>
@@ -79,16 +98,26 @@ export function PortalHomePage() {
       {scheduled?.slot ? (
         <Card className="mb-4 p-5">
           <h3 className="text-sm font-bold">Your session</h3>
-          <p className="mt-1 text-lg font-semibold">{scheduled.title}</p>
-          <p className="text-sm text-mid">
-            {fmtTime(scheduled.slot.startsAt)}–{fmtTime(scheduled.slot.endsAt)} UTC
-          </p>
+          <p className="mt-1 text-lg font-semibold">{sessionDisplayTitle(scheduled)}</p>
+          <p className="text-sm text-mid">{sessionPlacementLine(scheduled)}</p>
           <CalendarButtons
-            title={scheduled.title}
+            title={sessionDisplayTitle(scheduled)}
             startsAt={scheduled.slot.startsAt}
             endsAt={scheduled.slot.endsAt}
             sessionId={scheduled.id}
           />
+        </Card>
+      ) : null}
+
+      {linkedDrafts.length ? (
+        <Card className="mb-4 p-5">
+          <h3 className="text-sm font-bold">Your linked session{linkedDrafts.length === 1 ? "" : "s"}</h3>
+          {linkedDrafts.map((session: any) => (
+            <div key={session.id} className="mt-2 border-t border-line pt-2 first:border-0 first:pt-0">
+              <p className="font-semibold">{sessionDisplayTitle(session)}</p>
+              <p className="text-xs text-mid">Draft · {sessionPlacementLine(session)}</p>
+            </div>
+          ))}
         </Card>
       ) : null}
 
@@ -162,7 +191,22 @@ export function PortalTalksPage() {
         }
       />
       <div className="space-y-3">
-        {data.submissions.map((s: any) => (
+        {(data.sessions || []).map((session: any) => (
+          <Card key={`session-${session.canonicalId || session.id}`} className="p-4" data-testid={`linked-session-${session.canonicalId || session.id}`}>
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="font-bold">{sessionDisplayTitle(session)}</h3>
+              <StatusBadge status={session.slot ? "scheduled" : session.status || "draft"} />
+            </div>
+            <p className="mt-1 text-sm text-mid">Organizer-linked session · {sessionPlacementLine(session)}</p>
+            {session.placeholderTitle ? (
+              <p className="mt-1 text-xs text-mid">Your organizer has not published a title for this session yet.</p>
+            ) : null}
+          </Card>
+        ))}
+        {/* A proposal that already has a linked session is shown once, as the session. */}
+        {data.submissions
+          .filter((s: any) => !(data.sessions || []).some((session: any) => session.submissionId === s.id))
+          .map((s: any) => (
           <Card key={s.id} className="p-4">
             <div className="flex items-center justify-between gap-2">
               <h3 className="font-bold">{s.title}</h3>
@@ -174,8 +218,8 @@ export function PortalTalksPage() {
             {s.editToken ? <Button asChild size="sm" variant="outline" className="mt-3"><a href={`/e/ai-engineer-summit/cfp?submission=${s.id}&token=${s.editToken}`}>{s.status === "draft" ? "Resume draft" : "View or edit submission"}</a></Button> : null}
           </Card>
         ))}
-        {!data.submissions.length ? (
-          <EmptyState title="No submissions yet" description="When you submit a CFP, it will show here." />
+        {!data.submissions.length && !data.sessions?.length ? (
+          <EmptyState title="No talks yet" description="Submissions and organizer-linked sessions appear here." />
         ) : null}
       </div>
     </div>

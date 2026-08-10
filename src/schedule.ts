@@ -5,11 +5,15 @@ export interface ScheduleTrack { id:string; name:string; color:string; maxConcur
 export interface ScheduleSpeaker { id:string; name:string; email?:string; bio:string; company?:string; title?:string; headshotUrl?:string; isPublic?:boolean; acceptedSubmissionId?:string }
 export interface ScheduleSession { id:string; acceptedSubmissionId?:string; title:string; abstract:string; speakerIds:string[]; trackIds:string[]; durationMinutes:number; capacity?:number; status:"accepted"|"draft"|"published"; publishStatus:"draft"|"published"; slug:string; format?:string }
 export interface AgendaSlot { id:string; sessionId:string; roomId:string; startsAt:string; endsAt:string }
-export interface ScheduleData { event?:{startsAt:string;endsAt:string;timezone:string}; version:number; rooms:ScheduleRoom[]; tracks:ScheduleTrack[]; speakers:ScheduleSpeaker[]; sessions:ScheduleSession[]; slots:AgendaSlot[] }
+/** Recent placements shown on the Schedule page so a reload proves work persisted. */
+export interface PlacementRecord { id:string; sessionId:string; title:string; roomId:string; roomName:string; startsAt:string; endsAt:string; dayKey:string; placedAt:string; source:"manual"|"ai" }
+export interface ScheduleData { event?:{startsAt:string;endsAt:string;timezone:string}; version:number; rooms:ScheduleRoom[]; tracks:ScheduleTrack[]; speakers:ScheduleSpeaker[]; sessions:ScheduleSession[]; slots:AgendaSlot[]; lastPlacements?:PlacementRecord[] }
 export interface ScheduleConflict { id:string; severity:ConflictSeverity; code:ConflictCode; message:string; relatedIds:string[] }
 export interface SuggestedSlot { roomId:string; startsAt:string; endsAt:string; label:string }
 export interface Validation { conflicts:ScheduleConflict[]; alternatives:SuggestedSlot[] }
 export interface ScheduleMoveResult { ok:boolean; status:200|409|422; error?:string; conflicts:ScheduleConflict[]; warnings:ScheduleConflict[]; slot?:AgendaSlot; version:number }
+import { EVENT_TIME_ZONE, zonedDayKey } from "./timezone.js";
+
 const ms=(v:string)=>Date.parse(v);
 /** Half-open [start,end) intersection; equal endpoints deliberately do not overlap. */
 export const overlaps=(a:{startsAt:string;endsAt:string},b:{startsAt:string;endsAt:string})=>ms(a.startsAt)<ms(b.endsAt)&&ms(b.startsAt)<ms(a.endsAt);
@@ -31,7 +35,10 @@ export function validateSlot(data:ScheduleData, candidate:AgendaSlot):Validation
  if(invalidReason) cs.push(conflict("hard","INVALID_RANGE",[candidate.sessionId,candidate.roomId],invalidReason));
  if(s&&room) {
   for(const other of data.slots.filter(x=>x.sessionId!==candidate.sessionId && overlaps(x,candidate)).sort((a,b)=>a.sessionId.localeCompare(b.sessionId))) {
-   if(other.roomId===candidate.roomId) cs.push(conflict("hard","ROOM_OVERLAP",[candidate.sessionId,other.sessionId,candidate.roomId],`${room.name} is already occupied during this time.`));
+   if(other.roomId===candidate.roomId){
+    const occupant=data.sessions.find(x=>x.id===other.sessionId);
+    cs.push(conflict("hard","ROOM_OVERLAP",[candidate.sessionId,other.sessionId,candidate.roomId],`${room.name} is already occupied ${eventClockRange(other.startsAt,other.endsAt,data)}${occupant?` by ${occupant.title}`:""}.`));
+   }
    const os=data.sessions.find(x=>x.id===other.sessionId); const shared=[...new Set(s.speakerIds.filter(id=>os?.speakerIds.includes(id)))].sort();
    if(shared.length) cs.push(conflict("hard","SPEAKER_OVERLAP",[candidate.sessionId,other.sessionId,...shared],`${shared.map(id=>data.speakers.find(x=>x.id===id)?.name??id).join(", ")} is already speaking during this time.`));
   }
@@ -54,3 +61,40 @@ export function applyScheduleMove(data:ScheduleData, slot:AgendaSlot, version:nu
  return {ok:true,status:200,conflicts:result.conflicts,warnings,slot,version:data.version};
 }
 export function publicSchedule(data:ScheduleData){const published=data.sessions.filter(s=>s.publishStatus==="published"&&(s.status==="published"||s.status==="accepted"));const eligible=new Set(published.flatMap(s=>s.speakerIds));const publicSpeakers=new Map(data.speakers.filter(x=>x.isPublic!==false&&eligible.has(x.id)).map(x=>[x.id,x]));const publishedIds=new Set(published.map(s=>s.id));return data.slots.map(slot=>{const s=data.sessions.find(x=>x.id===slot.sessionId)!;const room=data.rooms.find(x=>x.id===slot.roomId)!;return {id:s.id,title:s.title,abstract:s.abstract,startsAt:slot.startsAt,endsAt:slot.endsAt,room:room?.name||"TBA",tracks:s.trackIds.map(id=>data.tracks.find(t=>t.id===id)?.name).filter(Boolean),speakers:s.speakerIds.map(id=>publicSpeakers.get(id)).filter(Boolean).map(x=>({id:x!.id,name:x!.name,bio:x!.bio,company:x!.company,title:x!.title,headshotUrl:x!.headshotUrl}))}}).filter(x=>publishedIds.has(x.id)).sort((a,b)=>a.startsAt.localeCompare(b.startsAt)||a.title.localeCompare(b.title));}
+
+/** Event-timezone clock range used in conflict copy ("10:00–10:45"). */
+export function eventClockRange(startsAt:string,endsAt:string,data?:ScheduleData){
+ const timeZone=data?.event?.timezone||EVENT_TIME_ZONE;
+ try{
+  const fmt=(iso:string)=>new Intl.DateTimeFormat("en-US",{timeZone,hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).format(new Date(iso));
+  return `${fmt(startsAt)}\u2013${fmt(endsAt)}`;
+ }catch{return "during this time"}
+}
+
+export const MAX_RECENT_PLACEMENTS = 5;
+
+/**
+ * Record a placement on the canonical schedule (bounded, newest first). Lives on the
+ * schedule object so it is persisted/snapshotted with everything else and survives the
+ * reload the organizer does to check their work.
+ */
+export function recordPlacement(data:ScheduleData, slot:AgendaSlot, source:PlacementRecord["source"]="manual"){
+ const session=data.sessions.find(x=>x.id===slot.sessionId);
+ const room=data.rooms.find(x=>x.id===slot.roomId);
+ const timeZone=data.event?.timezone||EVENT_TIME_ZONE;
+ const record:PlacementRecord={
+  id:`placed-${slot.sessionId}-${Date.parse(slot.startsAt)||0}`,
+  sessionId:slot.sessionId,
+  title:session?.title||slot.sessionId,
+  roomId:slot.roomId,
+  roomName:room?.name||slot.roomId,
+  startsAt:slot.startsAt,
+  endsAt:slot.endsAt,
+  dayKey:zonedDayKey(slot.startsAt,timeZone),
+  placedAt:new Date().toISOString(),
+  source,
+ };
+ const rest=(data.lastPlacements||[]).filter(x=>x.sessionId!==record.sessionId);
+ data.lastPlacements=[record,...rest].slice(0,MAX_RECENT_PLACEMENTS);
+ return record;
+}

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, subscribeData } from "../lib/api";
-import { EVENT_ID, EVENT_TZ, PROGRAM_DAYS, programDaysFromRange, type ProgramDay, fmtDate, fmtTime, fmtTzLabel, formatStatus } from "../lib/utils";
+import { EVENT_ID, EVENT_TZ, PROGRAM_DAYS, cn, programDaysFromRange, type ProgramDay, fmtDate, fmtTime, fmtTzLabel, formatStatus } from "../lib/utils";
 import { isoToZonedWallTime, zonedDayKey, zonedWallTimeToIso } from "../../timezone";
 import {
   Badge,
@@ -101,7 +101,16 @@ export function SchedulePage() {
   const [showRoomForm, setShowRoomForm] = useState(false);
   const [showTrackForm, setShowTrackForm] = useState(false);
   const [programDays, setProgramDays] = useState<ProgramDay[]>(() => [...PROGRAM_DAYS]);
-  const [selectedDay, setSelectedDay] = useState<string>(PROGRAM_DAYS[0].id);
+  // Item 4: a reload used to land on day 1, so placements made on later days looked lost.
+  const [selectedDay, setSelectedDay] = useState<string>(() => {
+    try {
+      return sessionStorage.getItem("cue-schedule-day") || PROGRAM_DAYS[0].id;
+    } catch {
+      return PROGRAM_DAYS[0].id;
+    }
+  });
+  /** Session id to flash-outline for 3s right after it is placed (item 1). */
+  const [justPlaced, setJustPlaced] = useState<string>("");
   const [publishBusy, setPublishBusy] = useState(false);
   const [publishBanner, setPublishBanner] = useState("");
   const [newSession,setNewSession]=useState({title:"",speakerIds:[] as string[],trackId:"",durationMinutes:45});
@@ -142,14 +151,39 @@ export function SchedulePage() {
     return subscribeData(load);
   }, []);
 
+  useEffect(() => {
+    try {
+      sessionStorage.setItem("cue-schedule-day", selectedDay);
+    } catch {
+      /* ignore */
+    }
+  }, [selectedDay]);
+
   const session = (id: string) => d?.sessions.find((x: any) => x.id === id);
   const scheduled = useMemo(() => new Set((d?.slots || []).map((x: any) => x.sessionId)), [d]);
+
+  /**
+   * Item 1: after ANY successful placement (dialog, drag-drop, AI accept) jump to the
+   * day the session landed on, flash-highlight the card and say where it went — the
+   * agent previously stayed on Monday and concluded nothing had persisted.
+   */
+  const announcePlacement = (slot: any, verb = "Placed") => {
+    const dayKey = zonedDayKey(slot.startsAt);
+    const day = programDays.find((x) => x.id === dayKey);
+    const roomName = d?.rooms.find((r: any) => r.id === slot.roomId)?.name || slot.roomId;
+    setSelectedDay(dayKey);
+    if (view === "week") setView("day");
+    setJustPlaced(slot.sessionId);
+    window.setTimeout(() => setJustPlaced((cur) => (cur === slot.sessionId ? "" : cur)), 3000);
+    toast(`${verb} · ${day?.label || dayKey} · ${fmtTime(slot.startsAt)} · ${roomName}`);
+    return dayKey;
+  };
 
   const commitMove = async (slot: any, version: number, acknowledge: string[] = []) => {
     setBusy(true);
     try {
       await api.moveSlot({ slot, version, acknowledge });
-      toast("Schedule updated");
+      announcePlacement(slot, "Scheduled");
       setPending(null);
       setErr("");
       load();
@@ -268,31 +302,16 @@ export function SchedulePage() {
     setPlaceError("");
     setPlaceConflicts([]);
     setPlaceWarnings([]);
-    try {
-      const result = await api.moveSlotDetailed({ slot, version: d.version, acknowledge });
-      if (result.ok) {
-        toast(`${place.mode === "move" ? "Moved" : "Placed"} ${place.title}`);
-        setPlace(null);
-        setErr("");
-        load();
-        return;
-      }
-      if (result.status === 409 && /stale/i.test(result.error) && retry) {
-        // Someone else (or an earlier action) advanced the schedule: refresh and retry.
-        const fresh = await api.schedule();
-        setD(fresh);
-        const again = await api.moveSlotDetailed({ slot, version: fresh.version, acknowledge });
-        if (again.ok) {
-          toast(`${place.mode === "move" ? "Moved" : "Placed"} ${place.title}`);
-          setPlace(null);
-          load();
-          return;
-        }
-        setPlaceConflicts(again.conflicts.filter((x: any) => x.severity === "hard"));
-        setPlaceWarnings(again.warnings || []);
-        setPlaceError(again.error || "Move rejected");
-        return;
-      }
+    // ONE success and ONE failure path for both the first attempt and the stale retry:
+    // the retry used to report a bare error with no conflict list and no toast, which
+    // read as "stuck on Saving, then it closed".
+    const succeed = (placed: any) => {
+      setPlace(null);
+      setErr("");
+      announcePlacement(placed, place.mode === "move" ? "Moved" : "Placed");
+      load();
+    };
+    const fail = (result: { status: number; error: string; conflicts?: any[]; warnings?: any[] }) => {
       const hard = (result.conflicts || []).filter((x: any) => x.severity === "hard");
       setPlaceConflicts(hard);
       setPlaceWarnings(result.warnings || []);
@@ -303,6 +322,20 @@ export function SchedulePage() {
             conflictHeadline(hard[0]) || result.error || "Move rejected",
       );
       toast(hard[0]?.message || result.error || "Move rejected", "danger");
+      // Never close on failure — the dialog stays open with the real reason.
+    };
+    try {
+      const result = await api.moveSlotDetailed({ slot, version: d.version, acknowledge });
+      if (result.ok) return succeed(slot);
+      if (result.status === 409 && /stale/i.test(result.error) && retry) {
+        // Someone else (or an earlier action) advanced the schedule: refresh and retry.
+        const fresh = await api.schedule();
+        setD(fresh);
+        const again = await api.moveSlotDetailed({ slot, version: fresh.version, acknowledge });
+        if (again.ok) return succeed(slot);
+        return fail(again);
+      }
+      fail(result);
     } catch (e: any) {
       setPlaceError(e?.message || "Move failed");
     } finally {
@@ -344,6 +377,49 @@ export function SchedulePage() {
         </Notice>
       ) : null}
       <Card className="mb-4 p-4"><h2 className="font-bold">New session</h2><p className="text-sm text-mid">Create directly in the canonical schedule, then place it to test conflicts.</p><div className="mt-3 grid gap-3 md:grid-cols-4"><Field label="Title"><Input value={newSession.title} onChange={e=>setNewSession({...newSession,title:e.target.value})}/></Field><Field label="Speakers"><select multiple aria-label="Session speakers" className="min-h-24 rounded-[18px] border border-line p-2" value={newSession.speakerIds} onChange={e=>setNewSession({...newSession,speakerIds:Array.from(e.target.selectedOptions).map(x=>x.value)})}>{(d?.speakers||[]).map((s:any)=><option key={s.id} value={s.id}>{s.name}</option>)}</select></Field><Field label="Track"><select className="h-10 rounded-[18px] border border-line px-3" value={newSession.trackId} onChange={e=>setNewSession({...newSession,trackId:e.target.value})}><option value="">General</option>{(d?.tracks||[]).map((t:any)=><option key={t.id} value={t.id}>{t.name}</option>)}</select></Field><Field label="Duration"><Input type="number" value={newSession.durationMinutes} onChange={e=>setNewSession({...newSession,durationMinutes:Number(e.target.value)})}/></Field></div><Button className="mt-3" disabled={!newSession.title||!newSession.speakerIds.length} onClick={async()=>{await api.createScheduleSession(newSession);toast("Session created");setNewSession({title:"",speakerIds:[],trackId:"",durationMinutes:45});load()}}>Create session</Button></Card>
+
+      {(d?.lastPlacements || []).length ? (
+        <Card className="mb-4 p-4" data-testid="recent-placements">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-sm font-bold uppercase tracking-wide text-mid">Recent placements</h2>
+            <span className="text-xs text-mid">Saved on the schedule — these survive a reload.</span>
+          </div>
+          <ul className="mt-2 space-y-1 text-sm">
+            {(d.lastPlacements || []).map((p: any) => {
+              const day = programDays.find((x) => x.id === p.dayKey);
+              return (
+                <li
+                  key={p.id}
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-[18px] bg-soft px-3 py-2"
+                  data-testid={`recent-placement-${p.sessionId}`}
+                >
+                  <span className="min-w-0">
+                    <b className="text-ink">{p.title}</b>
+                    <span className="text-mid">
+                      {" · "}
+                      {day?.label || p.dayKey} · {fmtTime(p.startsAt)}–{fmtTime(p.endsAt)} · {p.roomName}
+                      {p.source === "ai" ? " · AI accepted" : ""}
+                    </span>
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    aria-label={`View ${p.title} on ${day?.label || p.dayKey}`}
+                    onClick={() => {
+                      setSelectedDay(p.dayKey);
+                      if (view === "week") setView("day");
+                      setJustPlaced(p.sessionId);
+                      window.setTimeout(() => setJustPlaced((cur) => (cur === p.sessionId ? "" : cur)), 3000);
+                    }}
+                  >
+                    View
+                  </Button>
+                </li>
+              );
+            })}
+          </ul>
+        </Card>
+      ) : null}
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
         {(["list", "day", "week", "track", "room"] as View[]).map((v) => (
@@ -732,8 +808,17 @@ export function SchedulePage() {
                             key={slot.id}
                             draggable
                             onDragStart={() => setDrag(s.id)}
-                            className="mb-2 cursor-grab rounded-lg border-l-4 border-l-lime bg-white p-2 shadow-sm"
+                            data-testid={`scheduled-${slot.sessionId}`}
+                            className={cn(
+                              "mb-2 cursor-grab rounded-lg border-l-4 border-l-lime bg-white p-2 shadow-sm transition-shadow",
+                              justPlaced === slot.sessionId && "ring-2 ring-ink ring-offset-2 ring-offset-canvas",
+                            )}
                           >
+                            {justPlaced === slot.sessionId ? (
+                              <div className="mb-1 text-[10px] font-bold uppercase tracking-wide text-ink">
+                                Just placed
+                              </div>
+                            ) : null}
                             <div className="text-[11px] font-bold text-mid">
                               {fmtTime(slot.startsAt)}–{fmtTime(slot.endsAt)}
                             </div>

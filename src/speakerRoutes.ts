@@ -16,6 +16,7 @@ import {
   enrichSpeakerMgmtDemo,
   importSpeakersCsv,
   mergeSpeakerRecords,
+  suggestDuplicatePairs,
   listRoster,
   outstandingTaskReminders,
   progressMatrix,
@@ -76,6 +77,14 @@ export function createSpeakerRoutes(deps: {
     const denied = requireOrg(c);
     if (denied) return denied;
     return c.json({ data: progressMatrix(deps.store) });
+  });
+
+  /** Current duplicate suggestions for the roster panel (richer/older record first). */
+  app.get("/api/events/:eventId/speakers/merge-suggestions", (c) => {
+    if (!eventOk(c)) return fail(c, "event not found", 404);
+    const denied = requireOrg(c); if (denied) return denied;
+    boot();
+    return c.json({ data: suggestDuplicatePairs(deps.store) });
   });
 
   app.get("/api/events/:eventId/speakers/:speakerId", (c) => {
@@ -188,6 +197,50 @@ export function createSpeakerRoutes(deps: {
     const b=await c.req.json(); const merged=mergeSpeakerRecords(b.primaryId,b.secondaryId,deps.store);
     if(!merged.ok)return fail(c,merged.error,merged.error.includes("not found")?404:400); await deps.persist(); return c.json({data:merged.profile});
   });
+
+  app.post("/api/events/:eventId/speakers/merge-suggestions", async (c) => {
+    if (!eventOk(c)) return fail(c, "event not found", 404);
+    const denied = requireOrg(c); if (denied) return denied;
+    const b = await c.req.json().catch(() => ({}));
+    const pairs = Array.isArray(b.pairs) ? b.pairs : [];
+    // Omitting pairs merges every currently suggested duplicate (one-click bulk merge).
+    const requested: { primaryId: string; secondaryId: string }[] = pairs.length
+      ? pairs.map((pair: any) => ({ primaryId: String(pair.primaryId || ""), secondaryId: String(pair.secondaryId || "") }))
+      : suggestDuplicatePairs(deps.store).map((pair) => ({ primaryId: pair.primary.speakerId, secondaryId: pair.duplicate.speakerId }));
+    if (!requested.length) return fail(c, "duplicate pairs required");
+
+    const merged: any[] = [];
+    const skipped: { primaryId: string; secondaryId: string; reason: string }[] = [];
+    // Overlapping pairs (A←B, A←C) and records already removed by an earlier pair in the
+    // same batch must not corrupt the roster: follow the merge chain and skip gone rows.
+    const redirect = new Map<string, string>();
+    const resolve = (speakerId: string) => {
+      const seen = new Set<string>();
+      let current = speakerId;
+      while (redirect.has(current) && !seen.has(current)) {
+        seen.add(current);
+        current = redirect.get(current)!;
+      }
+      return current;
+    };
+    const exists = (speakerId: string) => deps.store.profiles.some((p) => p.speakerId === speakerId);
+
+    for (const pair of requested) {
+      const primaryId = resolve(pair.primaryId);
+      const secondaryId = resolve(pair.secondaryId);
+      if (!primaryId || !secondaryId) { skipped.push({ ...pair, reason: "missing speaker id" }); continue; }
+      if (primaryId === secondaryId) { skipped.push({ ...pair, reason: "already merged" }); continue; }
+      if (!exists(primaryId) || !exists(secondaryId)) { skipped.push({ ...pair, reason: "speaker already removed" }); continue; }
+      const result = mergeSpeakerRecords(primaryId, secondaryId, deps.store);
+      if (!result.ok) { skipped.push({ ...pair, reason: result.error }); continue; }
+      redirect.set(secondaryId, primaryId);
+      merged.push(result.profile);
+    }
+    if (!merged.length && skipped.length) return fail(c, skipped[0]!.reason, skipped[0]!.reason.includes("not found") ? 404 : 400);
+    await deps.persist();
+    return c.json({ data: { merged: merged.length, profiles: merged, skipped, remaining: suggestDuplicatePairs(deps.store) } });
+  });
+
 
   app.post("/api/events/:eventId/speakers/:speakerId/sessions/:sessionId/link", async (c) => {
     if (!eventOk(c)) return fail(c,"event not found",404); const denied=requireOrg(c);if(denied)return denied;

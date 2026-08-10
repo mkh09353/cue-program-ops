@@ -14,6 +14,7 @@ import {
   progressMatrix,
   renderMergePreview,
   submitFormTask,
+  suggestDuplicatePairs,
   updateSpeakerOrganizer,
 } from "../src/speakerMgmt.js";
 import { icsForSession } from "../src/lifecycle.js";
@@ -445,3 +446,349 @@ test("domain helpers: CSV, merge, headshot", () => {
 void publicSchedule;
 void addSpeakerManual;
 void submitFormTask;
+
+test("bulk merge-suggestions collapses two independent name-match pairs in one call", async () => {
+  const app = createApp({ repo: new MemoryRepository() });
+  const tag = crypto.randomUUID().slice(0, 6);
+  const names = [`Rowan Vega ${tag}`, `Casey Lin ${tag}`];
+  // Two independent duplicate pairs: same normalized name, different emails.
+  const csv = [
+    "name,email,title,company,bio",
+    `${names[0]},rowan.a.${tag}@example.test,Staff Engineer,Northwind,Distributed systems work`,
+    `${names[0]},rowan.b.${tag}@example.test,,,`,
+    `${names[1]},casey.a.${tag}@example.test,Principal Engineer,Latticework,Build tooling`,
+    `${names[1]},casey.b.${tag}@example.test,,,`,
+  ].join("\n");
+
+  const imported = await app.request(`/api/events/${EVENT_ID}/speakers/import`, {
+    method: "POST",
+    headers: org,
+    body: JSON.stringify({ csv }),
+  });
+  assert.equal(imported.status, 200);
+  const importBody = (await imported.json()) as any;
+  assert.equal(importBody.data.created, 4, "same-name/different-email rows are created separately");
+
+  // Before merging they are SUGGESTIONS only — all four records still exist.
+  const pairs = importBody.data.nearDuplicates.filter((p: any) => names.includes(p.primary.name));
+  assert.equal(pairs.length, 2, "one suggestion per name-match pair");
+  for (const name of names) {
+    assert.equal(store.profiles.filter((p) => p.name === name).length, 2, `${name} stays two records until merged`);
+  }
+  // The richer record (title/company/bio filled) is proposed as primary.
+  for (const pair of pairs) {
+    const primary = store.profiles.find((p) => p.speakerId === pair.primary.speakerId)!;
+    const duplicate = store.profiles.find((p) => p.speakerId === pair.duplicate.speakerId)!;
+    assert.ok(primary.title && primary.company, `${pair.primary.name}: richer record is primary`);
+    assert.ok(!duplicate.title, "the sparse record is the duplicate");
+  }
+
+  const rosterBefore = ((await (await app.request(`/api/events/${EVENT_ID}/speakers`, { headers: org })).json()) as any).data.length;
+
+  // ONE bulk call merges both pairs.
+  const bulk = await app.request(`/api/events/${EVENT_ID}/speakers/merge-suggestions`, {
+    method: "POST",
+    headers: org,
+    body: JSON.stringify({
+      pairs: pairs.map((p: any) => ({ primaryId: p.primary.speakerId, secondaryId: p.duplicate.speakerId })),
+    }),
+  });
+  assert.equal(bulk.status, 200);
+  const bulkBody = (await bulk.json()) as any;
+  assert.equal(bulkBody.data.merged, 2, "both pairs merged in a single request");
+
+  const rosterAfter = ((await (await app.request(`/api/events/${EVENT_ID}/speakers`, { headers: org })).json()) as any).data.length;
+  assert.equal(rosterAfter, rosterBefore - 2, "roster count drops by exactly two");
+  for (const name of names) {
+    assert.equal(store.profiles.filter((p) => p.name === name).length, 1, `${name} is now one record`);
+  }
+  // Fill-only enrichment kept the primary's values and filled its blanks.
+  const survivors = names.map((name) => store.profiles.find((p) => p.name === name)! as any);
+  assert.ok(survivors.every((p) => p.title && p.company && p.bio));
+  assert.ok(!bulkBody.data.remaining.some((p: any) => names.includes(p.primary.name)), "no suggestions remain");
+});
+
+test("bulk merge tolerates overlapping pairs and already-removed records", async () => {
+  const app = createApp({ repo: new MemoryRepository() });
+  const tag = crypto.randomUUID().slice(0, 6);
+  const name = `Tam Ito ${tag}`;
+  const csv = [
+    "name,email,title,company,bio",
+    `${name},tam.a.${tag}@example.test,Staff Engineer,Northwind,Systems`,
+    `${name},tam.b.${tag}@example.test,,,`,
+    `${name},tam.c.${tag}@example.test,,,`,
+  ].join("\n");
+  const imported = (await (
+    await app.request(`/api/events/${EVENT_ID}/speakers/import`, { method: "POST", headers: org, body: JSON.stringify({ csv }) })
+  ).json()) as any;
+  const pairs = imported.data.nearDuplicates.filter((p: any) => p.primary.name === name);
+  assert.equal(pairs.length, 2, "two duplicates share one primary");
+  const primaryId = pairs[0].primary.speakerId;
+
+  // Overlapping pairs (same primary twice) + a repeat of an already-merged pair + a
+  // reference to a record that will be gone by the time it is processed.
+  const bulk = await app.request(`/api/events/${EVENT_ID}/speakers/merge-suggestions`, {
+    method: "POST",
+    headers: org,
+    body: JSON.stringify({
+      pairs: [
+        { primaryId, secondaryId: pairs[0].duplicate.speakerId },
+        { primaryId, secondaryId: pairs[1].duplicate.speakerId },
+        { primaryId, secondaryId: pairs[0].duplicate.speakerId },
+        { primaryId, secondaryId: "spk-does-not-exist" },
+      ],
+    }),
+  });
+  assert.equal(bulk.status, 200, "a stale pair must not fail the whole batch");
+  const body = (await bulk.json()) as any;
+  assert.equal(body.data.merged, 2);
+  assert.equal(body.data.skipped.length, 2);
+  assert.ok(body.data.skipped.some((s: any) => /already merged|already removed/.test(s.reason)));
+  assert.equal(store.profiles.filter((p) => p.name === name).length, 1, "roster is not corrupted");
+  assert.ok(store.profiles.some((p) => p.speakerId === primaryId), "the primary survives");
+});
+
+test("merge-suggestions GET lists current pairs and an empty POST merges them all", async () => {
+  const app = createApp({ repo: new MemoryRepository() });
+  const tag = crypto.randomUUID().slice(0, 6);
+  const name = `Noor Haddad ${tag}`;
+  await app.request(`/api/events/${EVENT_ID}/speakers/import`, {
+    method: "POST",
+    headers: org,
+    body: JSON.stringify({ csv: `name,email,title\n${name},noor.a.${tag}@example.test,Staff Engineer\n${name},noor.b.${tag}@example.test,` }),
+  });
+  const listed = (await (await app.request(`/api/events/${EVENT_ID}/speakers/merge-suggestions`, { headers: org })).json()) as any;
+  assert.ok(listed.data.some((p: any) => p.primary.name === name), "GET exposes the roster panel's pairs");
+
+  const mergedAll = await app.request(`/api/events/${EVENT_ID}/speakers/merge-suggestions`, {
+    method: "POST",
+    headers: org,
+    body: JSON.stringify({}),
+  });
+  assert.equal(mergedAll.status, 200);
+  assert.ok(((await mergedAll.json()) as any).data.merged >= 1);
+  assert.equal(store.profiles.filter((p) => p.name === name).length, 1);
+
+  // Non-organizers cannot merge.
+  assert.equal(
+    (await app.request(`/api/events/${EVENT_ID}/speakers/merge-suggestions`, { method: "POST", headers: speakerSam, body: JSON.stringify({}) })).status,
+    403,
+  );
+});
+
+test("primary selection prefers the richer record and falls back to the older one", () => {
+  const tag = crypto.randomUUID().slice(0, 6);
+  const name = `Priya Sundaram ${tag}`;
+  // Sparse record imported FIRST, richer one second: richness must beat array order.
+  importSpeakersCsv(`name,email\n${name},priya.sparse.${tag}@example.test`, { sendInvite: false });
+  importSpeakersCsv(
+    `name,email,title,company,bio\n${name},priya.rich.${tag}@example.test,Principal Engineer,Latticework,Build systems specialist`,
+    { sendInvite: false },
+  );
+  const pair = suggestDuplicatePairs(store).find((p) => p.primary.name === name)!;
+  assert.ok(pair, "a suggestion is produced");
+  assert.equal(pair.primary.email, `priya.rich.${tag}@example.test`, "richer record wins");
+  assert.equal(pair.duplicate.email, `priya.sparse.${tag}@example.test`);
+
+  // Two equally sparse records: the older (earlier submission) is primary.
+  const evenTag = crypto.randomUUID().slice(0, 6);
+  const evenName = `Sam Okafor ${evenTag}`;
+  importSpeakersCsv(`name,email\n${evenName},older.${evenTag}@example.test`, { sendInvite: false });
+  importSpeakersCsv(`name,email\n${evenName},newer.${evenTag}@example.test`, { sendInvite: false });
+  const evenPair = suggestDuplicatePairs(store).find((p) => p.primary.name === evenName)!;
+  assert.equal(evenPair.primary.email, `older.${evenTag}@example.test`, "older record breaks the tie");
+
+  // Scoring is deterministic regardless of evaluation order.
+  const repeat = suggestDuplicatePairs(store).find((p) => p.primary.name === evenName)!;
+  assert.deepEqual(repeat, evenPair);
+});
+
+test("portal home exposes canonical organizer-linked session titles, not the manual placeholder", async () => {
+  const repo = new MemoryRepository();
+  const app = createApp({ repo });
+  const tag = crypto.randomUUID().slice(0, 6);
+  const created = (await (
+    await app.request(`/api/events/${EVENT_ID}/speakers`, {
+      method: "POST",
+      headers: org,
+      body: JSON.stringify({ name: `Linked Speaker ${tag}`, email: `linked.${tag}@example.test` }),
+    })
+  ).json()) as any;
+  const speakerId = created.data.speakerId;
+  const persona = store.personas.find((p) => p.speakerId === speakerId)!;
+  const speakerHeaders = { "x-demo-persona": persona.id, "content-type": "application/json" };
+  await app.request(`/api/events/${EVENT_ID}/schedule`); // mirror accepted submissions
+
+  const first = (await (await app.request(`/api/speaker/events/${EVENT_ID}/home`, { headers: speakerHeaders })).json()) as any;
+  const draft = first.data.sessions[0];
+  assert.ok(draft, "organizer-linked session is visible in the portal");
+  assert.ok(draft.canonicalId, "each session carries its canonical id");
+  assert.equal(draft.placeholderTitle, true, "an unnamed manual record is flagged, not shown as a real title");
+  assert.equal(draft.submissionId, first.data.submissions[0].id, "the portal can dedupe the paired submission card");
+
+  // Organizer names the session through the canonical content editor.
+  const renamed = `Taming 40-Minute CI ${tag}`;
+  const patched = await app.request(`/api/events/${EVENT_ID}/content/sessions/${draft.id}`, {
+    method: "PATCH",
+    headers: org,
+    body: JSON.stringify({ title: renamed }),
+  });
+  assert.equal(patched.status, 200);
+
+  const afterRename = (await (await app.request(`/api/speaker/events/${EVENT_ID}/home`, { headers: speakerHeaders })).json()) as any;
+  const linked = afterRename.data.sessions[0];
+  assert.equal(linked.title, renamed, "the speaker sees the canonical title");
+  assert.equal(linked.placeholderTitle, false);
+  assert.equal(afterRename.data.sessions.length, 1, "no duplicate session cards");
+
+  // Placing it surfaces the slot and room through the same payload.
+  const sched = (await (await app.request(`/api/events/${EVENT_ID}/schedule`)).json()) as any;
+  const placed = await app.request(`/api/events/${EVENT_ID}/schedule/move`, {
+    method: "POST",
+    headers: org,
+    body: JSON.stringify({
+      slot: { id: `slot-${linked.canonicalId}`, sessionId: linked.canonicalId, roomId: "room-main", startsAt: "2026-10-14T18:00:00.000Z", endsAt: "2026-10-14T18:45:00.000Z" },
+      version: sched.version,
+      acknowledge: [],
+    }),
+  });
+  assert.equal(placed.status, 200);
+  const scheduledHome = (await (await app.request(`/api/speaker/events/${EVENT_ID}/home`, { headers: speakerHeaders })).json()) as any;
+  const scheduledSession = scheduledHome.data.sessions[0];
+  assert.equal(scheduledSession.slot.startsAt, "2026-10-14T18:00:00.000Z");
+  assert.equal(scheduledSession.roomName, "Main Hall");
+  assert.equal(scheduledSession.title, renamed);
+});
+
+test("portal talks renders canonical titles in the event timezone without duplicate cards", async () => {
+  const page = await readFile(new URL("../src/web/pages/PortalPages.tsx", import.meta.url), "utf8");
+  // Canonical title + placeholder copy helpers, used by home and talks.
+  assert.match(page, /export function sessionDisplayTitle/);
+  assert.match(page, /Session title to be confirmed/);
+  assert.match(page, /export function sessionPlacementLine/);
+  assert.match(page, /Awaiting schedule placement/);
+  assert.match(page, /sessionDisplayTitle\(session\)/);
+  assert.match(page, /sessionDisplayTitle\(scheduled\)/);
+  // Event-timezone label rather than a hard-coded UTC suffix.
+  assert.match(page, /fmtTzLabel\(\)/);
+  assert.ok(!/\}\s*UTC/.test(page), "no literal UTC suffix remains next to fmtTime output");
+  // A submission that already has a linked session renders once.
+  assert.match(page, /session\.submissionId === s\.id/);
+});
+
+test("roster duplicate banner is driven by the authoritative server suggestions", async () => {
+  const page = await readFile(new URL("../src/web/pages/SpeakersCommsPages.tsx", import.meta.url), "utf8");
+  assert.match(page, /api\.speakerMergeSuggestions\(\)/, "roster loads pairs from the API");
+  assert.match(page, /const duplicatePairs = serverPairs\.length \? serverPairs : duplicateSuggestions\(rows\)/);
+  // Banner copy + one-click bulk action stay in place while pairs exist.
+  assert.match(page, /possible duplicate\{duplicatePairs\.length === 1 \? "" : "s"\} — Review &amp; merge/);
+  assert.equal((page.match(/Merge all suggested duplicates/g) || []).length, 2, "roster and import panel both offer bulk merge");
+  assert.match(page, /\{importSummary\.created\} created · \{importSummary\.updated\} updated \(existing email\) · \{importSummary\.duplicates\} possible duplicates \(name match\)/);
+});
+
+test("organizer speaker and comms pages use the bounded LoadState loader", async () => {
+  const page = await readFile(new URL("../src/web/pages/SpeakersCommsPages.tsx", import.meta.url), "utf8");
+  assert.ok(!/return <Spinner \/>/.test(page), "no bare unbounded spinner remains");
+  assert.equal((page.match(/useAsyncData\(/g) || []).length, 3, "roster, speaker detail and comms are all bounded");
+  assert.equal((page.match(/<LoadState/g) || []).length, 3);
+  for (const label of ["the speaker roster", "this speaker", "communications"]) {
+    assert.ok(page.includes(`label="${label}"`), `${label} loader has a meaningful label`);
+  }
+  for (const retry of ["onRetry={roster.reload}", "onRetry={detail.reload}", "onRetry={comms.reload}"]) {
+    assert.ok(page.includes(retry), `${retry} wired`);
+  }
+  // Live refresh is preserved without re-flashing the loading state.
+  assert.match(page, /subscribeData\(\(\) => roster\.reload\(\)\)/);
+  assert.match(page, /subscribeData\(\(\) => detail\.reload\(\)\)/);
+  assert.match(page, /subscribeData\(\(\) => comms\.reload\(\)\)/);
+});
+
+test("assign-task modal exposes exactly the three template chips with prefilled fields", async () => {
+  const { TASK_TEMPLATES, TASK_TEMPLATE_DUE_DAYS, taskTemplateDueDate } = await import("../src/web/pages/SpeakersCommsPages.js");
+  assert.deepEqual(
+    TASK_TEMPLATES.map((t: any) => t.title),
+    ["Confirm participation", "Sign speaker release form", "Complete bio and profile"],
+  );
+  assert.deepEqual(TASK_TEMPLATES.map((t: any) => t.type), ["confirm", "form", "profile"]);
+  assert.ok(TASK_TEMPLATES.every((t: any) => t.description && t.description.length > 10), "descriptions are prefilled");
+
+  // Deterministic relative due date in the date-input format the modal uses.
+  const from = new Date("2026-08-10T12:00:00.000Z");
+  const due = taskTemplateDueDate(from);
+  assert.match(due, /^\d{4}-\d{2}-\d{2}$/);
+  assert.equal(due, "2026-08-24");
+  assert.equal(TASK_TEMPLATE_DUE_DAYS, 14);
+
+  const page = await readFile(new URL("../src/web/pages/SpeakersCommsPages.tsx", import.meta.url), "utf8");
+  assert.match(page, /setTaskForm\(\(prev\) => \(\{ \.\.\.prev, \.\.\.template, dueAt: taskTemplateDueDate\(\) \}\)\)/, "functional update avoids stale taskForm");
+  assert.match(page, /data-testid={`task-template-\$\{template\.type\}`}/);
+});
+
+test("bulk comms send appends one log entry per recipient and returns the UI payload shape", async () => {
+  const app = createApp({ repo: new MemoryRepository() });
+  const before = ((await (await app.request(`/api/events/${EVENT_ID}/comms/log`, { headers: org })).json()) as any).data.length;
+  const speakerIds = ["spk-ada", "spk-sam"];
+
+  const send = await app.request(`/api/events/${EVENT_ID}/comms/send`, {
+    method: "POST",
+    headers: org,
+    body: JSON.stringify({
+      templateKey: "task_reminder",
+      speakerIds,
+      subject: "Bulk send check {{first_name}}",
+      body: "Hello {{first_name}}, please finish onboarding.",
+    }),
+  });
+  assert.equal(send.status, 201);
+  const body = (await send.json()) as any;
+
+  // Exactly the shape the Comms page renders in its persistent success Notice.
+  assert.ok(Array.isArray(body.data), "data is a per-recipient array");
+  assert.equal(body.data.length, speakerIds.length);
+  assert.equal(body.meta.count, speakerIds.length);
+  for (const row of body.data) {
+    assert.ok(row.id, "each row has the communication id the log highlights");
+    assert.ok(speakerIds.includes(row.speakerId));
+    assert.ok(row.name, "recipient name for the Notice");
+    assert.ok(row.email, "recipient email for the Notice");
+    assert.ok(row.status, "per-recipient delivery status");
+    assert.ok(row.subject && row.createdAt);
+  }
+  assert.match(body.data[0].subject, /Ada/, "merge fields resolve per recipient");
+
+  // N entries were appended to the canonical log, and they are the ones just returned.
+  const after = ((await (await app.request(`/api/events/${EVENT_ID}/comms/log`, { headers: org })).json()) as any).data;
+  assert.equal(after.length, before + speakerIds.length, "log grew by one entry per recipient");
+  for (const row of body.data) {
+    const logged = after.find((entry: any) => entry.id === row.id);
+    assert.ok(logged, `sent row ${row.id} is in the log the page refreshes`);
+    assert.equal(logged.status, row.status);
+  }
+  // Communications are unshifted, so the newest sends are already at the FRONT of the
+  // log payload and therefore at the top of the page's list without any client sorting.
+  const newestIds = after.slice(0, speakerIds.length).map((entry: any) => entry.id);
+  for (const row of body.data) {
+    assert.ok(newestIds.includes(row.id), "the just-sent rows are the newest log entries");
+  }
+});
+
+test("comms page renders busy, persistent success and error states for every send action", async () => {
+  const page = await readFile(new URL("../src/web/pages/SpeakersCommsPages.tsx", import.meta.url), "utf8");
+  // One shared pipeline: busy → awaited call → refreshed log → persistent Notice.
+  assert.match(page, /const runSend = async \(kind: string, label: string, call: \(\) => Promise<any>\)/);
+  assert.match(page, /await load\(\);/, "the log is refreshed in place after a send");
+  assert.match(page, /setSendResult\(\{ kind, count: 0, at: new Date\(\)\.toLocaleTimeString\(\), rows: \[\], error: message \}\)/, "errors render");
+  assert.match(page, /data-testid="send-result"/);
+  assert.match(page, /Sent to \$\{sendResult\.count\} recipient/);
+  // Every send-ish button goes through it, with a busy label.
+  for (const id of ["send-to-selected", "run-task-reminders", "send-decisions"]) {
+    assert.ok(page.includes(`data-testid="${id}"`), `${id} wired`);
+  }
+  assert.equal((page.match(/Sending…/g) || []).length, 3, "all three actions show a busy state");
+  assert.equal((page.match(/void runSend\(/g) || []).length, 3);
+  // The API is already newest-first; the page must NOT re-sort it, and it highlights
+  // the rows that were just sent so the change is visible without scrolling.
+  assert.ok(!/\[\.\.\.log\]\.reverse\(\)/.test(page), "no client-side reversal of an already newest-first log");
+  assert.match(page, /Just sent/);
+  assert.match(page, /sentIds\.includes\(c\.id\)/);
+});

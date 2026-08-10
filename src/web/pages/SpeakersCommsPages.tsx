@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, subscribeData } from "../lib/api";
-import { formatStatus, humanizeMissing, taskTypeLabel } from "../lib/utils";
+import { cn, formatStatus, humanizeMissing, taskTypeLabel } from "../lib/utils";
 import {
   Badge,
   Button,
@@ -9,6 +9,7 @@ import {
   EmptyState,
   Field,
   Input,
+  LoadState,
   Notice,
   PageHeader,
   Spinner,
@@ -16,6 +17,56 @@ import {
   Textarea,
   toast,
 } from "../components/ui";
+import { useAsyncData } from "../lib/useAsyncData";
+
+/** One-click Assign-task templates (label, task type and prefilled description). */
+export const TASK_TEMPLATE_DUE_DAYS = 14;
+export const TASK_TEMPLATES = [
+  { title: "Confirm participation", type: "confirm", description: "Confirm that you will participate in the event." },
+  { title: "Sign speaker release form", type: "form", description: "Complete the speaker release form." },
+  { title: "Complete bio and profile", type: "profile", description: "Review and complete your speaker bio and profile." },
+] as const;
+
+/** Deterministic relative due date (YYYY-MM-DD), matching the date input convention. */
+export const taskTemplateDueDate = (from: Date = new Date()) =>
+  new Date(from.getTime() + TASK_TEMPLATE_DUE_DAYS * 86400000).toISOString().slice(0, 10);
+
+const normalizedName = (value: string) => String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
+
+/** Mirrors speakerMgmt.speakerRecordScore so the UI proposes the same primary as the API. */
+const RICH_FIELDS = ["bio", "title", "company", "linkedin", "website", "travelPreference", "dietary", "headshotUrl"] as const;
+export const rosterRecordScore = (row: any, index: number) => ({
+  richness:
+    RICH_FIELDS.filter((key) => String(row?.[key] || "").trim()).length +
+    (row?.tags?.length ? 1 : 0) +
+    (Object.keys(row?.customFields || {}).length ? 1 : 0) +
+    (row?.sessions?.length || 0) * 2 +
+    (row?.tasks?.length || 0) +
+    (row?.files?.length || 0) +
+    (row?.submission && !/\(manual\)$/.test(String(row.submission.title || "")) ? 2 : 0),
+  createdAt: Date.parse(row?.submission?.createdAt || "") || Number.MAX_SAFE_INTEGER,
+  index,
+  row,
+});
+
+/**
+ * Same normalized name + different email stays a SUGGESTION until an organizer merges.
+ * The richer/older record is proposed as primary (older breaks ties), matching the API.
+ */
+const duplicateSuggestions = (rows: any[]) => {
+  const groups = new Map<string, any[]>();
+  rows.forEach((row, index) =>
+    groups.set(normalizedName(row.name), [...(groups.get(normalizedName(row.name)) || []), rosterRecordScore(row, index)]),
+  );
+  return [...groups.values()]
+    .filter((group) => group.length > 1)
+    .flatMap((group) => {
+      const ranked = [...group].sort(
+        (a, b) => b.richness - a.richness || a.createdAt - b.createdAt || a.index - b.index,
+      );
+      return ranked.slice(1).map((entry) => ({ primary: ranked[0]!.row, duplicate: entry.row }));
+    });
+};
 
 export function SpeakersPage() {
   const [rows, setRows] = useState<any[]>([]);
@@ -32,6 +83,7 @@ export function SpeakersPage() {
   const [form, setForm] = useState({ name: "", email: "", title: "", company: "", bio: "", travelPreference: "" });
   const [csv, setCsv] = useState("name,email,title,company,bio\nDana Kowalski,dana.kowalski@example.test,Staff Engineer,Northwind,Systems thinker");
   const [importDupes,setImportDupes]=useState<any[]>([]);
+  const [importSummary,setImportSummary]=useState<{created:number;updated:number;duplicates:number}|null>(null);
   const [taskForm, setTaskForm] = useState({
     title: "Confirm travel plans",
     description: "Reply with arrival city and hotel needs.",
@@ -44,35 +96,75 @@ export function SpeakersPage() {
   const [taskBusy, setTaskBusy] = useState(false);
   const [inviteSuccess, setInviteSuccess] = useState<Record<string, string>>({});
 
-  const load = () =>
-    Promise.all([
-      api.speakersQuery({
-        q: q || undefined,
-        status: status || undefined,
-        readiness: readiness || undefined,
-      }),
-      api.speakerProgress(),
-    ])
-      .then(([s, p]) => {
-        setRows(s.data);
-        setProgress(p.data);
-        setLoaded(true);
-      })
-      .catch((e) => {
-        setErr(e.message);
-        setLoaded(true);
-      });
+  // Bounded loader: a hung request must surface Retry instead of an endless spinner.
+  const roster = useAsyncData(
+    async () => {
+      const [s, p] = await Promise.all([
+        api.speakersQuery({
+          q: q || undefined,
+          status: status || undefined,
+          readiness: readiness || undefined,
+        }),
+        api.speakerProgress(),
+      ]);
+      const suggestions = await api.speakerMergeSuggestions().catch(() => ({ data: [] as any[] }));
+      return { rows: s.data, progress: p.data, suggestions: suggestions.data || [] };
+    },
+    [q, status, readiness],
+  );
+  const load = () => roster.reload();
 
   useEffect(() => {
-    load();
-    return subscribeData(load);
-  }, [q, status, readiness]);
+    if (!roster.data) return;
+    setRows(roster.data.rows);
+    setProgress(roster.data.progress);
+    setErr("");
+    setLoaded(true);
+  }, [roster.data]);
+
+  // Keep live refresh on mutations without re-flashing the loading state.
+  useEffect(() => subscribeData(() => roster.reload()), [roster.reload]);
 
   const toggle = (id: string) =>
     setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
 
-  if (!loaded) return <Spinner />;
-  const duplicatePairs = rows.flatMap((row, index) => rows.slice(index + 1).filter(other => other.name.trim().toLowerCase() === row.name.trim().toLowerCase()).map(other => ({ primary: row, duplicate: other })));
+  // Only the FIRST load blocks the page; refetches keep the last good roster on screen.
+  if (!loaded)
+    return (
+      <div>
+        <PageHeader title="Speakers" description="Roster, onboarding readiness, and bulk actions." />
+        <LoadState
+          loading={roster.loading}
+          timedOut={roster.timedOut}
+          error={roster.error}
+          onRetry={roster.reload}
+          label="the speaker roster"
+        />
+      </div>
+    );
+  // Authoritative pairs from the API (richer/older primary); the local heuristic is the
+  // offline fallback if that call failed.
+  const serverPairs = (roster.data?.suggestions || []).map((pair: any) => ({
+    primary: rows.find((row) => row.speakerId === pair.primary.speakerId) || pair.primary,
+    duplicate: rows.find((row) => row.speakerId === pair.duplicate.speakerId) || pair.duplicate,
+  }));
+  const duplicatePairs = serverPairs.length ? serverPairs : duplicateSuggestions(rows);
+  const mergeAll = async (pairs: any[]) => {
+    const unique = pairs.filter((pair, index) => pairs.findIndex((candidate) => candidate.duplicate.speakerId === pair.duplicate.speakerId) === index);
+    try {
+      const result = await api.mergeSuggestedSpeakers(
+        unique.map((pair) => ({ primaryId: pair.primary.speakerId, secondaryId: pair.duplicate.speakerId })),
+      );
+      const skipped = result.data.skipped?.length || 0;
+      toast(
+        `${result.data.merged} suggested duplicate${result.data.merged === 1 ? "" : "s"} merged${skipped ? ` · ${skipped} skipped` : ""}`,
+      );
+      setImportDupes(result.data.remaining || []);
+      await load();
+    } catch (e: any) {
+      toast(e?.message || "Merge failed", "danger");
+    }
+  };
 
   return (
     <div>
@@ -100,7 +192,7 @@ export function SpeakersPage() {
           </div>
         }
       />
-      {duplicatePairs.length ? <Card className="mb-4 border-line p-4"><h2 className="text-sm font-bold uppercase tracking-wide text-mid">Possible duplicate speakers</h2><p className="mt-1 text-xs text-mid">Same normalized name with different records. Confirm the emails, then merge into the primary record.</p><div className="mt-3 space-y-2">{duplicatePairs.map(pair=><div key={`${pair.primary.speakerId}-${pair.duplicate.speakerId}`} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line p-3 text-sm"><div><b>{pair.primary.name}</b><div className="text-xs text-mid">Keep {pair.primary.email} · merge {pair.duplicate.email}</div></div><Button size="sm" onClick={async()=>{await api.mergeSpeakers(pair.primary.speakerId,pair.duplicate.speakerId);toast("Speaker records merged");load();}}>Merge duplicate</Button></div>)}</div></Card>:null}
+      {duplicatePairs.length ? <Card className="mb-4 border-line p-4"><div className="flex flex-wrap items-center justify-between gap-2"><div><h2 className="text-sm font-bold uppercase tracking-wide text-mid">{duplicatePairs.length} possible duplicate{duplicatePairs.length === 1 ? "" : "s"} — Review &amp; merge</h2><p className="mt-1 text-xs text-mid">Name matches with different emails. They stay separate until you merge; the richer, older record is kept and enriched with the duplicate\u2019s missing details.</p></div><Button size="sm" onClick={()=>void mergeAll(duplicatePairs)}>Merge all suggested duplicates</Button></div><div className="mt-3 space-y-2">{duplicatePairs.map(pair=><div key={`${pair.primary.speakerId}-${pair.duplicate.speakerId}`} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line p-3 text-sm"><div><b>{pair.primary.name}</b><div className="text-xs text-mid">Keep {pair.primary.email} · merge {pair.duplicate.email}</div></div><Button size="sm" onClick={async()=>{await api.mergeSpeakers(pair.primary.speakerId,pair.duplicate.speakerId);toast("Speaker records merged");load();}}>Merge duplicate</Button></div>)}</div></Card>:null}
       {err ? <Notice tone="danger">{err}</Notice> : null}
 
       {progress ? (
@@ -320,7 +412,9 @@ export function SpeakersPage() {
             onClick={async () => {
               try {
                 const r = await api.importSpeakers(csv);
-                toast(`Import: ${r.data.created} created, ${r.data.updated} updated, ${r.data.skipped} skipped`);
+                const duplicates = r.data.nearDuplicates?.length || 0;
+                setImportSummary({created:r.data.created,updated:r.data.updated,duplicates});
+                toast(`${r.data.created} created · ${r.data.updated} updated (existing email) · ${duplicates} possible duplicates (name match)`);
                 setImportDupes(r.data.nearDuplicates || []);
                 if(!r.data.nearDuplicates?.length)setShowImport(false);
                 load();
@@ -331,7 +425,8 @@ export function SpeakersPage() {
           >
             Import
           </Button>
-          {importDupes.length ? <div className="mt-4 rounded-lg border border-line bg-soft p-3"><b className="text-sm">Possible duplicate speakers</b><p className="text-xs text-mid">Same name, different email. Review and merge the duplicate into the primary record.</p>{importDupes.map((pair:any)=><div key={pair.duplicate.speakerId} className="mt-2 rounded border border-line bg-white p-2 text-sm"><div>{pair.primary.name}: {pair.primary.email} / {pair.duplicate.email}</div><Button size="sm" className="mt-2" onClick={async()=>{await api.mergeSpeakers(pair.primary.speakerId,pair.duplicate.speakerId);toast("Speaker records merged");setImportDupes(x=>x.filter((d:any)=>d!==pair));load();}}>Merge duplicate</Button></div>)}</div>:null}
+          {importSummary ? <p className="mt-3 text-sm font-semibold" role="status">{importSummary.created} created · {importSummary.updated} updated (existing email) · {importSummary.duplicates} possible duplicates (name match)</p> : null}
+          {importDupes.length ? <div className="mt-4 rounded-lg border border-line bg-soft p-3"><div className="flex flex-wrap items-center justify-between gap-2"><div><b className="text-sm">Possible duplicate speakers</b><p className="text-xs text-mid">Same name, different email. Review before combining records.</p></div><Button size="sm" onClick={()=>void mergeAll(importDupes)}>Merge all suggested duplicates</Button></div>{importDupes.map((pair:any)=><div key={pair.duplicate.speakerId} className="mt-2 rounded border border-line bg-white p-2 text-sm"><div>{pair.primary.name}: {pair.primary.email} / {pair.duplicate.email}</div><Button size="sm" className="mt-2" onClick={async()=>{await api.mergeSpeakers(pair.primary.speakerId,pair.duplicate.speakerId);toast("Speaker records merged");setImportDupes(x=>x.filter((d:any)=>d!==pair));load();}}>Merge duplicate</Button></div>)}</div>:null}
         </Modal>
       ) : null}
 
@@ -343,6 +438,26 @@ export function SpeakersPage() {
             setTaskResult(null);
           }}
         >
+          <div className="mb-4">
+            <b className="text-xs uppercase tracking-wide text-mid">Quick add</b>
+            <p className="mt-1 text-xs text-mid">Prefills title, type and a due date {TASK_TEMPLATE_DUE_DAYS} days out — edit anything before assigning.</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {TASK_TEMPLATES.map((template) => (
+                <Button
+                  key={template.title}
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  aria-label={`Use template ${template.title}`}
+                  data-testid={`task-template-${template.type}`}
+                  // Functional update: never capture a stale taskForm from render.
+                  onClick={() => setTaskForm((prev) => ({ ...prev, ...template, dueAt: taskTemplateDueDate() }))}
+                >
+                  {template.title}
+                </Button>
+              ))}
+            </div>
+          </div>
           <Field label="Title">
             <Input value={taskForm.title} onChange={(e) => setTaskForm({ ...taskForm, title: e.target.value })} />
           </Field>
@@ -525,10 +640,12 @@ export function SpeakerDetailPage() {
   const [inviteMsg, setInviteMsg] = useState("");
   const [headshotBusy, setHeadshotBusy] = useState(false);
 
-  const load = () =>
-    api
-      .speakerDetail(id!)
-      .then((r) => {
+  const detail = useAsyncData(async () => (await api.speakerDetail(id!)).data, [id]);
+  const load = () => detail.reload();
+
+  useEffect(() => {
+    const r = { data: detail.data };
+    if (r.data) {
         setRow(r.data);
         setEdit({
           name: r.data.name,
@@ -542,15 +659,25 @@ export function SpeakerDetailPage() {
           dietary: r.data.dietary || "",
           workflowStatus: r.data.workflowStatus || "accepted",
         });
-      })
-      .catch((e) => setErr(e.message));
+      setErr("");
+    }
+  }, [detail.data]);
 
-  useEffect(() => {
-    load();
-    return subscribeData(load);
-  }, [id]);
+  useEffect(() => subscribeData(() => detail.reload()), [detail.reload]);
 
-  if (!row && !err) return <Spinner />;
+  if (!row)
+    return (
+      <div>
+        <PageHeader title="Speaker" description="Organizer speaker record." />
+        <LoadState
+          loading={detail.loading}
+          timedOut={detail.timedOut}
+          error={detail.error || err}
+          onRetry={detail.reload}
+          label="this speaker"
+        />
+      </div>
+    );
   if (err) return <Notice tone="danger">{err}</Notice>;
   if (!row) return <Notice tone="danger">Speaker not found</Notice>;
 
@@ -807,32 +934,81 @@ export function CommsPage() {
   const [err, setErr] = useState("");
   const [decision,setDecision]=useState({accepted:true,rejected:true,subject:"Decision for {{talk_title}}",body:"Hi {{name}},\n\nYour proposal {{talk_title}} was {{decision}}."});
   const [decisionPreview,setDecisionPreview]=useState<any>(null);
+  /** Persistent outcome of the last send (toasts vanish before evidence is captured). */
+  const [sendResult, setSendResult] = useState<
+    { kind: string; count: number; at: string; rows: { name: string; email?: string; status: string }[]; error?: string } | null
+  >(null);
+  const [sendBusy, setSendBusy] = useState("");
+  const [sentIds, setSentIds] = useState<string[]>([]);
 
-  const load = async () => {
-    const [t, l, s] = await Promise.all([api.templates(), api.commsLog(), api.speakers()]);
-    setTemplates(t.data);
-    setLog(l.data);
-    setSpeakers(s.data);
-    setActive((prev: any) => {
-      if (prev) {
-        const fresh = t.data.find((x: any) => x.id === prev.id);
-        return fresh || prev;
-      }
-      return t.data[0];
-    });
-    setSelected((ids) => (ids.length ? ids : s.data[0]?.speakerId ? [s.data[0].speakerId] : []));
+  /** One send pipeline: busy → await API → refresh log → persistent Notice (or error). */
+  const runSend = async (kind: string, label: string, call: () => Promise<any>) => {
+    setSendBusy(kind);
+    setSendResult(null);
+    try {
+      const response = await call();
+      const rows: any[] = Array.isArray(response?.data) ? response.data : [];
+      const count = rows.length || response?.meta?.count || response?.data?.count || 0;
+      setSentIds(rows.map((row) => row.id).filter(Boolean));
+      setSendResult({
+        kind,
+        count,
+        at: new Date().toLocaleTimeString(),
+        rows: rows.map((row) => ({ name: row.name || row.speakerId, email: row.email, status: row.status || "mock_sent" })),
+      });
+      toast(`${label}: sent to ${count} recipient${count === 1 ? "" : "s"}`);
+      await load();
+    } catch (e: any) {
+      const message = e?.message || "Send failed";
+      setSendResult({ kind, count: 0, at: new Date().toLocaleTimeString(), rows: [], error: message });
+      toast(message, "danger");
+    } finally {
+      setSendBusy("");
+    }
   };
 
-  useEffect(() => {
-    load().catch((e) => setErr(e.message));
-    return subscribeData(() => {
-      load().catch(() => {});
-    });
+  // Bounded loader; previously an empty template list left this page on a spinner.
+  const comms = useAsyncData(async () => {
+    const [t, l, s] = await Promise.all([api.templates(), api.commsLog(), api.speakers()]);
+    return { templates: t.data, log: l.data, speakers: s.data };
   }, []);
+  const load = async () => comms.reload();
+
+  useEffect(() => {
+    const data = comms.data;
+    if (!data) return;
+    setTemplates(data.templates);
+    setLog(data.log);
+    setSpeakers(data.speakers);
+    setErr("");
+    setActive((prev: any) => {
+      if (prev) {
+        const fresh = data.templates.find((x: any) => x.id === prev.id);
+        return fresh || prev;
+      }
+      return data.templates[0];
+    });
+    setSelected((ids) => (ids.length ? ids : data.speakers[0]?.speakerId ? [data.speakers[0].speakerId] : []));
+  }, [comms.data]);
+
+  useEffect(() => subscribeData(() => comms.reload()), [comms.reload]);
 
   const allSelected = useMemo(() => speakers.length > 0 && selected.length === speakers.length, [speakers, selected]);
 
-  if (!active && !err) return <Spinner />;
+  // Valid-but-empty data must render the page, not a spinner.
+  if (!comms.data)
+    return (
+      <div>
+        <PageHeader title="Communications" description="Templates, previews, and the delivery log." />
+        <LoadState
+          loading={comms.loading}
+          timedOut={comms.timedOut}
+          error={comms.error || err}
+          onRetry={comms.reload}
+          label="communications"
+        />
+      </div>
+    );
 
   return (
     <div>
@@ -842,18 +1018,26 @@ export function CommsPage() {
         actions={
           <Button
             variant="secondary"
-            onClick={async () => {
-              const r = await api.runTaskReminders();
-              toast(`Automated reminders: ${r.data.count} speaker(s), ${r.data.planned} task(s)`);
-              load();
-            }}
+            disabled={Boolean(sendBusy)}
+            data-testid="run-task-reminders"
+            onClick={() =>
+              void runSend("reminders", "Due-task reminders", async () => {
+                const r = await api.runTaskReminders();
+                // Normalise to the {data:[…]} shape the shared pipeline reports on.
+                const rows = (Array.isArray(r.data?.sent) ? r.data.sent : []).map((row: any) => ({
+                  ...row,
+                  name: speakers.find((s: any) => s.speakerId === row.speakerId)?.name || row.speakerId,
+                }));
+                return { data: rows, meta: { count: rows.length || r.data?.count || 0 } };
+              })
+            }
           >
-            Run due-task reminders
+            {sendBusy === "reminders" ? "Sending…" : "Run due-task reminders"}
           </Button>
         }
       />
       {err ? <Notice tone="danger">{err}</Notice> : null}
-      <Card className="mb-4 p-4"><h2 className="text-lg font-bold">Decision emails</h2><p className="text-sm text-mid">Notify accepted/rejected cohorts. Merge fields: {"{{name}}"}, {"{{talk_title}}"}, {"{{decision}}"}.</p><div className="mt-3 flex gap-4"><label><input type="checkbox" checked={decision.accepted} onChange={e=>setDecision({...decision,accepted:e.target.checked})}/> Accepted</label><label><input type="checkbox" checked={decision.rejected} onChange={e=>setDecision({...decision,rejected:e.target.checked})}/> Rejected</label></div><div className="mt-3 grid gap-3"><Field label="Decision subject"><Input value={decision.subject} onChange={e=>setDecision({...decision,subject:e.target.value})}/></Field><Field label="Decision body"><Textarea rows={5} value={decision.body} onChange={e=>setDecision({...decision,body:e.target.value})}/></Field></div><div className="flex gap-2"><Button variant="secondary" onClick={async()=>{const sub=(await api.submissions()).data.find((x:any)=>(decision.accepted&&x.status==="accepted")||(decision.rejected&&x.status==="rejected"));if(sub)setDecisionPreview((await api.previewDecision({submissionId:sub.id,subject:decision.subject,body:decision.body})).data)}}>Preview decision email</Button><Button onClick={async()=>{const cohorts=[decision.accepted&&"accepted",decision.rejected&&"rejected"].filter(Boolean);const r=await api.sendDecisions({cohorts,subject:decision.subject,body:decision.body});toast(`Decision email sent to ${r.data.length} recipient(s)`);load()}}>Send decision notifications</Button></div>{decisionPreview?<Notice tone="info"><b>{decisionPreview.subject}</b><pre className="mt-2 whitespace-pre-wrap text-xs">{decisionPreview.body}</pre></Notice>:null}</Card>
+      <Card className="mb-4 p-4"><h2 className="text-lg font-bold">Decision emails</h2><p className="text-sm text-mid">Notify accepted/rejected cohorts. Merge fields: {"{{name}}"}, {"{{talk_title}}"}, {"{{decision}}"}.</p><div className="mt-3 flex gap-4"><label><input type="checkbox" checked={decision.accepted} onChange={e=>setDecision({...decision,accepted:e.target.checked})}/> Accepted</label><label><input type="checkbox" checked={decision.rejected} onChange={e=>setDecision({...decision,rejected:e.target.checked})}/> Rejected</label></div><div className="mt-3 grid gap-3"><Field label="Decision subject"><Input value={decision.subject} onChange={e=>setDecision({...decision,subject:e.target.value})}/></Field><Field label="Decision body"><Textarea rows={5} value={decision.body} onChange={e=>setDecision({...decision,body:e.target.value})}/></Field></div><div className="flex gap-2"><Button variant="secondary" onClick={async()=>{const sub=(await api.submissions()).data.find((x:any)=>(decision.accepted&&x.status==="accepted")||(decision.rejected&&x.status==="rejected"));if(sub)setDecisionPreview((await api.previewDecision({submissionId:sub.id,subject:decision.subject,body:decision.body})).data)}}>Preview decision email</Button><Button disabled={Boolean(sendBusy)} data-testid="send-decisions" onClick={()=>void runSend("decisions","Decision emails",()=>api.sendDecisions({cohorts:[decision.accepted&&"accepted",decision.rejected&&"rejected"].filter(Boolean),subject:decision.subject,body:decision.body}))}>{sendBusy==="decisions"?"Sending…":"Send decision notifications"}</Button></div>{decisionPreview?<Notice tone="info"><b>{decisionPreview.subject}</b><pre className="mt-2 whitespace-pre-wrap text-xs">{decisionPreview.body}</pre></Notice>:null}</Card>
 
       <div className="grid gap-4 lg:grid-cols-[200px_1fr_1fr]">
         <Card className="p-3">
@@ -941,23 +1125,46 @@ export function CommsPage() {
                 </Button>
                 <Button
                   variant="secondary"
-                  disabled={!selected.length}
-                  onClick={async () => {
-                    const r = await api.sendComms({
-                      templateKey: active.key,
-                      speakerIds: selected,
-                      subject: active.subject,
-                      body: active.body,
-                      includeCalendarLinks: active.includeCalendarLinks,
-                    });
-                    const n = Array.isArray(r.data) ? r.data.length : r.data?.count || selected.length;
-                    toast(`Logged ${n} send(s)`);
-                    load();
-                  }}
+                  disabled={!selected.length || Boolean(sendBusy)}
+                  data-testid="send-to-selected"
+                  onClick={() =>
+                    void runSend("bulk", "Bulk send", () =>
+                      api.sendComms({
+                        templateKey: active.key,
+                        speakerIds: selected,
+                        subject: active.subject,
+                        body: active.body,
+                        includeCalendarLinks: active.includeCalendarLinks,
+                      }),
+                    )
+                  }
                 >
-                  Send to selected
+                  {sendBusy === "bulk" ? "Sending…" : `Send to selected (${selected.length})`}
                 </Button>
               </div>
+
+              {sendResult ? (
+                <Notice tone={sendResult.error ? "danger" : "ok"} onClose={() => setSendResult(null)}>
+                  <span className="block font-semibold" data-testid="send-result">
+                    {sendResult.error
+                      ? sendResult.error
+                      : `Sent to ${sendResult.count} recipient${sendResult.count === 1 ? "" : "s"} · ${sendResult.at}`}
+                  </span>
+                  {sendResult.rows.length ? (
+                    <ul className="mt-1 space-y-0.5 text-xs">
+                      {sendResult.rows.map((row, i) => (
+                        <li key={`${row.email || row.name}-${i}`}>
+                          {row.name}
+                          {row.email ? ` · ${row.email}` : ""} · {formatStatus(row.status)}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  {!sendResult.error ? (
+                    <span className="mt-1 block text-xs">New entries appear at the top of the send log.</span>
+                  ) : null}
+                </Notice>
+              ) : null}
 
               {preview ? (
                 <div className="mt-4 rounded-[18px] border border-line bg-soft p-3 text-sm">
@@ -973,11 +1180,23 @@ export function CommsPage() {
         <Card className="p-4">
           <h3 className="text-xs font-bold uppercase tracking-wide text-mid">Per-recipient send log</h3>
           <ul className="mt-3 max-h-[520px] space-y-2 overflow-auto">
+            {/* The API already returns newest-first (communications are unshifted), so a
+                new send lands at the TOP of this scrollable list — highlighted below. */}
             {log.map((c) => (
-              <li key={c.id} className="rounded-[18px] border border-line p-3 text-sm">
+              <li
+                key={c.id}
+                data-testid={`comm-log-${c.id}`}
+                className={cn(
+                  "rounded-[18px] border border-line p-3 text-sm",
+                  sentIds.includes(c.id) && "ring-2 ring-ink ring-offset-2 ring-offset-canvas",
+                )}
+              >
                 <div className="flex items-center justify-between gap-2">
                   <b>{c.subject}</b>
-                  <StatusBadge status={c.status || "mock_sent"} />
+                  <span className="flex items-center gap-1">
+                    {sentIds.includes(c.id) ? <Badge tone="ok">Just sent</Badge> : null}
+                    <StatusBadge status={c.status || "mock_sent"} />
+                  </span>
                 </div>
                 <p className="mt-1 text-xs text-mid">
                   {c.recipientName || c.speakerId} · {c.recipientEmail || "no email"} · {formatStatus(c.kind)} · {c.createdAt}

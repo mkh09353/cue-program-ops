@@ -69,7 +69,19 @@ export function asTaskExt(t: SpeakerTask): SpeakerTaskExt {
 }
 
 export function listRoster(life: LifecycleStore = store, query: SpeakerRosterQuery = {}) {
-  const accepted = life.submissions.filter((s) => s.status === "accepted");
+  // One roster row per speaker: after a merge the primary owns both accepted
+  // submissions, and the organizer must see a single combined record. A real proposal
+  // wins over the "<name> (manual)" placeholder an import creates.
+  const acceptedAll = life.submissions.filter((s) => s.status === "accepted");
+  const bySpeaker = new Map<string, (typeof acceptedAll)[number]>();
+  for (const s of acceptedAll) {
+    const current = bySpeaker.get(s.speakerId);
+    if (!current) { bySpeaker.set(s.speakerId, s); continue; }
+    const currentIsPlaceholder = /\(manual\)$/.test(current.title || "");
+    const candidateIsPlaceholder = /\(manual\)$/.test(s.title || "");
+    if (currentIsPlaceholder && !candidateIsPlaceholder) bySpeaker.set(s.speakerId, s);
+  }
+  const accepted = acceptedAll.filter((s) => bySpeaker.get(s.speakerId) === s);
   const q = (query.q || "").trim().toLowerCase();
   const status = (query.status || "").trim().toLowerCase();
   const tag = (query.tag || "").trim().toLowerCase();
@@ -366,6 +378,91 @@ export async function syncProfileToSchedule(speakerId: string, life: LifecycleSt
   }
 }
 
+/** Fields that make a speaker record genuinely "richer" for an organizer. */
+const RICH_PROFILE_FIELDS = [
+  "bio",
+  "title",
+  "company",
+  "linkedin",
+  "x",
+  "website",
+  "travelPreference",
+  "dietary",
+  "headshotUrl",
+] as const;
+
+/**
+ * Deterministic "which record do we keep" score. Richer meaningful data wins; the
+ * older record breaks ties, so the primary never depends on array order.
+ */
+export function speakerRecordScore(speakerId: string, life: LifecycleStore = store) {
+  const profile = life.profiles.find((p) => p.speakerId === speakerId) as SpeakerProfileExt | undefined;
+  const index = life.profiles.findIndex((p) => p.speakerId === speakerId);
+  const filled = profile
+    ? RICH_PROFILE_FIELDS.filter((key) => String((profile as any)[key] || "").trim()).length
+    : 0;
+  const tags = profile?.tags?.length ? 1 : 0;
+  const customFields = Object.keys(profile?.customFields || {}).length ? 1 : 0;
+  const sessions = life.sessions.filter((x) => x.speakerId === speakerId).length;
+  const tasks = life.tasks.filter((x) => x.speakerId === speakerId).length;
+  const files = life.files.filter((x) => x.speakerId === speakerId).length;
+  const deliverables = life.deliverableTasks.filter((x) => x.speakerId === speakerId).length;
+  const contentFiles = life.contentFiles.filter((x) => x.speakerId === speakerId).length;
+  const submissions = life.submissions.filter((x) => x.speakerId === speakerId);
+  // A real proposal outranks the placeholder "<name> (manual)" record an import creates.
+  const realSubmission = submissions.some((x) => !/\(manual\)$/.test(x.title)) ? 2 : 0;
+  const createdAt = submissions
+    .map((x) => Date.parse(x.createdAt || ""))
+    .filter((x) => Number.isFinite(x))
+    .sort((a, b) => a - b)[0];
+  return {
+    speakerId,
+    richness: filled + tags + customFields + sessions * 2 + tasks + files + deliverables + contentFiles + realSubmission,
+    // Older wins ties: earliest submission, then earliest position in the roster.
+    createdAt: Number.isFinite(createdAt) ? (createdAt as number) : Number.MAX_SAFE_INTEGER,
+    index: index < 0 ? Number.MAX_SAFE_INTEGER : index,
+    profile,
+  };
+}
+
+/** Sort helper: primary first (richer, then older, then earliest index). */
+export function compareSpeakerPrimacy(a: ReturnType<typeof speakerRecordScore>, b: ReturnType<typeof speakerRecordScore>) {
+  return b.richness - a.richness || a.createdAt - b.createdAt || a.index - b.index || a.speakerId.localeCompare(b.speakerId);
+}
+
+export type DuplicatePair = {
+  primary: { speakerId: string; name: string; email: string };
+  duplicate: { speakerId: string; name: string; email: string };
+  reason: string;
+};
+
+/**
+ * Same normalized name + different email = a SUGGESTION, never an automatic merge.
+ * The richer/older record is proposed as primary so the fill-only merge enriches it.
+ */
+export function suggestDuplicatePairs(life: LifecycleStore = store): DuplicatePair[] {
+  const byName = new Map<string, string[]>();
+  for (const p of life.profiles) {
+    const key = p.name.trim().toLowerCase().replace(/\s+/g, " ");
+    byName.set(key, [...(byName.get(key) || []), p.speakerId]);
+  }
+  const view = (speakerId: string) => {
+    const p = life.profiles.find((x) => x.speakerId === speakerId)!;
+    return { speakerId, name: p.name, email: p.email };
+  };
+  return [...byName.values()]
+    .filter((ids) => ids.length > 1)
+    .flatMap((ids) => {
+      const ranked = ids.map((x) => speakerRecordScore(x, life)).sort(compareSpeakerPrimacy);
+      const primary = ranked[0]!.speakerId;
+      return ranked.slice(1).map((row) => ({
+        primary: view(primary),
+        duplicate: view(row.speakerId),
+        reason: "Same normalized name with a different email",
+      }));
+    });
+}
+
 export function importSpeakersCsv(
   csvText: string,
   opts: { sendInvite?: boolean } = {},
@@ -376,7 +473,7 @@ export function importSpeakersCsv(
     .split(/\r?\n/)
     .map((l) => l.trimEnd())
     .filter((l) => l.trim());
-  if (lines.length < 2) return { created: 0, updated: 0, skipped: 0, results: [] as any[] };
+  if (lines.length < 2) return { created: 0, updated: 0, skipped: 0, results: [] as any[], nearDuplicates: [] as DuplicatePair[] };
   const headers = splitCsv(lines[0]!).map((h) => h.trim().toLowerCase());
   let created = 0;
   let updated = 0;
@@ -425,9 +522,7 @@ export function importSpeakersCsv(
     else created++;
     results.push({ row: i + 1, ok: true, speakerId: made.speakerId, action: existed ? "updated" : "created" });
   }
-  const byName = new Map<string, { speakerId:string; name:string; email:string }[]>();
-  for (const p of life.profiles) { const key=p.name.trim().toLowerCase().replace(/\s+/g," "); const rows=byName.get(key)||[]; rows.push({speakerId:p.speakerId,name:p.name,email:p.email}); byName.set(key,rows); }
-  const nearDuplicates=[...byName.values()].filter(rows=>rows.length>1).flatMap(rows=>rows.slice(1).map(row=>({primary:rows[0],duplicate:row,reason:"Same normalized name with a different email"})));
+  const nearDuplicates = suggestDuplicatePairs(life);
   return { created, updated, skipped, results, nearDuplicates };
 }
 

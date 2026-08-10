@@ -31,7 +31,7 @@ import {
   type Role,
   type Submission,
 } from "./lifecycle.js";
-import { applyScheduleMove, publicSchedule, scheduleWarnings, validateSlot, type AgendaSlot } from "./schedule.js";
+import { applyScheduleMove, publicSchedule, recordPlacement, scheduleWarnings, validateSlot, type AgendaSlot } from "./schedule.js";
 import { canonicalScheduleMetrics, publicSpeakers } from "./projection.js";
 import { MemorySnapshotPersistence, type CompetitionSnapshot, type SnapshotPersistence } from "./persistence.js";
 import { MockMailer, type Mailer } from "./mailer.js";
@@ -39,7 +39,7 @@ import { createReviewRoutes } from "./reviewRoutes.js";
 import { createContentRoutes } from "./contentRoutes.js";
 import { createPublicSite } from "./publicSite.js";
 import { createCrmRoutes } from "./crmRoutes.js";
-import { applySessionEdit } from "./sessionContent.js";
+import { applySessionEdit, linkSessions } from "./sessionContent.js";
 import { deleteFieldDefinition, listFieldDefinitions, saveFieldDefinition } from "./crm.js";
 import { createSpeakerRoutes } from "./speakerRoutes.js";
 import { blindSubmission } from "./review.js";
@@ -561,14 +561,40 @@ export function createApp(deps: AppDeps = {}) {
     });
   });
 
-  app.get("/api/speaker/events/:eventId/home", (c) => {
+  app.get("/api/speaker/events/:eventId/home", async (c) => {
     const speakerId = speakerIdOf(c);
     if (!speakerId) return fail(c, "speaker persona required", 403);
     const profile = store.profiles.find((p) => p.speakerId === speakerId);
     const tasks = store.tasks.filter((t) => t.speakerId === speakerId);
     const subs = store.submissions.filter((s) => s.speakerId === speakerId);
     const files = store.files.filter((f) => f.speakerId === speakerId);
-    const sessions = store.sessions.filter((s) => s.speakerId === speakerId);
+    // Speakers must see the CANONICAL session title organizers edit (schedule session),
+    // not the "<name> (manual)" placeholder an organizer-created record starts with.
+    const scheduleRepo = repo as Repository & { getSchedule?: (id: string) => Promise<any> };
+    const sched = await scheduleRepo.getSchedule?.(EVENT_ID);
+    const { links } = linkSessions(store, sched);
+    const canonicalByDraft = new Map<string, any>();
+    for (const [canonicalId, draft] of links) {
+      if (draft) canonicalByDraft.set(draft.id, sched?.sessions.find((x: any) => x.id === canonicalId));
+    }
+    const isPlaceholder = (title: string) => /\(manual\)\s*$/.test(String(title || ""));
+    const sessions = store.sessions
+      .filter((s) => s.speakerId === speakerId)
+      .map((s) => {
+        const canonical = canonicalByDraft.get(s.id) || sched?.sessions.find((x: any) => x.id === s.id);
+        const canonicalId = canonical?.id || s.id;
+        const slot = sched?.slots.find((x: any) => x.sessionId === canonicalId) || s.slot;
+        const room = slot ? sched?.rooms.find((x: any) => x.id === slot.roomId) : undefined;
+        const title = canonical?.title && !isPlaceholder(canonical.title) ? canonical.title : s.title;
+        return {
+          ...s,
+          canonicalId,
+          title,
+          placeholderTitle: isPlaceholder(title),
+          slot,
+          roomName: room?.name,
+        };
+      });
     const comms = store.communications.filter((x) => x.speakerId === speakerId);
     const window = cfpWindow();
     return c.json({
@@ -845,6 +871,8 @@ export function createApp(deps: AppDeps = {}) {
     if (!s || !body?.slot || typeof body.version !== "number" || !body.slot.sessionId || !body.slot.roomId || !body.slot.startsAt || !body.slot.endsAt) return c.json({ error: "schedule move requires { slot: { sessionId, roomId, startsAt, endsAt }, version }" }, 400);
     const result=applyScheduleMove(s,body.slot,body.version,body.acknowledge);
     if(!result.ok)return c.json({error:result.error,version:result.version,conflicts:result.conflicts,warnings:result.warnings},result.status);
+    // Persist a placement receipt so a reload proves the work landed (Recent placements).
+    const placement=recordPlacement(s,body.slot,"manual");
     await r.putSchedule?.(c.req.param("eventId"), s);
     // Mirror into lifecycle session drafts when ids align
     const life = store.sessions.find((x) => x.id === body.slot.sessionId);
@@ -854,7 +882,7 @@ export function createApp(deps: AppDeps = {}) {
       life.slot = { startsAt: body.slot.startsAt, endsAt: body.slot.endsAt };
     }
     await persist();
-    return c.json({ slot: body.slot, version: s.version, warnings: result.warnings });
+    return c.json({ slot: body.slot, version: s.version, warnings: result.warnings, placement });
   });
 
   // JSON feeds (kept)
