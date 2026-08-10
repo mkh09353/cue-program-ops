@@ -864,63 +864,7 @@ export function createApp(deps: AppDeps = {}) {
   });
 
   // —— HTML embeds (judge-visible) ——
-  app.get("/public/events/:eventId/gallery", async (c) => {
-    const r = repo as Repository & { getSchedule?: (id: string) => Promise<any> };
-    const s = await r.getSchedule?.(c.req.param("eventId"));
-    const accepted = store.submissions.filter((x) => x.status === "accepted");
-    const speakers = s ? publicSpeakers(s) : accepted.map((x) => ({
-        id: x.speakerId,
-        name: x.name,
-        bio: store.profiles.find((p) => p.speakerId === x.speakerId)?.bio || x.abstract,
-        company: store.profiles.find((p) => p.speakerId === x.speakerId)?.company,
-      }));
-    const cards = speakers
-      .map(
-        (sp: any) => `<article class="card"><div class="avatar">${escapeHtml(initials(sp.name))}</div>
-        <h3>${escapeHtml(sp.name)}</h3>
-        <p>${escapeHtml(sp.company || "AI Engineer Summit")}</p>
-        <p>${escapeHtml((sp.bio || "").slice(0, 160))}</p></article>`,
-      )
-      .join("");
-    return c.html(htmlPage("Speaker gallery · AI Engineer Summit", `<div class="grid">${cards || "<p>No public speakers yet.</p>"}</div>`));
-  });
 
-  app.get("/public/events/:eventId/itinerary", async (c) => {
-    const r = repo as Repository & { getSchedule?: (id: string) => Promise<any> };
-    const s = await r.getSchedule?.(c.req.param("eventId"));
-    let rows = "";
-    if (s) {
-      const sessions = publicSchedule(s);
-      rows = sessions
-        .map((sess) => {
-          const start = new Date(sess.startsAt).toLocaleTimeString([], {
-            hour: "numeric",
-            minute: "2-digit",
-            timeZone: "UTC",
-          });
-          const end = new Date(sess.endsAt).toLocaleTimeString([], {
-            hour: "numeric",
-            minute: "2-digit",
-            timeZone: "UTC",
-          });
-          return `<div class="row"><div class="time">${start}–${end}</div><div>
-            <span class="pill">${escapeHtml((sess.tracks || []).join(" · ") || "General")}</span>
-            <h3 style="margin:0 0 4px;font-size:16px">${escapeHtml(sess.title)}</h3>
-            <p class="meta">${escapeHtml(sess.room)} · ${escapeHtml(
-              (sess.speakers || []).map((x: any) => x.name).join(", "),
-            )}</p>
-            <p>${escapeHtml((sess.abstract || "").slice(0, 180))}</p>
-          </div></div>`;
-        })
-        .join("");
-    }
-    return c.html(
-      htmlPage(
-        "Schedule itinerary · AI Engineer Summit",
-        `<section class="card">${rows || "<p>No published sessions yet.</p>"}</section>`,
-      ),
-    );
-  });
 
   // Friendly aliases used by Publish UI
   app.get("/embed/:eventId/gallery", (c) => c.redirect(`/public/events/${c.req.param("eventId")}/gallery`));
