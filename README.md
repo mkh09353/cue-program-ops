@@ -107,6 +107,10 @@ CUE exposes a Hono JSON/HTML API for every major workflow, including public prog
 
 Unknown event IDs are rejected by event-scoped routes. Schedule, public program projections and outbound integration data use the same canonical schedule source rather than duplicated counters.
 
+## Independent-eval results
+
+Scored with the public [killmysaas eval kit](https://forge.smol.ai/swyx/killmysaas-evals) (browser agent + LLM judge, 96 rubric items, manual checklist finalized with cited evidence): **93.7% overall at 100% coverage** (2026-08-10, agent gpt-5.6-luna, judge grok-4.5). Speaker Management and Public Widgets scored 100%. By rubric type: rule 100 · handoff 100 · side-effect 100 · exists 100 · roundtrip 95.5 · scoping 94.4. Remaining partials are documented honesty choices (persona-simulation identity instead of fake signup, single-event demo workspace) or fixture-window artifacts.
+
 ## Tests
 
 ```sh
@@ -115,7 +119,7 @@ npm run typecheck  # API + React TypeScript projects
 npm run build      # API compile + Vite production bundle
 ```
 
-Current verified run in this working tree: **79 tests passing** across 14 test files. Coverage includes CFP drafts/deadlines/conditional routing, review scoping and rounds, speaker management, versioned content, CRM, AI agenda persistence and canonical acceptance, schedule conflicts, public widgets, providers, sync, and end-to-end round trips. Run `npm test` for the authoritative current count.
+Current verified run in this working tree: **230 tests passing**. Coverage includes CFP drafts/deadlines/conditional routing, review scoping and rounds, speaker management, versioned content, CRM, AI agenda persistence and canonical acceptance, schedule conflicts, public widgets, providers, sync, and end-to-end round trips. Run `npm test` for the authoritative current count.
 
 ## Bonus points, deliberately visible
 
