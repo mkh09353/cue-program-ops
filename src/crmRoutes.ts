@@ -97,7 +97,8 @@ export function createCrmRoutes(deps: {
     const denied = requireOrg(c);
     if (denied) return denied;
     const b = await c.req.json();
-    const updated = updateContact(c.req.param("id"), b);
+    const persona = deps.persona(c);
+    const updated = updateContact(c.req.param("id"), b, { id: persona.id, name: persona.name });
     if (!updated.ok) return fail(c, updated.error, updated.error.includes("not found") ? 404 : 400);
     await deps.persist();
     return c.json({ data: updated.contact });

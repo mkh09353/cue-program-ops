@@ -351,8 +351,16 @@ export function sessionsForSpeaker(program: PublicProgram, speakerId: string) {
   return program.sessions.filter((s) => s.speakers.some((sp) => sp.id === speakerId));
 }
 
+/** Sessions per calendar day, so the agenda can advertise where content actually is. */
+export function agendaDayCounts(program: PublicProgram) {
+  return program.days.map((day) => ({ day, count: program.sessions.filter((s) => s.dayKey === day).length }));
+}
+
 export function agendaByDay(program: PublicProgram, dayKey?: string) {
-  const day = dayKey && program.days.includes(dayKey) ? dayKey : program.days[0];
+  // Default to the first day that HAS sessions: blindly showing day 1 made an edit on a
+  // later day look like the agenda had not updated at all.
+  const firstPopulated = program.days.find((d) => program.sessions.some((s) => s.dayKey === d));
+  const day = dayKey && program.days.includes(dayKey) ? dayKey : firstPopulated || program.days[0];
   const sessions = day ? program.sessions.filter((s) => s.dayKey === day) : [];
   const rooms = program.rooms.filter((r) => sessions.some((s) => s.roomId === r.id));
   const times = [...new Set(sessions.map((s) => s.startsAt))].sort();

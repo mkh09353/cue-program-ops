@@ -137,6 +137,22 @@ test("organizer-created speaker is registered in bootstrap and can open portal h
   assert.equal(home.status,200); assert.equal((await home.json()).data.profile.email,email);
 });
 
+test("manual confirmed workflow status wins across snapshot restore", async () => {
+  let snapshot: any;
+  const persistence = { save: async (value: any) => { snapshot = structuredClone(value); }, load: async () => snapshot };
+  const app = createApp({ repo: new MemoryRepository(), persistence });
+  const confirmed = await app.request(`/api/events/${EVENT_ID}/speakers/spk-ada/status`, {
+    method: "POST", headers: org, body: JSON.stringify({ status: "confirmed" }),
+  });
+  assert.equal(confirmed.status, 200);
+  assert.equal((await confirmed.json()).data.workflowStatus, "confirmed");
+  store.profiles.find((p) => p.speakerId === "spk-ada")!.workflowStatus = undefined;
+  const { restoreSnapshot } = await import("../src/app.js");
+  await restoreSnapshot({ repo: new MemoryRepository(), persistence });
+  const roster = await app.request(`/api/events/${EVENT_ID}/speakers`, { headers: org });
+  assert.equal((await roster.json()).data.find((row: any) => row.speakerId === "spk-ada").workflowStatus, "confirmed");
+});
+
 test("form-task fill round-trip and general task assignment", async () => {
   const app = createApp({ repo: new MemoryRepository() });
   const assign = await app.request(`/api/events/${EVENT_ID}/speakers/tasks`, {

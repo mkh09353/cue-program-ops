@@ -3,6 +3,7 @@ import type { Repository } from "./domain.js";
 import { isSafeAccent, store } from "./lifecycle.js";
 import {
   agendaByDay,
+  agendaDayCounts,
   buildIcs,
   buildPublicProgram,
   filterPublicSessions,
@@ -670,15 +671,16 @@ function renderAgenda(program: PublicProgram, base: string, dayKey?: string) {
   <p class="sub">Room × time grid for one day. Click a block for session details.</p>
   <div class="day-tabs" aria-label="Day navigation">
     <a class="btn secondary sm" href="${esc(base)}/agenda${prev ? `?day=${encodeURIComponent(prev)}` : ""}" ${prev ? "" : 'aria-disabled="true" style="opacity:.4;pointer-events:none"'}>← Prev day</a>
-    ${program.days
+    ${agendaDayCounts(program)
       .map(
-        (d) =>
-          `<a href="${esc(base)}/agenda?day=${encodeURIComponent(d)}" class="${d === day ? "active" : ""}">${esc(fmtDayLabel(d, program.event.timezone))}</a>`,
+        ({ day: d, count }) =>
+          `<a href="${esc(base)}/agenda?day=${encodeURIComponent(d)}" class="${d === day ? "active" : ""}" data-day-count="${count}">${esc(fmtDayLabel(d, program.event.timezone))} (${count})</a>`,
       )
       .join("")}
     <a class="btn secondary sm" href="${esc(base)}/agenda${next ? `?day=${encodeURIComponent(next)}` : ""}" ${next ? "" : 'aria-disabled="true" style="opacity:.4;pointer-events:none"'}>Next day →</a>
   </div>
-  <p class="meta" style="margin-bottom:10px"><strong>Showing:</strong> ${esc(day ? fmtDayLabel(day, program.event.timezone) : "No days")} · <strong>Timezone:</strong> ${esc(program.event.timezone)}</p>
+  <p class="meta" style="margin-bottom:10px"><strong>Showing:</strong> ${esc(day ? fmtDayLabel(day, program.event.timezone) : "No days")} · ${agenda.sessions.length} session${agenda.sessions.length === 1 ? "" : "s"} · <strong>Timezone:</strong> ${esc(program.event.timezone)}</p>
+  <p class="meta" style="margin-bottom:10px" data-agenda-total>${program.sessions.length} published session${program.sessions.length === 1 ? "" : "s"} across ${program.days.length} day${program.days.length === 1 ? "" : "s"} — use the day tabs above.</p>
   ${
     times.length && rooms.length
       ? `<div class="agenda-wrap"><table class="agenda"><thead><tr><th>Time</th>${head}</tr></thead><tbody>${rows || `<tr><td colspan="${rooms.length + 1}">No sessions</td></tr>`}</tbody></table></div>`

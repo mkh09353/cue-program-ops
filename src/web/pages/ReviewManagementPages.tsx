@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, getPersona } from "../lib/api";
 import {
   Badge,
@@ -544,7 +544,7 @@ export function AssignmentsPage() {
 
 export function ReviewProgressPage() {
   const {data:rounds}=useData(api.reviewRounds);const [roundId,setRoundId]=useState("");
-  useEffect(()=>{if(!roundId&&rounds.length)setRoundId(rounds.find(r=>r.status==="open")?.id||rounds[0].id)},[rounds,roundId]);
+  useEffect(()=>{if(!roundId&&rounds.length){const open=rounds.filter(r=>r.status==="open").sort((a,b)=>String(b.lastAssignmentAt||"").localeCompare(String(a.lastAssignmentAt||"")));setRoundId(open[0]?.id||rounds[0].id)}},[rounds,roundId]);
   const { data, reload } = useData(()=>api.reviewProgress(roundId||undefined));
   const { data: automationRows } = useData(async()=>{const r=await api.automation();return {data:[r.data]}});
   const automation=automationRows[0];
@@ -608,6 +608,7 @@ export function ResultsPage() {
   const [exportMsg, setExportMsg] = useState("");
   const [exporting, setExporting] = useState(false);
   const [sort, setSort] = useState<"score-desc" | "score-asc" | "title" | "reviews-desc">("score-desc");
+  const [expanded, setExpanded] = useState<string[]>([]);
   const sorted = useMemo(() => sortResults(data, sort), [data, sort]);
 
   const downloadCsv = async () => {
@@ -704,18 +705,19 @@ export function ResultsPage() {
             </tr>
           </thead>
           <tbody data-testid="results-rows">
-            {sorted.map((r) => (
+            {sorted.map((r) => (<Fragment key={r.id}>
               <tr className="border-t" key={r.id}>
                 <td className="p-3">
-                  <b>{r.title}</b>
+                  <button type="button" className="text-left font-bold underline-offset-2 hover:underline" aria-expanded={expanded.includes(r.id)} onClick={()=>setExpanded(x=>x.includes(r.id)?x.filter(id=>id!==r.id):[...x,r.id])}>{r.title}</button>
                 </td>
-                <td>{r.aggregateScore?.toFixed(2) || "—"}</td>
+                <td>{r.aggregateScore?.toFixed(2) || "—"} <span className="text-xs text-mid">{r.aggregateScore!=null?"/ 5 normalized":""}</span></td>
                 <td>{r.reviewerCount}</td>
                 <td>
                   <Badge>{r.status}</Badge>
                 </td>
               </tr>
-            ))}
+              {expanded.includes(r.id)?<tr key={`${r.id}-breakdown`} className="border-t bg-soft"><td colSpan={4} className="p-4"><b className="text-xs uppercase tracking-wide text-mid">Review math</b><div className="mt-2 space-y-2">{r.reviewBreakdown?.map((review:any)=><div key={review.id} className="rounded-[18px] border border-line bg-paper p-3"><div className="flex justify-between gap-2"><b>{review.reviewer}</b><span>{review.computedScore==null?"No numeric ratings":`${review.computedScore.toFixed(2)} / 5 normalized`}</span></div><ul className="mt-2 text-xs text-mid">{review.criteria.map((criterion:any)=><li key={criterion.id}>{criterion.label}: {typeof criterion.response==="number"?`${criterion.response}${criterion.type==="rating"?` on ${criterion.min??1}–${criterion.max??5} scale`:" (non-rating; excluded)"}`:String(criterion.response??"Not answered")} · weight {criterion.weight||0}</li>)}</ul></div>)}</div></td></tr>:null}
+            </Fragment>))}
           </tbody>
         </table>
       </div>

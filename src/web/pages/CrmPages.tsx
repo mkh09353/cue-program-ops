@@ -58,6 +58,7 @@ export const canBulkCommunicate = (selected: string[]) => selected.length >= 2;
 
 export function CrmDirectoryPage() {
   const [rows, setRows] = useState<any[]>([]);
+  const [allRows, setAllRows] = useState<any[]>([]);
   const [meta, setMeta] = useState<{ total?: number; filtered?: number }>({});
   const [dash, setDash] = useState<any>(null);
   const [err, setErr] = useState("");
@@ -83,9 +84,10 @@ export function CrmDirectoryPage() {
       stage: stage || searchParams.get("stage") || undefined,
       tags: searchParams.get("tags") || undefined,
     };
-    return Promise.all([api.crmContacts(params), api.crmDashboard()])
-      .then(([c, d]) => {
+    return Promise.all([api.crmContacts(params), api.crmDashboard(), api.crmContacts()])
+      .then(([c, d, all]) => {
         setRows(c.data);
+        setAllRows(all.data || []);
         setSelected((current) => current.filter((id) => c.data.some((row: any) => row.id === id)));
         setMeta(c.meta || {});
         setDash(d.data);
@@ -101,6 +103,16 @@ export function CrmDirectoryPage() {
     load();
     return subscribeData(load);
   }, [q, tag, company, stage, searchParams]);
+
+  // Options are derived from real contact data, so a chosen value always matches rows.
+  const facetTags = [...new Set(allRows.flatMap((row: any) => row.tags || []))].filter(Boolean).sort();
+  const facetCompanies = [...new Set(allRows.map((row: any) => row.company).filter(Boolean))].sort();
+  const activeFilters = [
+    q ? `search "${q}"` : "",
+    tag ? `tag ${tag}` : "",
+    company ? `company ${company}` : "",
+    stage ? `stage ${stage}` : "",
+  ].filter(Boolean);
 
   const toggle = (id: string) =>
     setSelected((prev) => toggleCrmSelection(prev, id));
@@ -132,14 +144,30 @@ export function CrmDirectoryPage() {
 
       {dash ? (
         <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <Card className="p-4">
-            <p className="text-xs font-semibold uppercase tracking-wide text-mid">Contacts</p>
-            <p className="mt-1 text-2xl font-bold">{dash.totalContacts}</p>
-          </Card>
-          <Card className="p-4">
-            <p className="text-xs font-semibold uppercase tracking-wide text-mid">Segments</p>
-            <p className="mt-1 text-2xl font-bold">{dash.segments}</p>
-          </Card>
+          <button
+            type="button"
+            className="text-left"
+            data-testid="kpi-contacts"
+            onClick={() => {
+              setQ("");
+              setTag("");
+              setCompany("");
+              setStage("");
+            }}
+          >
+            <Card className="p-4 transition hover:border-ink/20">
+              <p className="text-xs font-semibold uppercase tracking-wide text-mid">Contacts</p>
+              <p className="mt-1 text-2xl font-bold">{dash.totalContacts}</p>
+              <p className="mt-1 text-xs text-mid">Show all →</p>
+            </Card>
+          </button>
+          <Link to="/app/crm/segments" className="block" data-testid="kpi-segments">
+            <Card className="p-4 transition hover:border-ink/20">
+              <p className="text-xs font-semibold uppercase tracking-wide text-mid">Segments</p>
+              <p className="mt-1 text-2xl font-bold">{dash.segments}</p>
+              <p className="mt-1 text-xs text-mid">Manage segments →</p>
+            </Card>
+          </Link>
           <Link to="/app/crm/campaigns" className="block">
             <Card className="p-4 transition hover:border-ink/20">
               <p className="text-xs font-semibold uppercase tracking-wide text-mid">Campaigns</p>
@@ -147,9 +175,70 @@ export function CrmDirectoryPage() {
               <p className="mt-1 text-xs text-mid">View history →</p>
             </Card>
           </Link>
-          <Card className="p-4">
-            <p className="text-xs font-semibold uppercase tracking-wide text-mid">Top tag</p>
-            <p className="mt-1 text-lg font-bold">{dash.topTags?.[0]?.name || "—"}</p>
+          <button type="button" className="text-left" data-testid="kpi-top-tag" onClick={() => setTag(dash.topTags?.[0]?.name || "")}>
+            <Card className="p-4 transition hover:border-ink/20">
+              <p className="text-xs font-semibold uppercase tracking-wide text-mid">Top tag</p>
+              <p className="mt-1 text-lg font-bold">{dash.topTags?.[0]?.name || "—"}</p>
+              <p className="mt-1 text-xs text-mid">Filter by this tag →</p>
+            </Card>
+          </button>
+        </div>
+      ) : null}
+
+      {dash?.stageBars?.length ? (
+        <div className="mb-4 grid gap-3 lg:grid-cols-2">
+          <Card className="p-4" data-testid="crm-stage-bars">
+            <h3 className="text-sm font-bold uppercase tracking-wide text-mid">Contacts by stage</h3>
+            <ul className="mt-3 space-y-2">
+              {dash.stageBars.map((bar: any) => {
+                const max = Math.max(1, ...dash.stageBars.map((x: any) => x.count));
+                return (
+                  <li key={bar.id}>
+                    <button
+                      type="button"
+                      className="w-full text-left"
+                      aria-label={`Filter by ${bar.label} (${bar.count})`}
+                      onClick={() => setStage(bar.id)}
+                    >
+                      <div className="flex items-center justify-between text-xs">
+                        <span className={stage === bar.id ? "font-bold text-ink" : "text-mid"}>{bar.label}</span>
+                        <span className="font-semibold text-ink">{bar.count}</span>
+                      </div>
+                      <div className="mt-1 h-2 overflow-hidden rounded-full bg-canvas" aria-hidden>
+                        <div className="h-full bg-ink" style={{ width: `${Math.round((bar.count / max) * 100)}%` }} />
+                      </div>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </Card>
+
+          <Card className="p-4" data-testid="crm-activity-feed">
+            <h3 className="text-sm font-bold uppercase tracking-wide text-mid">Recent activity</h3>
+            <ul className="mt-3 space-y-2 text-sm">
+              {(dash.recentActivity || []).map((row: any) => (
+                <li key={`${row.kind}-${row.id}`} className="rounded-[18px] bg-soft p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <Badge tone="muted">{row.kind === "stage" ? "stage move" : row.kind}</Badge>
+                    <span className="text-xs text-mid">{new Date(row.at).toLocaleString()}</span>
+                  </div>
+                  <p className="mt-1">
+                    {row.contactId ? (
+                      <Link className="font-semibold underline" to={`/app/crm/contacts/${row.contactId}`}>
+                        {row.contactName}
+                      </Link>
+                    ) : null}
+                    {row.contactId ? " · " : ""}
+                    {row.summary}
+                  </p>
+                  {row.by ? <p className="text-xs text-mid">by {row.by}</p> : null}
+                </li>
+              ))}
+              {!(dash.recentActivity || []).length ? (
+                <li className="text-sm text-mid">No notes, stage moves or campaigns yet.</li>
+              ) : null}
+            </ul>
           </Card>
         </div>
       ) : null}
@@ -159,11 +248,31 @@ export function CrmDirectoryPage() {
           <Field label="Search">
             <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Name, email, company…" />
           </Field>
-          <Field label="Tag">
-            <Input value={tag} onChange={(e) => setTag(e.target.value)} placeholder="e.g. agents" />
+          <Field label="Tag" hint="Options come from tags actually in use.">
+            <select
+              className="w-full rounded-lg border border-line bg-white px-3 py-2 text-sm"
+              aria-label="Filter by tag"
+              value={tag}
+              onChange={(e) => setTag(e.target.value)}
+            >
+              <option value="">All tags ({facetTags.length})</option>
+              {facetTags.map((t) => (
+                <option key={t} value={t}>{t}</option>
+              ))}
+            </select>
           </Field>
-          <Field label="Company">
-            <Input value={company} onChange={(e) => setCompany(e.target.value)} placeholder="Exact company" />
+          <Field label="Company" hint="Companies on existing contacts — no free text.">
+            <select
+              className="w-full rounded-lg border border-line bg-white px-3 py-2 text-sm"
+              aria-label="Filter by company"
+              value={company}
+              onChange={(e) => setCompany(e.target.value)}
+            >
+              <option value="">All companies ({facetCompanies.length})</option>
+              {facetCompanies.map((cName) => (
+                <option key={cName} value={cName}>{cName}</option>
+              ))}
+            </select>
           </Field>
           <Field label="Stage">
             <select
@@ -180,9 +289,33 @@ export function CrmDirectoryPage() {
             </select>
           </Field>
         </div>
-        <p className="mt-2 text-xs text-mid">
-          Showing {meta.filtered ?? rows.length} of {meta.total ?? rows.length} contacts
-        </p>
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <p className="text-xs text-mid" data-testid="crm-result-count">
+            Showing <b className="text-ink">{meta.filtered ?? rows.length}</b> of {meta.total ?? rows.length} contacts
+            {activeFilters.length ? ` · filtered by ${activeFilters.join(" · ")}` : " · no filters"}
+          </p>
+          {activeFilters.length ? (
+            <Button
+              size="sm"
+              variant="outline"
+              data-testid="crm-clear-filters"
+              onClick={() => {
+                setQ("");
+                setTag("");
+                setCompany("");
+                setStage("");
+              }}
+            >
+              Clear filters
+            </Button>
+          ) : null}
+        </div>
+        {activeFilters.length && (meta.filtered ?? rows.length) === 0 ? (
+          <Notice tone="warn">
+            No contacts match these filters. Tag and Company only offer values that exist on current contacts — clear the
+            filters to see all {meta.total ?? rows.length}.
+          </Notice>
+        ) : null}
       </Card>
 
       <Card className="mb-4 p-4">
@@ -318,6 +451,7 @@ export function CrmContactPage() {
   const [eventId,setEventId]=useState("evt-ai-summit-2026");
   const [handoff,setHandoff]=useState("");
   const [noteBusy, setNoteBusy] = useState(false);
+  const [noteSaved, setNoteSaved] = useState<{ body: string; author: string; at: string } | null>(null);
   const [dupes, setDupes] = useState<any[]>([]);
   const [cfKey, setCfKey] = useState("");
   const [cfVal, setCfVal] = useState("");
@@ -450,6 +584,14 @@ export function CrmContactPage() {
           </div>
 
           <h3 className="mt-6 text-sm font-bold uppercase tracking-wide text-mid">Notes</h3>
+          {noteSaved ? (
+            <Notice tone="ok" onClose={() => setNoteSaved(null)}>
+              <span className="block font-semibold" data-testid="note-saved">
+                Note saved · {noteSaved.author} · {noteSaved.at}
+              </span>
+              <span className="text-xs">“{noteSaved.body}”</span>
+            </Notice>
+          ) : null}
           <div className="mt-2 flex gap-2">
             <Textarea className="flex-1" rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Internal note…" />
             <Button
@@ -458,9 +600,17 @@ export function CrmContactPage() {
                 if (noteBusy || !note.trim()) return;
                 setNoteBusy(true);
                 try {
-                  await api.crmAddNote(contact.id, note.trim());
+                  const saved: any = await api.crmAddNote(contact.id, note.trim());
+                  const row = saved?.data;
+                  // Show it immediately (optimistic) so the activity list never looks empty.
+                  if (row) setContact((current: any) => (current ? { ...current, notes: [...(current.notes || []), row] } : current));
+                  setNoteSaved({
+                    body: row?.body || note.trim(),
+                    author: row?.authorName || "You",
+                    at: new Date(row?.createdAt || Date.now()).toLocaleTimeString(),
+                  });
                   setNote("");
-                  toast("Note saved");
+                  toast("Note saved to the activity log");
                   await load();
                 } catch (e: any) {
                   toast(e.message || "Note failed", "danger");

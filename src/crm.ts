@@ -201,7 +201,8 @@ export function createContact(
 
 export function updateContact(
   contactId: string,
-  patch: Partial<Pick<CrmContact, "name" | "email" | "title" | "company" | "bio" | "tags" | "customFields">>,
+  patch: Partial<Pick<CrmContact, "name" | "email" | "title" | "company" | "bio" | "tags" | "customFields">> & { stage?: CrmStage },
+  actor?: { id: string; name: string },
 ): { ok: true; contact: CrmContact } | { ok: false; error: string } {
   const crm = ensureCrm();
   const contact = crm.contacts.find((c) => c.id === contactId);
@@ -227,6 +228,13 @@ export function updateContact(
     const checked = validateCustomFields(patch.customFields);
     if (!checked.ok) return { ok: false, error: checked.error };
     contact.customFields = { ...contact.customFields, ...checked.values };
+  }
+  // A stage on the generic update path used to be dropped silently (200, no change and
+  // no timeline entry). Route it through the one transition that records history.
+  const nextStage = patch.stage;
+  if (nextStage && nextStage !== contact.stage) {
+    const moved = moveStage(contactId, nextStage, actor, "Updated from contact profile");
+    if (!moved.ok) return moved;
   }
   contact.updatedAt = now();
   return { ok: true, contact };
@@ -267,6 +275,17 @@ export function canTransition(from: CrmStage, to: CrmStage) {
   return (CRM_STAGE_TRANSITIONS[from] || []).includes(to);
 }
 
+/**
+ * Successive stage moves inside one millisecond must still be distinguishable in the
+ * timeline, so timestamps are strictly increasing.
+ */
+let lastStageStamp = 0;
+function nextStageTimestamp() {
+  const at = Date.now();
+  lastStageStamp = at > lastStageStamp ? at : lastStageStamp + 1;
+  return new Date(lastStageStamp).toISOString();
+}
+
 export function moveStage(
   contactId: string,
   to: CrmStage,
@@ -287,7 +306,7 @@ export function moveStage(
     id: id("stage"),
     from,
     to,
-    at: now(),
+    at: nextStageTimestamp(),
     byId: actor?.id,
     byName: actor?.name,
     note: note?.trim() || undefined,
@@ -727,11 +746,35 @@ export function crmDashboard(life: LifecycleStore = store) {
     if (c.company) companies.set(c.company, (companies.get(c.company) || 0) + 1);
     for (const t of c.tags) tagCounts.set(t, (tagCounts.get(t) || 0) + 1);
   }
+  // Recent activity across notes, stage moves and campaigns for the dashboard feed.
+  const activity: { id: string; kind: "note" | "stage" | "campaign"; at: string; contactId?: string; contactName?: string; summary: string; by?: string }[] = [];
+  for (const c of crm.contacts) {
+    for (const n of c.notes) {
+      activity.push({ id: n.id, kind: "note", at: n.createdAt, contactId: c.id, contactName: c.name, by: n.authorName, summary: n.body });
+    }
+    for (const ev of c.stageHistory) {
+      activity.push({
+        id: ev.id,
+        kind: "stage",
+        at: ev.at,
+        contactId: c.id,
+        contactName: c.name,
+        by: ev.byName,
+        summary: ev.from ? `${ev.from} → ${ev.to}` : `added as ${ev.to}`,
+      });
+    }
+  }
+  for (const campaign of crm.campaigns) {
+    activity.push({ id: campaign.id, kind: "campaign", at: campaign.createdAt, summary: `${campaign.subject} · ${campaign.sends.length} recipient(s)` });
+  }
+  activity.sort((a, b) => b.at.localeCompare(a.at));
   return {
     totalContacts: crm.contacts.length,
     segments: crm.segments.length,
     campaigns: crm.campaigns.length,
     byStage,
+    stageBars: CRM_STAGES.map((s) => ({ id: s.id, label: s.label, count: byStage[s.id] || 0 })),
+    recentActivity: activity.slice(0, 5),
     topCompanies: [...companies.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([name, count]) => ({ name, count })),
     topTags: [...tagCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12).map(([name, count]) => ({ name, count })),
   };

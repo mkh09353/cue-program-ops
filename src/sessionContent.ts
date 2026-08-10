@@ -1,5 +1,6 @@
 import type { ContentEditHistory, LifecycleStore, SessionDraft, SessionContentState } from "./lifecycle.js";
 import type { ScheduleData, ScheduleSession } from "./schedule.js";
+import { zonedDayKey } from "./timezone.js";
 
 /**
  * ONE session-editing mechanism shared by the Content editor and the schedule session
@@ -43,6 +44,8 @@ export type EditableSession = {
   canonicalId: string;
   lifecycleId?: string;
   scheduled: boolean;
+  /** Calendar day the session sits on, so editors can deep-link to the right agenda tab. */
+  dayKey?: string;
   history: ContentEditHistory[];
 };
 
@@ -183,6 +186,10 @@ export function listEditableSessions(store: LifecycleStore, schedule: ScheduleDa
       canonicalId: session.id,
       lifecycleId: draft?.id,
       scheduled: slotted.has(session.id),
+      dayKey: (() => {
+        const slot = (schedule?.slots || []).find((x) => x.sessionId === session.id);
+        return slot ? zonedDayKey(slot.startsAt, schedule?.event?.timezone) : undefined;
+      })(),
       history: historyFor(store, session.id, draft?.id),
     };
   });

@@ -210,8 +210,8 @@ export function PublicCfpPage() {
         if(id&&token){const saved=await api.publicSubmission(id,token);setName(saved.data.name);setEmail(saved.data.email);
           // Co-authors live on the submission record AND inside answers; merge both so a
           // resumed draft/edit never loses them (and always re-sends them on save).
-          const storedCoAuthors=(saved.data.additionalSpeakers||[]).map((p:any)=>({name:p.name,email:p.email}));
-          const answerCoAuthors=(saved.data.answers?.additionalSpeakers||[]).map((p:any)=>({name:p.name,email:p.email}));
+          const storedCoAuthors=(saved.data.additionalSpeakers||[]).map((p:any)=>({name:p.name,email:p.email,role:p.role||"co-presenter"}));
+          const answerCoAuthors=(saved.data.answers?.additionalSpeakers||[]).map((p:any)=>({name:p.name,email:p.email,role:p.role||"co-presenter"}));
           const merged=storedCoAuthors.length?storedCoAuthors:answerCoAuthors;
           setAnswers({...(saved.data.answers||{}),additionalSpeakers:merged});setResult({id,speakerId:saved.data.speakerId,editToken:token,status:saved.data.status,editing:true,editable:saved.data.editable});setStep(1)}
       })
