@@ -1,12 +1,12 @@
 import { Hono } from "hono";
 import type { Mailer } from "./mailer.js";
-import { EVENT_ID, markReviewSubmitted, reviewHistory, type LifecycleStore, type ReviewRound } from "./lifecycle.js";
+import { markReviewSubmitted, reviewHistory, type LifecycleStore, type ReviewRound } from "./lifecycle.js";
 import { assignSpecific, autoDistribute, blindSubmission, csvCell, weightedScore } from "./review.js";
 
 const error = (c: any, message: string, status = 400) => c.json({ error: { message } }, status as any);
 export function createReviewRoutes(deps: {
   store: LifecycleStore;
-  persist: () => Promise<void>;
+  persist: (eventId?: string, store?: LifecycleStore) => Promise<void>;
   persona: (c: any) => { id: string; role: string; email: string; name: string };
   mailer: Mailer;
 }) {
@@ -21,7 +21,7 @@ export function createReviewRoutes(deps: {
     const b = await c.req.json();
     if (deps.store.reviewRounds.some((r) => r.name.trim().toLowerCase() === String(b.name || "Untitled round").trim().toLowerCase())) return error(c, "round name already exists", 409);
     const row: ReviewRound = { id: b.id || `round-${crypto.randomUUID().slice(0, 8)}`, name: b.name || "Untitled round", opensAt: b.opensAt || new Date().toISOString(), closesAt: b.closesAt || new Date().toISOString(), status: b.status || "draft", blind: Boolean(b.blind), reviewerIds: b.reviewerIds || [], criteria: b.criteria || [] };
-    deps.store.reviewRounds.push(row); await deps.persist(); return c.json({ data: row }, 201);
+    deps.store.reviewRounds.push(row); await deps.persist(deps.store.event.id, deps.store); return c.json({ data: row }, 201);
   });
   app.put("/:eventId/review-rounds/:id", async (c) => {
     if (!event(c)) return error(c, "event not found", 404); if (!organizer(c)) return error(c, "organizer role required", 403);
@@ -54,26 +54,26 @@ export function createReviewRoutes(deps: {
       }
       return base;
     }).filter(x=>x.label&&["rating","select","text"].includes(x.type));
-    Object.assign(row,b,{id:row.id,reviewerIds,criteria}); await deps.persist(); return c.json({ data: row });
+    Object.assign(row,b,{id:row.id,reviewerIds,criteria}); await deps.persist(deps.store.event.id, deps.store); return c.json({ data: row });
   });
   app.post("/:eventId/review-rounds/:id/reviewers",async(c)=>{
-    if(!event(c))return error(c,"event not found",404);if(!organizer(c))return error(c,"organizer role required",403);const r=round(c.req.param("id"));if(!r)return error(c,"round not found",404);
+    const life=deps.store;if(c.req.param("eventId")!==life.event.id)return error(c,"event not found",404);if(deps.persona(c).role!=="organizer")return error(c,"organizer role required",403);const r=life.reviewRounds.find(x=>x.id===c.req.param("id"));if(!r)return error(c,"round not found",404);
     const b=await c.req.json(),email=String(b.email||"").trim().toLowerCase(),name=String(b.name||"").trim();if(!name||!/^\S+@\S+\.\S+$/.test(email))return error(c,"valid name and email required");
-    const duplicates=deps.store.personas.filter(x=>x.email.trim().toLowerCase()===email&&x.role==="reviewer"),conflict=deps.store.personas.find(x=>x.email.trim().toLowerCase()===email&&x.role!=="reviewer");if(conflict)return error(c,"email belongs to another role",409);let p=duplicates[0];if(!p){p={id:`rev-${crypto.randomUUID().slice(0,8)}`,role:"reviewer",name,email};deps.store.personas.push(p)}for(const duplicate of duplicates.slice(1)){for(const rr of deps.store.reviewRounds)rr.reviewerIds=rr.reviewerIds.map(id=>id===duplicate.id?p!.id:id);for(const a of deps.store.reviewAssignments)if(a.reviewerId===duplicate.id)a.reviewerId=p.id;for(const rv of deps.store.reviews)if(rv.reviewerId===duplicate.id)rv.reviewerId=p.id;deps.store.personas=deps.store.personas.filter(x=>x.id!==duplicate.id)}r.reviewerIds=[...new Set([...r.reviewerIds,p.id])];await deps.persist();return c.json({data:{reviewer:p,round:r}},201);
+    const duplicates=life.personas.filter(x=>x.email.trim().toLowerCase()===email&&x.role==="reviewer"),conflict=life.personas.find(x=>x.email.trim().toLowerCase()===email&&x.role!=="reviewer");if(conflict)return error(c,"email belongs to another role",409);let p=duplicates[0];if(!p){p={id:`rev-${crypto.randomUUID().slice(0,8)}`,role:"reviewer",name,email};life.personas.push(p)}for(const duplicate of duplicates.slice(1)){for(const rr of life.reviewRounds)rr.reviewerIds=rr.reviewerIds.map(id=>id===duplicate.id?p!.id:id);for(const a of life.reviewAssignments)if(a.reviewerId===duplicate.id)a.reviewerId=p.id;for(const rv of life.reviews)if(rv.reviewerId===duplicate.id)rv.reviewerId=p.id;life.personas=life.personas.filter(x=>x.id!==duplicate.id)}r.reviewerIds=[...new Set([...r.reviewerIds,p.id])];await deps.persist(life.event.id,life);return c.json({data:{reviewer:p,round:r}},201);
   });
   app.delete("/:eventId/review-rounds/:id", async (c) => {
     if (!event(c)) return error(c, "event not found", 404); if (!organizer(c)) return error(c, "organizer role required", 403);
     const index = deps.store.reviewRounds.findIndex((r) => r.id === c.req.param("id")); if (index < 0) return error(c, "round not found", 404);
-    deps.store.reviewRounds.splice(index, 1); deps.store.reviewAssignments = deps.store.reviewAssignments.filter((a) => a.roundId !== c.req.param("id")); await deps.persist(); return c.body(null, 204);
+    deps.store.reviewRounds.splice(index, 1); deps.store.reviewAssignments = deps.store.reviewAssignments.filter((a) => a.roundId !== c.req.param("id")); await deps.persist(deps.store.event.id, deps.store); return c.body(null, 204);
   });
   app.post("/:eventId/review-assignments", async (c) => {
-    if (!event(c)) return error(c, "event not found", 404); if (!organizer(c)) return error(c, "organizer role required", 403);
-    const b = await c.req.json(); const r = round(b.roundId); if (!r) return error(c, "round not found", 404);
-    let ids: string[] = (b.submissionIds || []).filter((id:string)=>deps.store.submissions.some(s=>s.id===id&&s.status!=="draft"));
-    if (b.track) ids = deps.store.submissions.filter((s) => s.status!=="draft" && s.category === b.track).map((s) => s.id);
+    const life=deps.store;if(c.req.param("eventId")!==life.event.id)return error(c,"event not found",404);if(deps.persona(c).role!=="organizer")return error(c,"organizer role required",403);
+    const b = await c.req.json(); const r = life.reviewRounds.find(x=>x.id===b.roundId); if (!r) return error(c, "round not found", 404);
+    let ids: string[] = (b.submissionIds || []).filter((id:string)=>life.submissions.some(s=>s.id===id&&s.status!=="draft"));
+    if (b.track) ids = life.submissions.filter((s) => s.status!=="draft" && s.category === b.track).map((s) => s.id);
     try {
-      const made = b.method === "auto" ? autoDistribute(deps.store.reviewAssignments, r, ids, Number(b.cap || 5)) : assignSpecific(deps.store.reviewAssignments, r, ids, b.reviewerId, Number(b.cap || Infinity));
-      deps.store.reviewAssignments.push(...made); await deps.persist(); return c.json({ data: made }, 201);
+      const made = b.method === "auto" ? autoDistribute(life.reviewAssignments, r, ids, Number(b.cap || 5)) : assignSpecific(life.reviewAssignments, r, ids, b.reviewerId, Number(b.cap || Infinity));
+      life.reviewAssignments.push(...made); await deps.persist(life.event.id,life); return c.json({ data: made }, 201);
     } catch (e) { return error(c, e instanceof Error ? e.message : "assignment failed"); }
   });
   app.get("/:eventId/reviewer-queue", (c) => {
@@ -91,18 +91,18 @@ export function createReviewRoutes(deps: {
     const r = round(assignment.roundId)!; return c.json({ data: { assignment, round: r, submission: blindSubmission(deps.store.submissions.find((s) => s.id === assignment.submissionId)!, r.blind), review: deps.store.reviews.find((x) => x.submissionId === assignment.submissionId && x.reviewerId === p.id) } });
   });
   app.post("/:eventId/reviewer-queue/:assignmentId/submit", async (c) => {
-    if (!event(c)) return error(c, "event not found", 404); const p = deps.persona(c); const a = deps.store.reviewAssignments.find((x) => x.id === c.req.param("assignmentId") && x.reviewerId === p.id && x.status !== "recused"); if (!a) return error(c, "assignment not found", 404);
-    const b = await c.req.json(); let review = deps.store.reviews.find((r) => r.submissionId === a.submissionId && r.reviewerId === p.id);
-    if (!review) { review = { id: `review-${crypto.randomUUID().slice(0, 8)}`, submissionId: a.submissionId, reviewerId: p.id, round: "r1", roundId: a.roundId, scores: {}, notes: "", status: "assigned" }; deps.store.reviews.push(review); }
+    const life=deps.store;if(c.req.param("eventId")!==life.event.id)return error(c,"event not found",404);const p=deps.persona(c);const a=life.reviewAssignments.find((x)=>x.id===c.req.param("assignmentId")&&x.reviewerId===p.id&&x.status!=="recused");if(!a)return error(c,"assignment not found",404);
+    const b = await c.req.json(); let review = life.reviews.find((r) => r.submissionId === a.submissionId && r.reviewerId === p.id);
+    if (!review) { review = { id: `review-${crypto.randomUUID().slice(0, 8)}`, submissionId: a.submissionId, reviewerId: p.id, round: "r1", roundId: a.roundId, scores: {}, notes: "", status: "assigned" }; life.reviews.push(review); }
     const responses: Record<string, string | number> = b.responses || {}; review.responses = responses; review.scores = Object.fromEntries(Object.entries(responses).filter(([,v]) => typeof v === "number")) as Record<string,number>; review.notes = String(responses.comments || b.notes || ""); review.recommendation = String(responses.recommendation || ""); review.roundId = a.roundId; review.source = "human";
     // Canonical mirror: assignment completion + submission status live in one place,
     // so the organizer's Review history reads this scorecard immediately.
-    markReviewSubmitted(review);
-    await deps.persist(); return c.json({ data: reviewHistory(a.submissionId).find((r) => r.id === review!.id) || review });
+    markReviewSubmitted(review, new Date().toISOString(),life);
+    await deps.persist(life.event.id,life);return c.json({data:reviewHistory(a.submissionId,life).find((r)=>r.id===review!.id)||review});
   });
   app.post("/:eventId/reviewer-queue/:assignmentId/recuse", async (c) => {
     if (!event(c)) return error(c, "event not found", 404); const p = deps.persona(c); const a = deps.store.reviewAssignments.find((x) => x.id === c.req.param("assignmentId") && x.reviewerId === p.id && x.status === "assigned"); if (!a) return error(c, "assignment not found", 404);
-    const b = await c.req.json().catch(() => ({})); a.status = "recused"; deps.store.reviewConflicts.push({ id: `conflict-${crypto.randomUUID().slice(0,8)}`, assignmentId: a.id, reviewerId: p.id, submissionId: a.submissionId, reason: b.reason || "Conflict of interest", createdAt: new Date().toISOString() }); await deps.persist(); return c.json({ data: a });
+    const b = await c.req.json().catch(() => ({})); a.status = "recused"; deps.store.reviewConflicts.push({ id: `conflict-${crypto.randomUUID().slice(0,8)}`, assignmentId: a.id, reviewerId: p.id, submissionId: a.submissionId, reason: b.reason || "Conflict of interest", createdAt: new Date().toISOString() }); await deps.persist(deps.store.event.id, deps.store); return c.json({ data: a });
   });
   /** Assignments for one submission. Review Studio needs this so it can request an
    * AI advisory draft from an assignment id when no Review row exists yet. */
@@ -152,7 +152,7 @@ export function createReviewRoutes(deps: {
     a.status = "assigned";
     delete a.completedAt;
     deps.store.reviewConflicts = deps.store.reviewConflicts.filter((x) => x.assignmentId !== a.id);
-    await deps.persist();
+    await deps.persist(deps.store.event.id, deps.store);
     return c.json({ data: a });
   });
   app.get("/:eventId/review-progress", (c) => {
@@ -161,7 +161,7 @@ export function createReviewRoutes(deps: {
   });
   app.post("/:eventId/review-reminders", async (c) => {
     if (!event(c)) return error(c, "event not found", 404); if (!organizer(c)) return error(c, "organizer role required", 403); const b=await c.req.json(); const sent=[];
-    for (const reviewerId of b.reviewerIds || []) { const p=deps.store.personas.find((x)=>x.id===reviewerId); const outstanding=deps.store.reviewAssignments.filter((a)=>a.reviewerId===reviewerId&&a.status==="assigned").length; if (!p||!outstanding) continue; const result=await deps.mailer.send({to:p.email,subject:`${outstanding} CUE reviews outstanding`,text:`Please complete your ${outstanding} assigned review${outstanding===1?"":"s"}.`}).catch(()=>({status:"failed" as const})); deps.store.communications.push({id:`comm-${crypto.randomUUID().slice(0,8)}`,speakerId:reviewerId,subject:`${outstanding} CUE reviews outstanding`,body:`Review reminder sent to ${p.name}`,kind:"reminder",status:result.status,ics:"",createdAt:new Date().toISOString()}); sent.push({reviewerId,status:result.status}); } await deps.persist(); return c.json({data:sent});
+    for (const reviewerId of b.reviewerIds || []) { const p=deps.store.personas.find((x)=>x.id===reviewerId); const outstanding=deps.store.reviewAssignments.filter((a)=>a.reviewerId===reviewerId&&a.status==="assigned").length; if (!p||!outstanding) continue; const result=await deps.mailer.send({to:p.email,subject:`${outstanding} CUE reviews outstanding`,text:`Please complete your ${outstanding} assigned review${outstanding===1?"":"s"}.`}).catch(()=>({status:"failed" as const})); deps.store.communications.push({id:`comm-${crypto.randomUUID().slice(0,8)}`,speakerId:reviewerId,subject:`${outstanding} CUE reviews outstanding`,body:`Review reminder sent to ${p.name}`,kind:"reminder",status:result.status,ics:"",createdAt:new Date().toISOString()}); sent.push({reviewerId,status:result.status}); } await deps.persist(deps.store.event.id, deps.store); return c.json({data:sent});
   });
   const results = (roundId?:string) => { const rank:Record<string,number>={accepted:6,rejected:5,waitlisted:4,under_review:3,submitted:2,draft:1};const groups=new Map<string,typeof deps.store.submissions>();for(const sub of deps.store.submissions.filter(s=>s.status!=="draft")){const key=`${sub.speakerId}|${sub.title.trim().toLowerCase()}`,rows=groups.get(key)||[];rows.push(sub);groups.set(key,rows)}return [...groups.values()].map((group) => { const s=[...group].sort((a,b)=>(rank[b.status]||0)-(rank[a.status]||0))[0]!,ids=new Set(group.map(x=>x.id));const reviews=deps.store.reviews.filter((r)=>ids.has(r.submissionId)&&r.status==="submitted"&&r.source!=="ai_draft"&&(!roundId||r.roundId===roundId)); const breakdown=reviews.map((r)=>{const criteria=deps.store.reviewRounds.find((x)=>x.id===r.roundId)?.criteria||[],responses=r.responses||r.scores,computedScore=weightedScore(criteria,responses);return {id:r.id,reviewer:deps.store.personas.find(p=>p.id===r.reviewerId)?.name||r.reviewerId,roundId:r.roundId,computedScore,scaleLabel:"normalized 1–5",criteria:criteria.map(c=>({id:c.id,label:c.label,type:c.type,weight:c.weight,min:c.min,max:c.max,response:responses[c.id]}))}}); const scores=breakdown.map(x=>x.computedScore).filter((x):x is number=>x!==null); const recommendationCounts=Object.fromEntries([...new Set(reviews.map((r)=>r.recommendation).filter(Boolean))].map((v)=>[v,reviews.filter((r)=>r.recommendation===v).length])); return {...s,reviewerCount:reviews.length,aggregateScore:scores.length?scores.reduce((a,b)=>a+b,0)/scores.length:null,recommendationCounts,reviewBreakdown:breakdown,scoreScale:"Normalized 1–5"}; }); };
   app.get("/:eventId/review-results", (c) => { if (!event(c)) return error(c,"event not found",404); if(!organizer(c)) return error(c,"organizer role required",403); return c.json({data:results(c.req.query("roundId"))}); });

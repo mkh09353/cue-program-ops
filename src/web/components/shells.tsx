@@ -50,6 +50,26 @@ function useActiveEvent(): EventSummary {
 
 const BLANK_EVENT = { name: "", slug: "", startsAt: "", endsAt: "", timezone: "America/Los_Angeles", venue: "", rooms: "", tracks: "" };
 
+/** URL slug derived from the event name (organizers rarely want to type one). */
+export const slugifyEventName = (name: string) =>
+  String(name || "").toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40);
+
+/** Defaults so "New event" needs only a name: a two-day window starting next month. */
+export function eventCreateDefaults(form: typeof BLANK_EVENT, now = new Date()) {
+  const start = form.startsAt ? new Date(form.startsAt) : new Date(now.getFullYear(), now.getMonth() + 1, 1, 9, 0, 0);
+  const end = form.endsAt ? new Date(form.endsAt) : new Date(start.getTime() + 25 * 60 * 60 * 1000);
+  return {
+    name: form.name.trim(),
+    slug: (form.slug.trim() || slugifyEventName(form.name)),
+    startsAt: start.toISOString(),
+    endsAt: end.toISOString(),
+    timezone: form.timezone.trim() || "America/Los_Angeles",
+    venue: form.venue.trim(),
+    rooms: form.rooms.trim(),
+    tracks: form.tracks.trim(),
+  };
+}
+
 /** Header control for choosing which event every scoped API call targets,
  * plus the create-event form. The selection persists in localStorage. */
 export function EventSwitcher({ readOnly }: { readOnly?: boolean } = {}) {
@@ -60,6 +80,8 @@ export function EventSwitcher({ readOnly }: { readOnly?: boolean } = {}) {
   const [form, setForm] = useState({ ...BLANK_EVENT });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  /** Persistent confirmation that the workspace switched to the new event. */
+  const [created, setCreated] = useState<{ name: string; slug: string; at: string } | null>(null);
 
   const load = () =>
     api
@@ -81,18 +103,12 @@ export function EventSwitcher({ readOnly }: { readOnly?: boolean } = {}) {
     setBusy(true);
     setError("");
     try {
-      const created = await api.createEvent({
-        name: form.name,
-        slug: form.slug || form.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""),
-        startsAt: form.startsAt ? new Date(form.startsAt).toISOString() : "",
-        endsAt: form.endsAt ? new Date(form.endsAt).toISOString() : "",
-        timezone: form.timezone,
-        venue: form.venue,
-        rooms: form.rooms,
-        tracks: form.tracks,
-      });
-      await load();
+      const created = await api.createEvent(eventCreateDefaults(form));
+      // Adopt the new event immediately, then refresh the catalog: every scoped
+      // page refetches through subscribeEvent, so the workspace is usable at once.
       setActiveEventId(created.data.id);
+      await load();
+      setCreated({ name: created.data.name, slug: created.data.slug, at: new Date().toLocaleTimeString() });
       setCreating(false);
       setOpen(false);
       setForm({ ...BLANK_EVENT });
@@ -129,6 +145,20 @@ export function EventSwitcher({ readOnly }: { readOnly?: boolean } = {}) {
         <span className="truncate font-medium" data-testid="active-event-name">{active.name}</span>
         <ChevronDown className="h-4 w-4 shrink-0 text-mid" />
       </button>
+      {created ? (
+        <div
+          className="absolute right-0 top-full z-40 mt-1 w-[320px] rounded-[14px] border border-line bg-paper p-3 text-sm shadow-card"
+          role="status"
+          aria-live="polite"
+          data-testid="event-created-banner"
+        >
+          <span className="block font-semibold">Now working in {created.name}</span>
+          <span className="block text-xs text-mid">
+            Created {created.at} · slug {created.slug} · empty by design: no submissions, speakers or sessions yet.
+          </span>
+          <Button size="sm" variant="ghost" className="mt-1" onClick={() => setCreated(null)}>Dismiss</Button>
+        </div>
+      ) : null}
       {open ? (
         <div role="menu" className="absolute right-0 z-40 mt-1 w-[320px] rounded-[14px] border border-line bg-paper p-2 shadow-card">
           <div className="px-2 pb-1 pt-1 text-[11px] uppercase tracking-wide text-mid">Events</div>
@@ -156,20 +186,21 @@ export function EventSwitcher({ readOnly }: { readOnly?: boolean } = {}) {
             <>
               <div className="my-1 border-t border-line" />
               {creating ? (
-                <div className="space-y-2 p-2">
+                <div className="space-y-2 p-2" data-testid="create-event-form">
+                  <p className="text-[11px] text-mid">Only a name is required — slug, dates and timezone get sensible defaults you can edit later.</p>
                   {field("Event name", "name", "text", "DevFlow Conf 2027")}
-                  {field("URL slug", "slug", "text", "devflow-conf-2027")}
+                  {field("URL slug (optional)", "slug", "text", form.name ? slugifyEventName(form.name) : "devflow-conf-2027")}
                   <div className="grid grid-cols-2 gap-2">
-                    {field("Starts", "startsAt", "datetime-local")}
-                    {field("Ends", "endsAt", "datetime-local")}
+                    {field("Starts (optional)", "startsAt", "datetime-local")}
+                    {field("Ends (optional)", "endsAt", "datetime-local")}
                   </div>
                   {field("Timezone", "timezone", "text", "America/Los_Angeles")}
-                  {field("Venue", "venue", "text", "Moscone West")}
-                  {field("Rooms (comma separated)", "rooms", "text", "Room 2A, Room 2B")}
-                  {field("Tracks (comma separated)", "tracks", "text", "Platform, DX")}
+                  {field("Venue (optional)", "venue", "text", "Moscone West")}
+                  {field("Rooms (optional, comma separated)", "rooms", "text", "Room 2A, Room 2B")}
+                  {field("Tracks (optional, comma separated)", "tracks", "text", "Platform, DX")}
                   {error ? <div className="text-xs text-rose-600" role="alert">{error}</div> : null}
                   <div className="flex gap-2">
-                    <Button size="sm" onClick={submit} disabled={busy || !form.name.trim()}>
+                    <Button size="sm" data-testid="create-event-submit" onClick={submit} disabled={busy || !form.name.trim()}>
                       {busy ? "Creating…" : "Create event"}
                     </Button>
                     <Button size="sm" variant="ghost" onClick={() => setCreating(false)} disabled={busy}>
@@ -431,6 +462,9 @@ export function ReviewerShell() {
     setInviteState({ready:false});
     api.resolveReviewerInvite(inviteToken).then((r)=>{
       if(!active)return;
+      // Scope the shell to the invite's event BEFORE the queue loads, otherwise the
+      // reviewer's first queue request targets whichever event was last active.
+      if(r.data.eventId)setActiveEventId(r.data.eventId);
       setPersona(r.data.reviewer,{explicit:true});
       setInviteState({ready:true});
       navigate("/r",{replace:true});

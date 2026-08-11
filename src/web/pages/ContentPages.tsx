@@ -1,6 +1,6 @@
 import { useEffect,useMemo,useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { api } from "../lib/api";
+import { api, subscribeEvent } from "../lib/api";
 import { Badge,Button,Card,Field,Input,Notice,PageHeader,Select,Textarea,toast } from "../components/ui";
 
 /** Precise, distinct stamp for history rows: two saves in the same minute must differ. */
@@ -33,6 +33,9 @@ export function historyChanges(entry:{before?:any;after?:any}){
 
 export function ContentPage(){const[data,setData]=useState<any>(null),[filter,setFilter]=useState("all"),[tab,setTab]=useState("dashboard"),[editing,setEditing]=useState<any>(null),[speaker,setSpeaker]=useState<any>(null),[comment,setComment]=useState("");const[postedComment,setPostedComment]=useState<any>(null),[savedSession,setSavedSession]=useState<any>(null),[savedSpeaker,setSavedSpeaker]=useState<any>(null),[headshotState,setHeadshotState]=useState<"idle"|"loading"|"ready"|"error">("idle"),[headshotMeta,setHeadshotMeta]=useState<{name?:string;type?:string;size?:number;width?:number;height?:number}|null>(null),[reminderResult,setReminderResult]=useState<any>(null),[archiveOpen,setArchiveOpen]=useState(false),[archiveSessions,setArchiveSessions]=useState<string[]>([]),[archiveFiles,setArchiveFiles]=useState<string[]>([]),[archiveGrouping,setArchiveGrouping]=useState<"session"|"speaker">("session"),[reminderBusy,setReminderBusy]=useState(false),[exportState,setExportState]=useState<any>(null),[exportBusy,setExportBusy]=useState(false);const [params,setParams]=useSearchParams();
 const load=()=>api.content().then(r=>setData(r.data));useEffect(()=>{load()},[]);
+// Content is event-scoped: refetch on an event switch so deliverables, files and
+// session copy never keep showing the previously selected event.
+useEffect(()=>subscribeEvent(()=>{setEditing(null);setData(null);load()}),[]);
 // Deep link from the Schedule page: /app/content?session=<canonical-id>
 useEffect(()=>{
   const id=params.get("session");

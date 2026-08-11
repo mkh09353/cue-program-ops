@@ -58,7 +58,13 @@ test("profile edit propagates to organizer roster and public schedule projection
   });
   assert.equal(head.status, 201);
   const headBody = await head.json();
-  assert.match(headBody.data.profile.headshotUrl || "", /^data:image\/png;base64,/);
+  assert.match(headBody.data.profile.headshotUrl || "", /^\/api\/events\/.+\/content\/files\//);
+  const detail = await app.request(`/api/events/${EVENT_ID}/speakers/spk-ada`, { headers: org });
+  const canonical = (await detail.json()).data.contentFiles.find((file: any) => file.kind === "headshot");
+  assert.equal(canonical.currentVersion.name, "ada-sentinel.png");
+  assert.equal(canonical.currentVersion.uploadedBy, "spk-ada");
+  assert.ok(canonical.currentVersion.uploadedAt);
+  assert.equal((await app.request(headBody.data.profile.headshotUrl, { headers: speakerAda })).status, 200);
 
   const roster = await app.request(`/api/events/${EVENT_ID}/speakers`, { headers: org });
   assert.equal(roster.status, 200);
@@ -115,7 +121,7 @@ test("single profile save atomically persists bio, socials, logistics, and heads
   assert.equal(profile.travelPreference, "Aisle seat");
   assert.equal(profile.dietary, "Vegetarian");
   assert.equal(profile.headshotName, "headshot.png");
-  assert.match(profile.headshotUrl, /^\/api\/content\/files\//);
+  assert.match(profile.headshotUrl, /^\/api\/events\/.+\/content\/files\//);
   const image = await app.request(profile.headshotUrl, { headers: speakerAda });
   assert.equal(image.status, 200);
   assert.match(image.headers.get("content-type") || "", /^image\//);

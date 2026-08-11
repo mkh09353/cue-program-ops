@@ -1,6 +1,5 @@
 import { Hono } from "hono";
 import {
-  EVENT_ID,
   readiness,
   reminderPlans,
   sendTemplate,
@@ -43,7 +42,7 @@ const fail = (c: any, message: string, status = 400) =>
 
 export function createSpeakerRoutes(deps: {
   store: LifecycleStore;
-  persist: () => Promise<void>;
+  persist: (eventId?: string, store?: LifecycleStore) => Promise<void>;
   persona: (c: any) => { id: string; role: string; name: string; email: string; speakerId?: string };
   mailer: Mailer;
   repo: Repository;
@@ -129,7 +128,7 @@ export function createSpeakerRoutes(deps: {
       }
     }
     await syncProfileToSchedule(made.speakerId, deps.store, deps.repo);
-    await deps.persist();
+    await deps.persist(deps.store.event.id, deps.store);
     return c.json({ data: made }, 201);
   });
 
@@ -142,7 +141,7 @@ export function createSpeakerRoutes(deps: {
     const updated = updateSpeakerOrganizer(c.req.param("speakerId"), b, deps.store);
     if (!updated.ok) return fail(c, updated.error, updated.error.includes("not found") ? 404 : 400);
     await syncProfileToSchedule(c.req.param("speakerId"), deps.store, deps.repo);
-    await deps.persist();
+    await deps.persist(deps.store.event.id, deps.store);
     return c.json({ data: updated.profile });
   });
 
@@ -156,7 +155,7 @@ export function createSpeakerRoutes(deps: {
     if (!SPEAKER_WORKFLOW_STATUSES.some((s) => s.id === status)) return fail(c, "invalid status");
     const updated = updateSpeakerOrganizer(c.req.param("speakerId"), { workflowStatus: status }, deps.store);
     if (!updated.ok) return fail(c, updated.error, 404);
-    await deps.persist();
+    await deps.persist(deps.store.event.id, deps.store);
     return c.json({ data: updated.profile });
   });
 
@@ -170,14 +169,14 @@ export function createSpeakerRoutes(deps: {
     if (!profile) return fail(c, "speaker not found", 404);
     const sub = deps.store.submissions.find((s) => s.speakerId === speakerId && s.status === "accepted");
     const title = sub?.title || "your session";
-    const comm = sendTemplate("accepted", speakerId, title, "acceptance");
+    const comm = sendTemplate("accepted", speakerId, title, "acceptance", deps.store);
     try {
       const result = await deps.mailer.send({ to: profile.email, subject: comm.subject, text: comm.body });
       comm.status = result.status;
     } catch {
       comm.status = "failed";
     }
-    await deps.persist();
+    await deps.persist(deps.store.event.id, deps.store);
     return c.json({ data: { communication: comm, portalPath: "/p" } });
   });
 
@@ -188,14 +187,14 @@ export function createSpeakerRoutes(deps: {
     if (denied) return denied;
     const b = await c.req.json();
     const result = importSpeakersCsv(String(b.csv || b.text || ""), { sendInvite: Boolean(b.sendInvite) }, deps.store);
-    await deps.persist();
+    await deps.persist(deps.store.event.id, deps.store);
     return c.json({ data: result });
   });
 
   app.post("/api/events/:eventId/speakers/merge", async (c) => {
     if (!eventOk(c)) return fail(c, "event not found", 404); const denied=requireOrg(c); if(denied)return denied;
     const b=await c.req.json(); const merged=mergeSpeakerRecords(b.primaryId,b.secondaryId,deps.store);
-    if(!merged.ok)return fail(c,merged.error,merged.error.includes("not found")?404:400); await deps.persist(); return c.json({data:merged.profile});
+    if(!merged.ok)return fail(c,merged.error,merged.error.includes("not found")?404:400); await deps.persist(deps.store.event.id, deps.store); return c.json({data:merged.profile});
   });
 
   app.post("/api/events/:eventId/speakers/merge-suggestions", async (c) => {
@@ -237,7 +236,7 @@ export function createSpeakerRoutes(deps: {
       merged.push(result.profile);
     }
     if (!merged.length && skipped.length) return fail(c, skipped[0]!.reason, skipped[0]!.reason.includes("not found") ? 404 : 400);
-    await deps.persist();
+    await deps.persist(deps.store.event.id, deps.store);
     return c.json({ data: { merged: merged.length, profiles: merged, skipped, remaining: suggestDuplicatePairs(deps.store) } });
   });
 
@@ -245,7 +244,7 @@ export function createSpeakerRoutes(deps: {
   app.post("/api/events/:eventId/speakers/:speakerId/sessions/:sessionId/link", async (c) => {
     if (!eventOk(c)) return fail(c,"event not found",404); const denied=requireOrg(c);if(denied)return denied;
     const profile=deps.store.profiles.find(p=>p.speakerId===c.req.param("speakerId")),session=deps.store.sessions.find(s=>s.id===c.req.param("sessionId"));
-    if(!profile||!session)return fail(c,"speaker or session not found",404); session.speakerId=profile.speakerId; await deps.persist(); return c.json({data:session});
+    if(!profile||!session)return fail(c,"speaker or session not found",404); session.speakerId=profile.speakerId; await deps.persist(deps.store.event.id, deps.store); return c.json({data:session});
   });
 
   app.post("/api/events/:eventId/speakers/tasks", async (c) => {
@@ -256,14 +255,14 @@ export function createSpeakerRoutes(deps: {
     const b = await c.req.json();
     const made = assignGeneralTasks(b, deps.store);
     if (!made.ok) return fail(c, made.error);
-    await deps.persist();
+    await deps.persist(deps.store.event.id, deps.store);
     return c.json({ data: made.tasks }, 201);
   });
 
   // —— Speaker self-service (overrides/enhances) ——
   app.put("/api/speaker/events/:eventId/profile", async (c) => {
-    if (!eventOk(c)) return fail(c, "event not found", 404);
-    boot();
+    const life=deps.store;if(c.req.param("eventId")!==life.event.id)return fail(c,"event not found",404);
+    enrichSpeakerMgmtDemo(life);
     const speakerId = speakerIdOf(c);
     if (!speakerId) return fail(c, "speaker persona required", 403);
     const b = await c.req.json().catch(() => null);
@@ -271,36 +270,45 @@ export function createSpeakerRoutes(deps: {
     const { headshot, ...profileFields } = b as typeof b & {
       headshot?: { name: string; mime?: string; dataBase64?: string; dataUrl?: string };
     };
-    const updated = updateSpeakerSelf(speakerId, profileFields, deps.store);
+    const updated = updateSpeakerSelf(speakerId, profileFields,life);
     if (!updated.ok) return fail(c, updated.error);
     if (headshot?.name && headshot.dataUrl) {
       const [prefix,dataBase64=""] = headshot.dataUrl.split(","); const mime=headshot.mime||prefix.match(/^data:([^;]+)/)?.[1]||"image/png";
       const check=validateUpload({mime,size:atob(dataBase64).length,dataBase64},["image/png","image/jpeg"]); if(!check.ok)return fail(c,check.error);
-      let task=deps.store.deliverableTasks.find(t=>t.speakerId===speakerId&&t.acceptedTypes.some(x=>x.startsWith("image/")));
-      if(!task){task={id:`deliverable-headshot-${speakerId}`,name:"Upload Final Headshot",instructions:"Speaker profile headshot",dueAt:new Date().toISOString(),speakerId,sessionId:deps.store.sessions.find(s=>s.speakerId===speakerId)?.id,fileRequired:true,acceptedTypes:["image/png","image/jpeg"],status:"incomplete",createdAt:new Date().toISOString()};deps.store.deliverableTasks.push(task)}
-      const made=addFileVersion(deps.store,{task,name:headshot.name,mime,size:atob(dataBase64).length,dataBase64,uploadedBy:speakerId,kind:"headshot"});
-      updated.profile.headshotName=headshot.name; updated.profile.headshotUrl=`/api/content/files/${made.file.id}/versions/${made.version.id}`;
-      applyHeadshot(speakerId,{name:headshot.name},deps.store);
+      let task=life.deliverableTasks.find(t=>t.speakerId===speakerId&&t.acceptedTypes.some(x=>x.startsWith("image/")));
+      if(!task){task={id:`deliverable-headshot-${speakerId}`,name:"Upload Final Headshot",instructions:"Speaker profile headshot",dueAt:new Date().toISOString(),speakerId,sessionId:life.sessions.find(s=>s.speakerId===speakerId)?.id,fileRequired:true,acceptedTypes:["image/png","image/jpeg"],status:"incomplete",createdAt:new Date().toISOString()};life.deliverableTasks.push(task)}
+      const made=addFileVersion(life,{task,name:headshot.name,mime,size:atob(dataBase64).length,dataBase64,uploadedBy:speakerId,kind:"headshot"});
+      updated.profile.headshotName=headshot.name; updated.profile.headshotUrl=`/api/events/${life.event.id}/content/files/${made.file.id}/versions/${made.version.id}`;
+      applyHeadshot(speakerId,{name:headshot.name},life);
     }
-    const profileTask = deps.store.tasks.find((t) => t.speakerId === speakerId && t.type === "profile");
+    const profileTask = life.tasks.find((t) => t.speakerId === speakerId && t.type === "profile");
     if (profileTask && (updated.profile.bio || "").trim().length > 20) profileTask.status = "completed";
-    await syncProfileToSchedule(speakerId, deps.store, deps.repo);
-    await deps.persist();
-    return c.json({ data: { profile: updated.profile, readiness: readiness(speakerId) } });
+    await syncProfileToSchedule(speakerId,life,deps.repo);
+    await deps.persist(life.event.id,life);
+    return c.json({data:{profile:updated.profile,readiness:readiness(speakerId,new Date(),life)}});
   });
 
   app.post("/api/speaker/events/:eventId/profile/headshot", async (c) => {
-    if (!eventOk(c)) return fail(c, "event not found", 404);
-    boot();
+    const life=deps.store;if(c.req.param("eventId")!==life.event.id)return fail(c,"event not found",404);
+    enrichSpeakerMgmtDemo(life);
     const speakerId = speakerIdOf(c);
     if (!speakerId) return fail(c, "speaker persona required", 403);
     const b = await c.req.json().catch(() => null);
     if (!b?.name) return fail(c, "name required");
-    const result = applyHeadshot(speakerId, b, deps.store);
+    const result = applyHeadshot(speakerId, b, life);
     if (!result.ok) return fail(c, result.error, 404);
-    await syncProfileToSchedule(speakerId, deps.store, deps.repo);
-    await deps.persist();
-    return c.json({ data: { profile: result.profile, readiness: readiness(speakerId) } }, 201);
+    const raw=String(b.dataBase64||String(b.dataUrl||"").split(",")[1]||"");
+    const mime=String(b.mime||String(b.dataUrl||"").match(/^data:([^;]+)/)?.[1]||"image/png");
+    if(raw){
+      const check=validateUpload({mime,size:atob(raw).length,dataBase64:raw},["image/png","image/jpeg"]);if(!check.ok)return fail(c,check.error);
+      let task=life.deliverableTasks.find(t=>t.speakerId===speakerId&&t.acceptedTypes.some(x=>x.startsWith("image/")));
+      if(!task){task={id:`deliverable-headshot-${speakerId}`,name:"Upload Final Headshot",instructions:"Speaker profile headshot",dueAt:new Date().toISOString(),speakerId,sessionId:life.sessions.find(s=>s.speakerId===speakerId)?.id,fileRequired:true,acceptedTypes:["image/png","image/jpeg"],status:"incomplete",createdAt:new Date().toISOString()};life.deliverableTasks.push(task)}
+      const made=addFileVersion(life,{task,name:b.name,mime,size:atob(raw).length,dataBase64:raw,uploadedBy:speakerId,kind:"headshot"});
+      result.profile.headshotName=b.name;result.profile.headshotUrl=`/api/events/${life.event.id}/content/files/${made.file.id}/versions/${made.version.id}`;
+    }
+    await syncProfileToSchedule(speakerId,life,deps.repo);
+    await deps.persist(life.event.id,life);
+    return c.json({data:{profile:result.profile,readiness:readiness(speakerId,new Date(),life)}},201);
   });
 
   app.post("/api/speaker/events/:eventId/tasks/:id/form", async (c) => {
@@ -311,7 +319,7 @@ export function createSpeakerRoutes(deps: {
     const b = await c.req.json().catch(() => ({}));
     const result = submitFormTask(c.req.param("id"), speakerId, b.answers || b, deps.store);
     if (!result.ok) return fail(c, result.error, result.error.includes("not found") ? 404 : 400);
-    await deps.persist();
+    await deps.persist(deps.store.event.id, deps.store);
     return c.json({ data: { task: result.task, readiness: readiness(speakerId) } });
   });
 
@@ -341,8 +349,8 @@ export function createSpeakerRoutes(deps: {
   });
 
   app.post("/api/events/:eventId/comms/send", async (c) => {
-    if (!eventOk(c)) return fail(c, "event not found", 404);
-    boot();
+    const life=deps.store;if(c.req.param("eventId")!==life.event.id)return fail(c,"event not found",404);
+    enrichSpeakerMgmtDemo(life);
     const denied = requireOrg(c);
     if (denied) return denied;
     const b = (await c.req.json().catch(() => null)) as {
@@ -357,15 +365,15 @@ export function createSpeakerRoutes(deps: {
     if (!ids.length) return fail(c, "speakerId or speakerIds required");
     const sent = [];
     for (const speakerId of ids) {
-      const profile = deps.store.profiles.find((p) => p.speakerId === speakerId);
-      const sub = deps.store.submissions.find((s) => s.speakerId === speakerId && s.status === "accepted");
+      const profile = life.profiles.find((p) => p.speakerId === speakerId);
+      const sub = life.submissions.find((s) => s.speakerId === speakerId && s.status === "accepted");
       const title = sub?.title || "your session";
       let row;
       // Prefer explicit compose-field subject/body (edited in UI) over stored template content.
       const hasCompose = typeof b.subject === "string" || typeof b.body === "string";
       if (hasCompose) {
         const tpl = b.templateKey
-          ? deps.store.templates.find((t) => t.key === b.templateKey || t.id === b.templateKey)
+          ? life.templates.find((t) => t.key === b.templateKey || t.id === b.templateKey)
           : undefined;
         const preview = renderMergePreview(
           {
@@ -374,7 +382,7 @@ export function createSpeakerRoutes(deps: {
             includeCalendarLinks: Boolean((b as any).includeCalendarLinks ?? tpl?.includeCalendarLinks),
           },
           speakerId,
-          deps.store,
+          life,
         );
         row = {
           id: `comm-${crypto.randomUUID()}`,
@@ -390,13 +398,13 @@ export function createSpeakerRoutes(deps: {
           ics: "",
           createdAt: new Date().toISOString(),
         };
-        deps.store.communications.unshift(row);
+        life.communications.unshift(row);
       } else if (b.templateKey) {
         row = sendTemplate(
           b.templateKey,
           speakerId,
           title,
-          b.templateKey === "task_reminder" ? "reminder" : b.templateKey === "accepted" ? "acceptance" : "custom",
+          b.templateKey === "task_reminder" ? "reminder" : b.templateKey === "accepted" ? "acceptance" : "custom",life,
         );
       } else {
         return fail(c, "templateKey or subject/body required");
@@ -430,7 +438,7 @@ export function createSpeakerRoutes(deps: {
         hasIcs: Boolean(row.ics),
       });
     }
-    await deps.persist();
+    await deps.persist(life.event.id,life);
     // Include both array (legacy) and structured payload for UI consumers.
     return c.json({ data: sent, meta: { count: sent.length } }, 201);
   });
@@ -464,7 +472,7 @@ export function createSpeakerRoutes(deps: {
     if (denied) return denied;
     return c.json({
       data: {
-        legacy: reminderPlans(),
+        legacy: reminderPlans(new Date(), deps.store),
         dueWindow: outstandingTaskReminders(deps.store),
       },
     });
@@ -487,7 +495,7 @@ export function createSpeakerRoutes(deps: {
       const profile = deps.store.profiles.find((p) => p.speakerId === speakerId);
       if (!profile) continue;
       const names = items.map((i) => `${i.title} (due ${i.dueAt.slice(0, 10)}${i.overdue ? ", overdue" : ""})`);
-      const row = sendTemplate("task_reminder", speakerId, names[0] || "tasks", "reminder");
+      const row = sendTemplate("task_reminder", speakerId, names[0] || "tasks", "reminder", deps.store);
       row.body = `Hi ${profile.name.split(" ")[0]},\n\nOutstanding onboarding tasks:\n- ${names.join("\n- ")}\n\nComplete them in your portal: /p\n`;
       try {
         const result = await deps.mailer.send({ to: profile.email, subject: row.subject, text: row.body });
@@ -497,7 +505,7 @@ export function createSpeakerRoutes(deps: {
       }
       sent.push({ speakerId, email: profile.email, status: row.status, tasks: items.length });
     }
-    await deps.persist();
+    await deps.persist(deps.store.event.id, deps.store);
     return c.json({ data: { sent, count: sent.length, planned: plans.length } });
   });
 

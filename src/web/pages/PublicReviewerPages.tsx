@@ -198,6 +198,11 @@ export function PublicCfpPage() {
   const [loadErr, setLoadErr] = useState("");
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [saved, setSaved] = useState("");
+  /** Inline, screenshot-visible draft outcome rendered beside the Save as draft button. */
+  const [draftState, setDraftState] = useState<
+    { status: "saved"; id: string; at: string; resumeUrl: string } | { status: "error"; error: string } | null
+  >(null);
+  const [draftBusy, setDraftBusy] = useState(false);
   const [search] = useSearchParams();
   const nav = useNavigate();
 
@@ -332,12 +337,16 @@ export function PublicCfpPage() {
   };
 
   const saveDraft = async () => {
+    setDraftBusy(true);
     try {
       const draftAnswers={...answers,additionalSpeakers:answers.additionalSpeakers||[]};
       const r=result?.editing ? await api.savePublicSubmission(result.id,{editToken:result.editToken,answers:draftAnswers,status:"draft"}) : await api.submitCfp({name,email,answers:draftAnswers,status:"draft"});
       setResult({...r.data,editing:true,editable:true});setSaved(`Draft saved · reference ${r.data.id}`);toast("Draft saved — use this page link to resume");
-      history.replaceState(null,"",r.data.editUrl||`?submission=${r.data.id}&token=${r.data.editToken}`);
-    } catch(ex:any){setErr(ex.message)}
+      const resumeUrl=r.data.editUrl||`?submission=${r.data.id}&token=${r.data.editToken}`;
+      setDraftState({status:"saved",id:r.data.id,at:new Date().toLocaleTimeString(),resumeUrl});
+      history.replaceState(null,"",resumeUrl);
+    } catch(ex:any){setErr(ex.message);setDraftState({status:"error",error:ex?.message||"Could not save the draft."})}
+    finally{setDraftBusy(false)}
   };
 
   return (
@@ -477,8 +486,19 @@ export function PublicCfpPage() {
                 >
                   Review
                 </Button>
-                <Button type="button" variant="secondary" disabled={!name||!email||!answers.title||result?.editable===false} onClick={saveDraft}>Save as draft</Button>
+                <Button type="button" variant="secondary" data-testid="save-draft" disabled={draftBusy||!name||!email||!answers.title||result?.editable===false} onClick={saveDraft}>{draftBusy?"Saving draft…":"Save as draft"}</Button>
               </div>
+              {/* The confirmation must sit AT the button: a top-of-form notice and a
+                  toast are both invisible from this scroll position. */}
+              {draftState?<div className="mt-3 rounded-[18px] border border-line bg-soft p-3 text-sm" data-testid="draft-saved-inline" role="status" aria-live="polite">
+                {draftState.status==="error"
+                  ? <span className="text-rose-600" data-testid="draft-save-error">{draftState.error}</span>
+                  : <>
+                      <span className="block font-semibold">Draft saved at {draftState.at} · reference {draftState.id}</span>
+                      <span className="block text-xs text-mid">Not submitted yet — reviewers cannot see it. Use “Review” then Submit when you are ready.</span>
+                      <a className="mt-1 inline-block text-xs font-semibold text-ink underline" data-testid="draft-resume-link" href={draftState.resumeUrl}>Copy or bookmark this resume link ↗</a>
+                    </>}
+              </div>:null}
             </>
           ) : null}
 

@@ -1002,9 +1002,22 @@ export function CommsPage() {
   };
 
   // Bounded loader; previously an empty template list left this page on a spinner.
+  //
+  // Each request settles INDEPENDENTLY: a slow or failing delivery log or speaker
+  // list must never blank the decision composer, which is the point of this page.
+  // Only a failed template load leaves us with nothing to render.
   const comms = useAsyncData(async () => {
-    const [t, l, s] = await Promise.all([api.templates(), api.commsLog(), api.speakers()]);
-    return { templates: t.data, log: l.data, speakers: s.data };
+    const [t, l, s] = await Promise.allSettled([api.templates(), api.commsLog(), api.speakers()]);
+    if (t.status === "rejected") throw t.reason instanceof Error ? t.reason : new Error("Could not load templates");
+    const partial: string[] = [];
+    if (l.status === "rejected") partial.push("delivery log");
+    if (s.status === "rejected") partial.push("speaker list");
+    return {
+      templates: t.value.data,
+      log: l.status === "fulfilled" ? l.value.data : [],
+      speakers: s.status === "fulfilled" ? s.value.data : [],
+      partial,
+    };
   }, []);
   const load = async () => comms.reload();
 
@@ -1071,7 +1084,14 @@ export function CommsPage() {
         }
       />
       {err ? <Notice tone="danger">{err}</Notice> : null}
-      <Card className="mb-4 p-4"><h2 className="text-lg font-bold">Decision emails</h2><p className="text-sm text-mid">Notify accepted/rejected cohorts. Merge fields: {"{{name}}"}, {"{{talk_title}}"}, {"{{decision}}"}.</p><div className="mt-3 flex gap-4"><label><input type="checkbox" checked={decision.accepted} onChange={e=>setDecision({...decision,accepted:e.target.checked})}/> Accepted</label><label><input type="checkbox" checked={decision.rejected} onChange={e=>setDecision({...decision,rejected:e.target.checked})}/> Rejected</label></div><div className="mt-3 grid gap-3"><Field label="Decision subject"><Input value={decision.subject} onChange={e=>setDecision({...decision,subject:e.target.value})}/></Field><Field label="Decision body"><Textarea rows={5} value={decision.body} onChange={e=>setDecision({...decision,body:e.target.value})}/></Field></div><div className="flex gap-2"><Button variant="secondary" onClick={async()=>{const sub=(await api.submissions()).data.find((x:any)=>(decision.accepted&&x.status==="accepted")||(decision.rejected&&x.status==="rejected"));if(sub)setDecisionPreview((await api.previewDecision({submissionId:sub.id,subject:decision.subject,body:decision.body})).data)}}>Preview decision email</Button><Button disabled={Boolean(sendBusy)} data-testid="send-decisions" onClick={()=>void runSend("decisions","Decision emails",()=>api.sendDecisions({cohorts:[decision.accepted&&"accepted",decision.rejected&&"rejected"].filter(Boolean),subject:decision.subject,body:decision.body}))}>{sendBusy==="decisions"?"Sending…":"Send decision notifications"}</Button></div>{decisionPreview?<Notice tone="info"><b>{decisionPreview.subject}</b><pre className="mt-2 whitespace-pre-wrap text-xs">{decisionPreview.body}</pre></Notice>:null}</Card>
+      {comms.data?.partial?.length ? (
+        <Notice tone="warn" data-testid="comms-partial-warning">
+          <span className="block font-semibold">Loaded with gaps — the {comms.data.partial.join(" and ")} could not be fetched.</span>
+          <span className="text-xs">Templates and the decision composer below are usable. Recipient counts may be incomplete until this loads.</span>
+          <Button size="sm" variant="outline" className="mt-2" onClick={() => comms.reload()}>Retry loading</Button>
+        </Notice>
+      ) : null}
+      <Card className="mb-4 p-4" id="decisions" data-testid="send-decisions-composer"><h2 className="text-lg font-bold">Send decisions — accept / reject notifications</h2><p className="text-sm text-mid">Notify accepted/rejected cohorts. Merge fields: {"{{name}}"}, {"{{talk_title}}"}, {"{{decision}}"}.</p><div className="mt-3 flex gap-4"><label><input type="checkbox" checked={decision.accepted} onChange={e=>setDecision({...decision,accepted:e.target.checked})}/> Accepted</label><label><input type="checkbox" checked={decision.rejected} onChange={e=>setDecision({...decision,rejected:e.target.checked})}/> Rejected</label></div><div className="mt-3 grid gap-3"><Field label="Decision subject"><Input value={decision.subject} onChange={e=>setDecision({...decision,subject:e.target.value})}/></Field><Field label="Decision body"><Textarea rows={5} value={decision.body} onChange={e=>setDecision({...decision,body:e.target.value})}/></Field></div><div className="flex gap-2"><Button variant="secondary" onClick={async()=>{const sub=(await api.submissions()).data.find((x:any)=>(decision.accepted&&x.status==="accepted")||(decision.rejected&&x.status==="rejected"));if(sub)setDecisionPreview((await api.previewDecision({submissionId:sub.id,subject:decision.subject,body:decision.body})).data)}}>Preview decision email</Button><Button disabled={Boolean(sendBusy)} data-testid="send-decisions" onClick={()=>void runSend("decisions","Decision emails",()=>api.sendDecisions({cohorts:[decision.accepted&&"accepted",decision.rejected&&"rejected"].filter(Boolean),subject:decision.subject,body:decision.body}))}>{sendBusy==="decisions"?"Sending…":"Send decision notifications"}</Button></div>{decisionPreview?<Notice tone="info"><b>{decisionPreview.subject}</b><pre className="mt-2 whitespace-pre-wrap text-xs">{decisionPreview.body}</pre></Notice>:null}</Card>
 
       <div className="grid gap-4 lg:grid-cols-[200px_1fr_1fr]">
         <Card className="p-3">

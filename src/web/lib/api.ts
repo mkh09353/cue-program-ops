@@ -25,7 +25,8 @@ try { const stored = localStorage.getItem(EVENT_KEY); if (stored) activeEvent = 
 export const getEventId = () => activeEvent.id;
 export const getActiveEvent = () => activeEvent;
 export const getEventCatalog = () => eventCatalog;
-export function subscribeEvent(fn: () => void) { eventListeners.add(fn); return () => eventListeners.delete(fn); }
+/** Subscribe to active-event changes. Returns a React-effect-safe cleanup. */
+export function subscribeEvent(fn: () => void): () => void { eventListeners.add(fn); return () => { eventListeners.delete(fn); }; }
 const notifyEvent = () => { for (const fn of eventListeners) fn(); bumpData(); };
 
 /** Adopt the server's event list and re-resolve the stored selection. */
@@ -38,13 +39,22 @@ export function setEventCatalog(list: EventSummary[]) {
   if (changed) notifyEvent();
 }
 
-/** Switch the organizer/reviewer/speaker shells to another event. */
+/** Switch the organizer/reviewer/speaker shells to another event.
+ *
+ * An id that is not in the catalog yet is still adopted (a reviewer arriving on
+ * an invite link, or an event created moments ago), with the catalog refreshed
+ * in the background so the switcher shows the real name. */
 export function setActiveEventId(id: string) {
+  if (!id || id === activeEvent.id) return;
   const match = eventCatalog.find((e) => e.id === id);
-  if (!match || match.id === activeEvent.id) return;
-  activeEvent = match;
+  activeEvent = match || { ...activeEvent, id, name: id, slug: "" };
   try { localStorage.setItem(EVENT_KEY, id); } catch { /* storage unavailable */ }
   notifyEvent();
+  if (!match) {
+    void api.events()
+      .then((r) => setEventCatalog(r.data || []))
+      .catch(() => { /* the id still scopes requests correctly */ });
+  }
 }
 
 /** Template-literal shim: every `${EVENT_ID}` in this module's API paths

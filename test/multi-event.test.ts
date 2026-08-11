@@ -309,3 +309,54 @@ test("the web client sends the active event on every request", () => {
   const apiSrc = readFileSync("src/web/lib/api.ts", "utf8");
   assert.match(apiSrc, /"x-cue-event": getEventId\(\)/, "header carries the active event id");
 });
+
+test("new event is immediately usable for form, submission, and roster without seeded leakage", async () => {
+  const { app } = await freshApp();
+  const event = (await json(await post(app, "/api/events", DEVFLOW))).data;
+  const formId = getEventStore(event.id)!.form.id;
+  const form = (await json(await app.request(`/api/events/${event.id}/forms/${formId}`, { headers: ORG }))).data;
+  form.title = "DevFlow speaker proposals";
+  const saved = await app.request(`/api/events/${event.id}/forms/${form.id}`, {
+    method: "PUT", headers: ORG, body: JSON.stringify(form),
+  });
+  assert.equal(saved.status, 200);
+  assert.equal((await json(saved)).data.title, "DevFlow speaker proposals");
+
+  const created = await post(app, `/api/public/events/${event.slug}/submissions`, {
+    name: "Event B Speaker", email: "event-b-speaker@example.test",
+    answers: { title: "Only in event B", abstract: "B".repeat(80), category: "AI Engineering", format: "Talk (30 min)", experience: "Beginner" },
+  }, { "content-type": "application/json" });
+  assert.equal(created.status, 201);
+  const submission = (await json(created)).data;
+  assert.equal((await post(app, `/api/events/${event.id}/submissions/${submission.id}/decision`, { nextStatus: "accepted", sendComms: false }, ORG)).status, 200);
+  const roster = (await json(await app.request(`/api/events/${event.id}/speakers`, { headers: ORG }))).data;
+  assert.ok(roster.some((row: any) => row.speakerId === submission.speakerId));
+  const seeded = (await json(await app.request(`/api/events/${EVENT_ID}/submissions`, { headers: ORG }))).data;
+  assert.ok(!seeded.some((row: any) => row.title === "Only in event B"));
+});
+
+test("event B reviewer assignment queue and invite token retain explicit event ownership", async () => {
+  const { app } = await freshApp();
+  const event = (await json(await post(app, "/api/events", DEVFLOW))).data;
+  const made = await post(app, `/api/public/events/${event.slug}/submissions`, {
+    name: "Review Target", email: "review-target@example.test",
+    answers: { title: "Scoped review", abstract: "R".repeat(80), category: "AI Engineering", format: "Talk (30 min)", experience: "Beginner" },
+  }, { "content-type": "application/json" });
+  const submission = (await json(made)).data;
+  const roundRes = await post(app, `/api/events/${event.id}/review-rounds`, { name: "Event B round", status: "open", criteria: [] });
+  const round = (await json(roundRes)).data;
+  const invited = await post(app, `/api/events/${event.id}/review-rounds/${round.id}/reviewers`, { name: "Event B Reviewer", email: "event-b-reviewer@example.test" });
+  const reviewer = (await json(invited)).data.reviewer;
+  const assignment = await post(app, `/api/events/${event.id}/review-assignments`, { roundId: round.id, submissionIds: [submission.id], reviewerId: reviewer.id, method: "specific" });
+  assert.equal(assignment.status, 201);
+  const queue = await app.request(`/api/events/${event.id}/reviewer-queue`, { headers: { "x-demo-persona": reviewer.id } });
+  assert.equal(queue.status, 200);
+  assert.equal((await json(queue)).data[0].submissionId, submission.id);
+
+  const issued = await post(app, `/api/events/${event.id}/reviewers/${reviewer.id}/invite-link`, { roundId: round.id });
+  const token = new URL((await json(issued)).data.inviteUrl).searchParams.get("invite")!;
+  await app.request(`/api/events/${EVENT_ID}/bootstrap`, { headers: ORG });
+  const resolved = await app.request(`/api/public/reviewer-invites/${token}`);
+  assert.equal(resolved.status, 200);
+  assert.equal((await json(resolved)).data.eventId, event.id);
+});

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { subscribeEvent } from "./api";
 
 /**
  * Shared loader for organizer pages.
@@ -69,6 +70,11 @@ export function useAsyncData<T>(
     return cancel;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);
+
+  // Every scoped request carries the ACTIVE event, so a switch (or a freshly
+  // created event) must refetch rather than leave the previous event's rows on
+  // screen. Without this an organizer page silently shows another event's data.
+  useEffect(() => subscribeEvent(() => run()), [run]);
 
   return { data, error, loading, timedOut, reload: run, attempts };
 }

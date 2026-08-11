@@ -58,6 +58,7 @@ test("invalid demo invite fails explicitly and reviewer shell does not run fallb
   const shell = readFileSync(new URL("../src/web/components/shells.tsx", import.meta.url), "utf8");
   const reviewer = shell.slice(shell.indexOf("export function ReviewerShell"), shell.indexOf("export function PortalShell"));
   assert.match(reviewer, /resolveReviewerInvite\(inviteToken\)/);
+  assert.match(reviewer, /setActiveEventId\(r\.data\.eventId\)/, "invite selects its owning event before queue redirect");
   assert.match(reviewer, /No reviewer persona was selected/);
   assert.ok(reviewer.indexOf("resolveReviewerInvite(inviteToken)") < reviewer.indexOf('resolvePortalPersona("reviewer")') || reviewer.includes('if(!inviteToken){resolvePortalPersona("reviewer")'), "fallback is restricted to requests without an invite token");
 

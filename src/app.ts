@@ -105,14 +105,17 @@ export function createApp(deps: AppDeps = {}) {
   const sync = new SyncService(repo, client);
   const app = new Hono();
   /** Save after mutations. Failures are observable but never roll back valid in-memory work. */
-  const persist = async () => {
+  const persist = async (intendedEventId = activeEventId(), intendedStore = store) => {
     const memory = repo as MemoryRepository & { exportSyncState?: () => CompetitionSnapshot["sync"]; getSchedule?: (id:string) => Promise<any> };
     try {
       // Keep optional snapshot-export failures from changing an otherwise valid request result.
       const syncState = memory.exportSyncState?.() as CompetitionSnapshot["sync"] | undefined;
       // Snapshot the ACTIVE event; each event persists under its own id.
-      const eventId = activeEventId();
-      await persistence.save({version:1,eventId,savedAt:new Date().toISOString(),lifecycle:structuredClone(store),schedule:await memory.getSchedule?.(eventId),sync:syncState || {links:[],runs:[],items:[]}});
+      // Capture both values before any await. Request handlers with an explicit
+      // event pass their resolved pair so another request cannot redirect this save.
+      const eventId = intendedEventId;
+      const lifecycle = structuredClone(intendedStore);
+      await persistence.save({version:1,eventId,savedAt:new Date().toISOString(),lifecycle,schedule:await memory.getSchedule?.(eventId),sync:syncState || {links:[],runs:[],items:[]}});
     } catch (error) { console.error("CUE snapshot persistence failed", error instanceof Error ? error.message : "unknown error"); }
   };
   const deliver = async (row: ReturnType<typeof sendTemplate>) => {
@@ -153,14 +156,14 @@ export function createApp(deps: AppDeps = {}) {
   app.get("/api/events", (c) => c.json({ data: listEvents() }));
   app.post("/api/events", async (c) => {
     if (actor(c) !== "organizer") return fail(c, "organizer role required", 403);
+    const previous = activeEventId();
     const b = (await c.req.json().catch(() => null)) as any;
     if (!b) return fail(c, "JSON body required");
     const result = await createEvent(b, repo as any);
     if (!result.ok) return fail(c, result.error, result.status);
     // Persist the new event's own (empty) snapshot without losing the caller's context.
-    const previous = activeEventId();
     activateEvent(result.record.id);
-    await persist();
+    await persist(result.record.id, getEventStore(result.record.id)!);
     activateEvent(previous);
     return c.json({ data: result.record }, 201);
   });
@@ -261,10 +264,15 @@ export function createApp(deps: AppDeps = {}) {
   });
 
   app.get("/api/public/reviewer-invites/:token", (c) => {
-    const invite = (store.reviewerInvites || []).find((x) => x.token === c.req.param("token"));
-    if (!invite || invite.eventId !== store.event.id || invite.revokedAt || (invite.expiresAt && Date.parse(invite.expiresAt) <= Date.now())) return fail(c, "Reviewer demo access link is invalid or expired", 404);
-    const reviewer = store.personas.find((p) => p.id === invite.reviewerId && p.role === "reviewer" && p.email === invite.email);
-    const round = store.reviewRounds.find((r) => r.id === invite.roundId && r.reviewerIds.includes(invite.reviewerId));
+    // Invite URLs are intentionally event-agnostic for compatibility. Resolve
+    // ownership through the registry rather than whichever event was last active.
+    const owner = listEvents().map((event) => getEventStore(event.id)).find((life) =>
+      life?.reviewerInvites?.some((x) => x.token === c.req.param("token")),
+    );
+    const invite = owner?.reviewerInvites?.find((x) => x.token === c.req.param("token"));
+    if (!owner || !invite || invite.eventId !== owner.event.id || invite.revokedAt || (invite.expiresAt && Date.parse(invite.expiresAt) <= Date.now())) return fail(c, "Reviewer demo access link is invalid or expired", 404);
+    const reviewer = owner.personas.find((p) => p.id === invite.reviewerId && p.role === "reviewer" && p.email === invite.email);
+    const round = owner.reviewRounds.find((r) => r.id === invite.roundId && r.reviewerIds.includes(invite.reviewerId));
     if (!reviewer || !round) return fail(c, "Reviewer demo access link is invalid or expired", 404);
     return c.json({ data: { reviewer, eventId: invite.eventId, roundId: invite.roundId, mode: "demo_persona_link" } });
   });
@@ -826,8 +834,8 @@ export function createApp(deps: AppDeps = {}) {
   });
   app.post("/api/events/:eventId/comms/decisions/send", async (c) => {
     if (actor(c) !== "organizer") return fail(c, "organizer role required", 403);
-    const b=await c.req.json(),cohorts=Array.isArray(b.cohorts)?b.cohorts:["accepted","rejected"],targets=store.submissions.filter(s=>cohorts.includes(s.status));const rows=[];
-    for(const sub of targets){const merge=(text:string)=>text.replaceAll("{{name}}",sub.name).replaceAll("{{talk_title}}",sub.title).replaceAll("{{decision}}",sub.status);const subject=merge(String(b.subject||"Decision for {{talk_title}}")),body=merge(String(b.body||"Hi {{name}}, your proposal {{talk_title}} was {{decision}}."));const result=await mailer.send({to:sub.email,subject,text:body}).catch(()=>({status:"failed" as const}));const row={id:`comm-${crypto.randomUUID()}`,speakerId:sub.speakerId,submissionId:sub.id,subject,body,kind:(sub.status==="accepted"?"acceptance":"rejection") as "acceptance"|"rejection",status:result.status,ics:"",createdAt:new Date().toISOString()};store.communications.unshift(row);rows.push(row)}await persist();return c.json({data:rows},201);
+    const life=store,eventId=life.event.id,b=await c.req.json(),cohorts=Array.isArray(b.cohorts)?b.cohorts:["accepted","rejected"],targets=life.submissions.filter(s=>cohorts.includes(s.status));const rows=[];
+    for(const sub of targets){const merge=(text:string)=>text.replaceAll("{{name}}",sub.name).replaceAll("{{talk_title}}",sub.title).replaceAll("{{decision}}",sub.status);const subject=merge(String(b.subject||"Decision for {{talk_title}}")),body=merge(String(b.body||"Hi {{name}}, your proposal {{talk_title}} was {{decision}}."));const result=await mailer.send({to:sub.email,subject,text:body}).catch(()=>({status:"failed" as const}));const row={id:`comm-${crypto.randomUUID()}`,speakerId:sub.speakerId,submissionId:sub.id,subject,body,kind:(sub.status==="accepted"?"acceptance":"rejection") as "acceptance"|"rejection",status:result.status,ics:"",createdAt:new Date().toISOString()};life.communications.unshift(row);rows.push(row)}await persist(eventId,life);return c.json({data:rows},201);
   });
   app.post("/api/events/:eventId/comms/reminders/plan", (c) => {
     if (actor(c) !== "organizer") return fail(c, "organizer role required", 403);

@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, getPersona } from "../lib/api";
+import { api, getPersona, subscribeEvent } from "../lib/api";
 import {
   Badge,
   Button,
@@ -61,6 +61,9 @@ function useData(load: () => Promise<any>) {
   useEffect(() => {
     void reload();
   }, [reload]);
+  // Review data is event-scoped: refetch when the organizer switches or creates
+  // an event so the plan/assignments/progress never show the previous event.
+  useEffect(() => subscribeEvent(() => void reload()), [reload]);
   return { data, error, reload, loading, timedOut };
 }
 

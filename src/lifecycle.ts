@@ -845,10 +845,10 @@ export let store: LifecycleStore = {
   ],
 };
 
-export function readiness(speakerId: string, at = new Date()) {
-  const tasks = store.tasks.filter((t) => t.speakerId === speakerId && t.required);
-  const files = store.files.filter((f) => f.speakerId === speakerId);
-  const profile = store.profiles.find((p) => p.speakerId === speakerId);
+export function readiness(speakerId: string, at = new Date(), life: LifecycleStore = store) {
+  const tasks = life.tasks.filter((t) => t.speakerId === speakerId && t.required);
+  const files = life.files.filter((f) => f.speakerId === speakerId);
+  const profile = life.profiles.find((p) => p.speakerId === speakerId);
   const missing: string[] = [];
   for (const task of tasks.filter((t) => t.status !== "completed")) {
     const overdue = Date.parse(task.dueAt) < at.getTime();
@@ -942,19 +942,19 @@ export function reviewForRound(submissionId: string, reviewerId: string, round: 
  * both render, so a submitted scorecard shows up immediately with the reviewer
  * name, round, criterion labels, ratings, and comment.
  */
-export function reviewHistory(submissionId: string) {
+export function reviewHistory(submissionId: string, life: LifecycleStore = store) {
   const humanize = (key: string) =>
     key.replace(/[-_]+/g, " ").replace(/\b\w/g, (m) => m.toUpperCase());
-  return store.reviews
+  return life.reviews
     .filter((review) => review.submissionId === submissionId)
     .map((review) => {
-      const assignment = store.reviewAssignments.find(
+      const assignment = life.reviewAssignments.find(
         (a) => a.submissionId === review.submissionId && a.reviewerId === review.reviewerId && a.status !== "recused",
       );
       const round =
-        store.reviewRounds.find((r) => r.id === (review.roundId || assignment?.roundId)) ||
-        store.reviewRounds.find((r) => r.reviewerIds.includes(review.reviewerId)) ||
-        store.reviewRounds[0];
+        life.reviewRounds.find((r) => r.id === (review.roundId || assignment?.roundId)) ||
+        life.reviewRounds.find((r) => r.reviewerIds.includes(review.reviewerId)) ||
+        life.reviewRounds[0];
       const criteria = round?.criteria || [];
       const raw: Record<string, string | number> = {
         ...(review.scores || {}),
@@ -981,7 +981,7 @@ export function reviewHistory(submissionId: string) {
       const average = ratings.length
         ? Math.round((ratings.reduce((a, b) => a + b.value, 0) / ratings.length) * 100) / 100
         : null;
-      const reviewer = store.personas.find((p) => p.id === review.reviewerId);
+      const reviewer = life.personas.find((p) => p.id === review.reviewerId);
       const comment = String(review.responses?.comments ?? review.notes ?? "");
       return {
         ...review,
@@ -1003,11 +1003,11 @@ export function reviewHistory(submissionId: string) {
  * Mirror a submitted scorecard onto the canonical assignment + submission state so
  * reviewer-side and organizer-side flows never diverge.
  */
-export function markReviewSubmitted(review: Review, at = new Date().toISOString()) {
+export function markReviewSubmitted(review: Review, at = new Date().toISOString(), life: LifecycleStore = store) {
   review.status = "submitted";
   review.source = review.source === "ai_draft" ? "human" : review.source || "human";
   review.submittedAt = at;
-  const assignment = store.reviewAssignments.find(
+  const assignment = life.reviewAssignments.find(
     (a) => a.submissionId === review.submissionId && a.reviewerId === review.reviewerId && a.status === "assigned",
   );
   if (assignment) {
@@ -1015,7 +1015,7 @@ export function markReviewSubmitted(review: Review, at = new Date().toISOString(
     assignment.completedAt = at;
     review.roundId = review.roundId || assignment.roundId;
   }
-  const submission = store.submissions.find((s) => s.id === review.submissionId);
+  const submission = life.submissions.find((s) => s.id === review.submissionId);
   if (submission && submission.status === "submitted") submission.status = "under_review";
   return review;
 }
@@ -1038,7 +1038,7 @@ export function upsertResource(input: Omit<Resource, "id"> & { id?: string }) {
 }
 export function deleteResource(id: string) { const i=store.resources.findIndex((r)=>r.id===id); if(i<0)return false; store.resources.splice(i,1);return true }
 
-export function reminderPlans(at = new Date()): ReminderPlan[] { return store.tasks.filter((t)=>t.required&&t.status!=="completed").map((t)=>({speakerId:t.speakerId,taskId:t.id,templateKey:"task_reminder" as const,dueAt:t.dueAt,overdue:Date.parse(t.dueAt)<at.getTime()})); }
+export function reminderPlans(at = new Date(), life: LifecycleStore = store): ReminderPlan[] { return life.tasks.filter((t)=>t.required&&t.status!=="completed").map((t)=>({speakerId:t.speakerId,taskId:t.id,templateKey:"task_reminder" as const,dueAt:t.dueAt,overdue:Date.parse(t.dueAt)<at.getTime()})); }
 
 export function icsForSession(session: SessionDraft) {
   if (!session.slot) return undefined;
@@ -1172,10 +1172,11 @@ export function sendTemplate(
   speakerId: string,
   talkTitle: string,
   kind: Communication["kind"] = "custom",
+  life: LifecycleStore = store,
 ) {
-  const tpl = store.templates.find((t) => t.key === templateKey);
-  const profile = store.profiles.find((p) => p.speakerId === speakerId);
-  const name = profile?.name || store.submissions.find((s) => s.speakerId === speakerId)?.name || "Speaker";
+  const tpl = life.templates.find((t) => t.key === templateKey);
+  const profile = life.profiles.find((p) => p.speakerId === speakerId);
+  const name = profile?.name || life.submissions.find((s) => s.speakerId === speakerId)?.name || "Speaker";
   const first = name.split(" ")[0] || name;
   // Relative URL is safe across preview, deployed, and custom public origins; it is not a localhost persistence leak.
   const portal = `/speaker/${encodeURIComponent(speakerId)}`;
@@ -1186,7 +1187,7 @@ export function sendTemplate(
         portal_link: portal,
       })
     : { subject: "Message from CUE", body: `Hi ${first}, regarding ${talkTitle}` };
-  const session = store.sessions.find((s) => s.speakerId === speakerId && s.title === talkTitle);
+  const session = life.sessions.find((s) => s.speakerId === speakerId && s.title === talkTitle);
   const icsBody = session ? icsForSession(session) || "" : "";
   const row: Communication = {
     id: `comm-${crypto.randomUUID()}`,
@@ -1205,7 +1206,7 @@ export function sendTemplate(
     ics: icsBody,
     createdAt: now(),
   };
-  store.communications.unshift(row);
+  life.communications.unshift(row);
   return row;
 }
 
