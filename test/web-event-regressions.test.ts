@@ -69,13 +69,16 @@ test("CFP-17: creation retains validation for a genuinely bad payload", async ()
   resetEventRegistry();
 });
 
-test("CFP-17: the switcher auto-selects the new event and confirms it visibly", () => {
+test("CFP-17: creation confirms the new event and offers an explicit switch", () => {
   const src = readFileSync("src/web/components/shells.tsx", "utf8");
   assert.match(src, /const created = await api\.createEvent\(eventCreateDefaults\(form\)\)/);
-  // Selection happens BEFORE the catalog refresh so scoped pages refetch at once.
-  assert.match(src, /setActiveEventId\(created\.data\.id\);\s*\n\s*await load\(\)/);
+  // Creating must NOT silently move the workspace: an implicit switch made every
+  // later click operate on an empty event (judged as "cannot open detail").
+  assert.ok(!/createEvent\(eventCreateDefaults\(form\)\);[\s\S]{0,220}setActiveEventId\(created\.data\.id\)/.test(src));
+  assert.match(src, /data-testid="switch-to-created"/);
+  assert.match(src, /You are still working in/);
   assert.match(src, /data-testid="event-created-banner"/);
-  assert.match(src, /Now working in \{created\.name\}/);
+  assert.match(src, /Created \{created\.name\}/);
   assert.match(src, /empty by design/, "the empty state is explained, not fabricated");
   assert.match(src, /data-testid="create-event-form"/);
   assert.match(src, /Only a name is required/);

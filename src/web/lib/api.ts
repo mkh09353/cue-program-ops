@@ -237,13 +237,23 @@ export function resolvePortalPersona(role: Role) {
   // the fallback boundary: unlike organizer route gating, it is safe to select a
   // known demo persona so API headers stay usable. The fallback is PROVISIONAL —
   // it must not persist, so a pending explicit selection survives catalog loading.
+  // The fallback MUST come from the loaded (event-scoped) catalog. Falling back to
+  // a built-in demo persona that does not exist in the active event made every
+  // portal request 403 and rendered an empty shell.
   const fallback =
-    (role === "speaker"
-      ? personaCatalog.find((p) => p.id === "spk-sam") || personaCatalog.find((p) => p.role === role)
-      : personaCatalog.find((p) => p.role === role)) || DEFAULT_PERSONAS.find((p) => p.role === role);
-  if (fallback) setPersona(fallback, { explicit: false });
-  return true;
+    role === "speaker"
+      ? personaCatalog.find((p) => p.id === "spk-sam" && p.role === role) || personaCatalog.find((p) => p.role === role)
+      : personaCatalog.find((p) => p.role === role);
+  if (fallback) {
+    setPersona(fallback, { explicit: false });
+    return true;
+  }
+  // No persona of this role exists here; the caller shows an explicit empty state.
+  return false;
 }
+
+/** True when the loaded catalog contains at least one persona for the role. */
+export const hasPersonaForRole = (role: Role) => personaCatalog.some((p) => p.role === role);
 
 function headers(extra?: HeadersInit): HeadersInit {
   const h: Record<string, string> = {

@@ -125,7 +125,10 @@ const nameList = (value: string[] | string | undefined): string[] =>
 /** A blank-but-usable lifecycle store: standard CFP form, no content. */
 export function createBlankStore(record: EventRecord): LifecycleStore {
   const form = structuredClone(seededStore.form);
-  form.id = `form-${record.id}`;
+  // The organizer builder and Settings request the canonical "form-cfp" id, and
+  // forms are per-event, so a created event must use the SAME id or its builder
+  // and public CFP 404 (the whole downstream flow then degrades).
+  form.id = "form-cfp";
   form.title = `${record.name} CFP`;
   form.status = "open";
   form.openAt = new Date().toISOString();

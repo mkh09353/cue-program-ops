@@ -22,6 +22,7 @@ import {
   getPersona,
   getPersonaCatalog,
   restorePersonaFromSession,
+  hasPersonaForRole,
   resolvePortalPersona,
   roleHome,
   setPersona,
@@ -81,7 +82,7 @@ export function EventSwitcher({ readOnly }: { readOnly?: boolean } = {}) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   /** Persistent confirmation that the workspace switched to the new event. */
-  const [created, setCreated] = useState<{ name: string; slug: string; at: string } | null>(null);
+  const [created, setCreated] = useState<{ id: string; name: string; slug: string; at: string } | null>(null);
 
   const load = () =>
     api
@@ -104,11 +105,11 @@ export function EventSwitcher({ readOnly }: { readOnly?: boolean } = {}) {
     setError("");
     try {
       const created = await api.createEvent(eventCreateDefaults(form));
-      // Adopt the new event immediately, then refresh the catalog: every scoped
-      // page refetches through subscribeEvent, so the workspace is usable at once.
-      setActiveEventId(created.data.id);
+      // Do NOT silently switch: an implicit change of active event made every
+      // later click operate on an empty workspace. Confirm, and let the organizer
+      // switch deliberately.
       await load();
-      setCreated({ name: created.data.name, slug: created.data.slug, at: new Date().toLocaleTimeString() });
+      setCreated({ id: created.data.id, name: created.data.name, slug: created.data.slug, at: new Date().toLocaleTimeString() });
       setCreating(false);
       setOpen(false);
       setForm({ ...BLANK_EVENT });
@@ -152,11 +153,17 @@ export function EventSwitcher({ readOnly }: { readOnly?: boolean } = {}) {
           aria-live="polite"
           data-testid="event-created-banner"
         >
-          <span className="block font-semibold">Now working in {created.name}</span>
+          <span className="block font-semibold">Created {created.name}</span>
           <span className="block text-xs text-mid">
-            Created {created.at} · slug {created.slug} · empty by design: no submissions, speakers or sessions yet.
+            {created.at} · slug {created.slug} · empty by design: no submissions, speakers or sessions yet.
+            You are still working in <b>{active.name}</b>.
           </span>
-          <Button size="sm" variant="ghost" className="mt-1" onClick={() => setCreated(null)}>Dismiss</Button>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <Button size="sm" data-testid="switch-to-created" onClick={() => { setActiveEventId(created.id); setCreated(null); }}>
+              Switch to {created.name}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setCreated(null)}>Stay in {active.name}</Button>
+          </div>
         </div>
       ) : null}
       {open ? (
@@ -312,16 +319,42 @@ function useRoleSync(role: Role) {
   const location = useLocation();
   const persona = usePersona();
   const [ready, setReady] = useState(false);
-  // Rehydrate stored persona before any role gating so direct URL loads don't flash 403.
-  // This never overrides an explicit selection (see resolvePortalPersona).
-  resolvePortalPersona(role);
+  /** "none" once the event's catalog is known to hold no persona for this role. */
+  const [missing, setMissing] = useState(false);
+  const activeEvent = useActiveEvent();
+
+  // Resolution runs in an EFFECT, never during render: resolvePortalPersona calls
+  // setPersona, and a render-time store write re-entered this component through
+  // useSyncExternalStore. It is also bounded — one bootstrap fetch per event.
   useEffect(() => {
-    restorePersonaFromSession();
-    ensurePersonaForRole(role);
-    setReady(true);
-  }, [role, location.pathname]);
+    let live = true;
+    setReady(false);
+    setMissing(false);
+    const finish = () => {
+      if (!live) return;
+      restorePersonaFromSession();
+      const resolved = resolvePortalPersona(role);
+      if (resolved) ensurePersonaForRole(role);
+      setMissing(!resolved && !hasPersonaForRole(role));
+      setReady(true);
+    };
+    // The event catalog is loaded too so the empty state can name the real event
+    // (the switcher is not mounted on that screen).
+    void api.events().then((r) => { if (live && r.data?.length) setEventCatalog(r.data); }).catch(() => {});
+    api
+      .bootstrap()
+      .then((r) => {
+        if (!live) return;
+        const personas = (r.data?.personas || []) as Persona[];
+        if (personas.length) setPersonaCatalog(personas);
+      })
+      .catch(() => { /* fall through: resolve against whatever catalog we have */ })
+      .finally(finish);
+    return () => { live = false; };
+  }, [role, activeEvent.id]);
+
   // Portal pages are keyed on the persona id so every query refetches on switch.
-  return { ready, personaKey: persona.id };
+  return { ready, personaKey: persona.id, missing };
 }
 
 const orgNav = [
@@ -521,7 +554,7 @@ export function ReviewerShell() {
 }
 
 export function PortalShell() {
-  const { ready, personaKey } = useRoleSync("speaker");
+  const { ready, personaKey, missing } = useRoleSync("speaker");
   const links = [
     { to: "/p", label: "Home", icon: Home, end: true },
     { to: "/p/talks", label: "Talks" },
@@ -534,6 +567,23 @@ export function PortalShell() {
     return (
       <div className="grid min-h-screen place-items-center bg-canvas text-sm text-mid">
         Restoring speaker session…
+      </div>
+    );
+  }
+  if (missing) {
+    return (
+      <div className="grid min-h-screen place-items-center bg-canvas p-6">
+        <div className="max-w-md rounded-[24px] border border-line bg-paper p-6 text-center" data-testid="portal-no-speakers">
+          <h1 className="text-lg font-bold text-ink">No speaker personas in this event</h1>
+          <p className="mt-2 text-sm text-mid">
+            <b>{getActiveEvent().name}</b> has no speakers yet, so there is no portal to sign in to. Accept a submission
+            or add a speaker in the organizer workspace, then come back.
+          </p>
+          <div className="mt-4 flex flex-wrap justify-center gap-2">
+            <Button asChild variant="secondary"><a href="/app/speakers">Open organizer roster</a></Button>
+            <Button asChild variant="ghost"><a href="/app">Organizer workspace</a></Button>
+          </div>
+        </div>
       </div>
     );
   }

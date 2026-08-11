@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { api, subscribeData } from "../lib/api";
+import { api, getActiveEvent, setActiveEventId, subscribeData, subscribeEvent } from "../lib/api";
 import { averageScores } from "../lib/utils";
 import {
   Badge,
@@ -17,6 +17,27 @@ import {
 } from "../components/ui";
 
 const CRITERIA = ["relevance", "novelty", "clarity", "depth"] as const;
+
+/** Find which event owns a submission the active event cannot see.
+ * Used only on the 404 path, so the extra probes are cheap. */
+export async function findOwningEvent(submissionId: string): Promise<{ id: string; name: string } | null> {
+  try {
+    const events = (await api.events()).data || [];
+    const active = getActiveEvent().id;
+    for (const event of events) {
+      if (event.id === active) continue;
+      const found = await fetch(`/api/events/${event.id}/submissions/${submissionId}`, {
+        headers: { "x-demo-role": "organizer", "x-demo-persona": "org-swyx", "x-cue-event": event.id },
+      })
+        .then((r) => r.ok)
+        .catch(() => false);
+      if (found) return { id: event.id, name: event.name };
+    }
+  } catch {
+    /* fall back to the plain error notice */
+  }
+  return null;
+}
 
 function inboxScore(s: any): string {
   if (s.avgScore != null && s.avgScore !== "") return String(s.avgScore);
@@ -240,6 +261,8 @@ export function ReviewStudioPage() {
   const [notes, setNotes] = useState("");
   const [roundId, setRoundId] = useState<string>("");
   const [err, setErr] = useState("");
+  /** Set when the submission exists, but in a different event. */
+  const [owner, setOwner] = useState<{ id: string; name: string } | null>(null);
   const [busy, setBusy] = useState(false);
   // Assignments let the studio request an AI draft before any Review row exists.
   const [assignments, setAssignments] = useState<any[]>([]);
@@ -273,7 +296,12 @@ export function ReviewStudioPage() {
           setNotes(rev.notes || "");
         }
       })
-      .catch((e) => setErr(e.message));
+      .catch(async (e) => {
+        setErr(e?.message || "Could not load this submission");
+        // A record the ACTIVE event does not own is the classic multi-event trap:
+        // say which event holds it and offer the switch instead of a bare 404.
+        if (/not found/i.test(String(e?.message || ""))) setOwner(await findOwningEvent(id!));
+      });
 
   useEffect(() => {
     load();
@@ -296,7 +324,27 @@ export function ReviewStudioPage() {
   }, [data]);
 
   if (!data && !err) return <Spinner />;
-  if (err) return <Notice tone="danger">{err}</Notice>;
+  if (err)
+    return (
+      <div>
+        <PageHeader title="Submission unavailable" description={`Active event: ${getActiveEvent().name}`} actions={
+          <Button variant="outline" onClick={() => nav("/app/submissions")}>Back to inbox</Button>
+        }/>
+        {owner ? (
+          <Notice tone="warn">
+            <span className="block font-semibold" data-testid="cross-event-notice">
+              This submission belongs to {owner.name} — switch event to view it.
+            </span>
+            <span className="text-xs">You are currently working in {getActiveEvent().name}.</span>
+            <Button size="sm" className="mt-2" data-testid="switch-to-owner" onClick={() => { setActiveEventId(owner.id); setErr(""); setOwner(null); load(); }}>
+              Switch to {owner.name}
+            </Button>
+          </Notice>
+        ) : (
+          <Notice tone="danger" data-testid="submission-error">{err}</Notice>
+        )}
+      </div>
+    );
 
   const ratingCriteria = criteria.filter((c: any) => c.type === "rating");
   const total = ratingCriteria.length
