@@ -9,7 +9,7 @@ import { createZip } from "./zip.js";
 const fail=(c:any,message:string,status=400)=>c.json({error:{message}},status as any);
 const validStatus=(v:string):v is ContentApprovalStatus=>["draft","submitted","approved","changes_requested"].includes(v);
 export function createContentRoutes(deps:{store:LifecycleStore;persist:()=>Promise<void>;persona:(c:any)=>{id:string;role:string;name:string;email:string;speakerId?:string};mailer:Mailer;repo:Repository}) {
- const app=new Hono(); const event=(c:any)=>c.req.param("eventId")===EVENT_ID; const org=(c:any)=>deps.persona(c).role==="organizer";
+ const app=new Hono(); const event=(c:any)=>c.req.param("eventId")===deps.store.event.id; const org=(c:any)=>deps.persona(c).role==="organizer";
  const scheduleRepo=deps.repo as Repository&{getSchedule?:(id:string)=>Promise<any>;putSchedule?:(id:string,s:any)=>Promise<void>};
  /**
   * Mirror a lifecycle session edit onto the canonical schedule session that every
@@ -21,13 +21,15 @@ export function createContentRoutes(deps:{store:LifecycleStore;persist:()=>Promi
   * session the moment an organizer fixed its title — the edit then never reached
   * the public catalog.
   */
- const syncSession=async(sessionId:string)=>{const life=deps.store.sessions.find(s=>s.id===sessionId), state=deps.store.sessionContent.find(s=>s.sessionId===sessionId), schedule=await scheduleRepo.getSchedule?.(EVENT_ID), target=schedule?.sessions.find((s:any)=>s.id===sessionId);if(life&&target){target.title=life.title;target.abstract=life.abstract;target.trackIds=[life.trackId];target.format=(life as any).format||target.format;if(state?.status==="approved"){target.publishStatus="published";if(target.status!=="published")target.status=target.status||"accepted";}else if(state?.status==="changes_requested"){target.publishStatus="draft";}if(scheduleRepo.putSchedule)await scheduleRepo.putSchedule(EVENT_ID,schedule);}};
- const syncSpeaker=async(speakerId:string)=>{const profile=deps.store.profiles.find(p=>p.speakerId===speakerId), schedule=await scheduleRepo.getSchedule?.(EVENT_ID), target=schedule?.speakers.find((s:any)=>s.id===speakerId);if(profile&&target){Object.assign(target,{name:profile.name,bio:profile.bio,company:profile.company,title:profile.title,headshotUrl:(profile as any).headshotUrl});if(scheduleRepo.putSchedule)await scheduleRepo.putSchedule(EVENT_ID,schedule);}};
+ const syncSession=async(sessionId:string)=>{const life=deps.store.sessions.find(s=>s.id===sessionId), state=deps.store.sessionContent.find(s=>s.sessionId===sessionId), schedule=await scheduleRepo.getSchedule?.(deps.store.event.id), target=schedule?.sessions.find((s:any)=>s.id===sessionId);if(life&&target){target.title=life.title;target.abstract=life.abstract;target.trackIds=[life.trackId];target.format=(life as any).format||target.format;if(state?.status==="approved"){target.publishStatus="published";if(target.status!=="published")target.status=target.status||"accepted";}else if(state?.status==="changes_requested"){target.publishStatus="draft";}if(scheduleRepo.putSchedule)await scheduleRepo.putSchedule(deps.store.event.id,schedule);}};
+ const syncSpeaker=async(speakerId:string)=>{const profile=deps.store.profiles.find(p=>p.speakerId===speakerId), schedule=await scheduleRepo.getSchedule?.(deps.store.event.id), target=schedule?.speakers.find((s:any)=>s.id===speakerId);if(profile&&target){Object.assign(target,{name:profile.name,bio:profile.bio,company:profile.company,title:profile.title,headshotUrl:(profile as any).headshotUrl});if(scheduleRepo.putSchedule)await scheduleRepo.putSchedule(deps.store.event.id,schedule);}};
+ const commentRole=(comment:{authorId:string;authorRole?:string})=>comment.authorRole||(deps.store.personas.find(p=>p.id===comment.authorId)?.role==="organizer"?"Organizer":"Speaker");
+ const projectFile=(f:any)=>({...f,comments:(f.comments||[]).map((comment:any)=>({...comment,authorRole:commentRole(comment)}))});
  app.get("/api/events/:eventId/content",async(c)=>{if(!event(c))return fail(c,"event not found",404);if(!org(c))return fail(c,"organizer role required",403);
   // Sessions are the canonical schedule rows (including runtime-created ones), each with
   // its approval state and full history so the restore UI exists before any save.
-  const schedule=await scheduleRepo.getSchedule?.(EVENT_ID);
-  return c.json({data:{tasks:contentReadiness(deps.store),files:deps.store.contentFiles.map(f=>({...f,speaker:deps.store.profiles.find(p=>p.speakerId===f.speakerId),session:deps.store.sessions.find(s=>s.id===f.sessionId),currentVersion:f.versions.find(v=>v.current)})),sessions:listEditableSessions(deps.store,schedule),speakers:deps.store.profiles}})});
+  const schedule=await scheduleRepo.getSchedule?.(deps.store.event.id);
+  return c.json({data:{tasks:contentReadiness(deps.store),files:deps.store.contentFiles.map(f=>({...projectFile(f),speaker:deps.store.profiles.find(p=>p.speakerId===f.speakerId),session:deps.store.sessions.find(s=>s.id===f.sessionId),currentVersion:f.versions.find(v=>v.current)})),sessions:listEditableSessions(deps.store,schedule),speakers:deps.store.profiles}})});
  app.post("/api/events/:eventId/content/tasks",async(c)=>{if(!event(c))return fail(c,"event not found",404);if(!org(c))return fail(c,"organizer role required",403);const b=await c.req.json();if(!b.name||!b.dueAt||!Array.isArray(b.speakerIds)||!b.speakerIds.length)return fail(c,"name, due date, and assigned speakers are required");const made=b.speakerIds.flatMap((speakerId:string)=>{const sessions=(b.sessionIds?.length?deps.store.sessions.filter(s=>b.sessionIds.includes(s.id)&&s.speakerId===speakerId):deps.store.sessions.filter(s=>s.speakerId===speakerId));const targets=sessions.length?sessions:[undefined];return targets.map((session:any)=>{
       // One canonical slot per speaker/session/kind: reuse+extend an equivalent
       // deliverable instead of forking a second row the uploads would miss.
@@ -36,22 +38,22 @@ export function createContentRoutes(deps:{store:LifecycleStore;persist:()=>Promi
       return {...task,reused};
     });});await deps.persist();return c.json({data:made},201)});
  app.get("/api/speaker/events/:eventId/deliverables",(c)=>{if(!event(c))return fail(c,"event not found",404);const p=deps.persona(c);if(p.role!=="speaker"||!p.speakerId)return fail(c,"speaker role required",403);return c.json({data:contentReadiness(deps.store).filter(t=>t.speakerId===p.speakerId)})});
- app.get("/api/speaker/events/:eventId/deliverables/:taskId",(c)=>{if(!event(c))return fail(c,"event not found",404);const p=deps.persona(c),task=deps.store.deliverableTasks.find(t=>t.id===c.req.param("taskId"));if(!task||p.role!=="speaker"||task.speakerId!==p.speakerId)return fail(c,"deliverable not found",404);const file=deps.store.contentFiles.find(f=>f.taskId===task.id);return c.json({data:{...contentReadiness(deps.store).find(t=>t.id===task.id),file}})});
+ app.get("/api/speaker/events/:eventId/deliverables/:taskId",(c)=>{if(!event(c))return fail(c,"event not found",404);const p=deps.persona(c),task=deps.store.deliverableTasks.find(t=>t.id===c.req.param("taskId"));if(!task||p.role!=="speaker"||task.speakerId!==p.speakerId)return fail(c,"deliverable not found",404);const file=deps.store.contentFiles.find(f=>f.taskId===task.id);return c.json({data:{...contentReadiness(deps.store).find(t=>t.id===task.id),file:file?projectFile(file):undefined}})});
  app.post("/api/speaker/events/:eventId/deliverables/:taskId/upload",async(c)=>{if(!event(c))return fail(c,"event not found",404);const p=deps.persona(c),task=deps.store.deliverableTasks.find(t=>t.id===c.req.param("taskId"));if(!task||p.role!=="speaker"||task.speakerId!==p.speakerId)return fail(c,"deliverable not found",404);const b=await c.req.json();const canonical=canonicalDeliverable(deps.store,task);const check=validateUpload(b,canonical.acceptedTypes);if(!check.ok)return fail(c,check.error);const kind=b.kind||(/image\//.test(b.mime)?"headshot":"document");const made=addFileVersion(deps.store,{task:canonical,name:b.name,mime:b.mime,size:b.size,dataBase64:b.dataBase64,uploadedBy:p.id,kind});if(kind==="headshot"){const profile=deps.store.profiles.find(x=>x.speakerId===canonical.speakerId);if(profile)(profile as any).headshotUrl=`/api/content/files/${made.file.id}/versions/${made.version.id}`;await syncSpeaker(canonical.speakerId)}await deps.persist();return c.json({data:made},201)});
  app.get("/api/content/files/:fileId/versions/:versionId",(c)=>{const p=deps.persona(c),file=deps.store.contentFiles.find(f=>f.id===c.req.param("fileId"));if(!file)return fail(c,"file not found",404);const version=file.versions.find(v=>v.id===c.req.param("versionId"));if(!version)return fail(c,"version not found",404);const profile=deps.store.profiles.find(x=>x.speakerId===file.speakerId),isPublicHeadshot=file.kind==="headshot"&&(profile as any)?.headshotUrl===c.req.path;if(!isPublicHeadshot&&!canAccessFile(file,p))return fail(c,"file not found",404);const bytes=Uint8Array.from(atob(version.dataBase64),x=>x.charCodeAt(0));return c.body(bytes.buffer,200,{"content-type":version.mime,"content-disposition":`inline; filename="${version.name.replaceAll('"','')}"`})});
- app.post("/api/content/files/:fileId/comments",async(c)=>{const p=deps.persona(c),file=deps.store.contentFiles.find(f=>f.id===c.req.param("fileId"));if(!file||!canAccessFile(file,p))return fail(c,"file not found",404);const b=await c.req.json();if(!String(b.body||"").trim())return fail(c,"comment is required");const row={id:`comment-${crypto.randomUUID().slice(0,8)}`,authorId:p.id,authorName:p.name,body:String(b.body),createdAt:new Date().toISOString()};file.comments.push(row);await deps.persist();return c.json({data:row},201)});
+ app.post("/api/content/files/:fileId/comments",async(c)=>{const p=deps.persona(c),file=deps.store.contentFiles.find(f=>f.id===c.req.param("fileId"));if(!file||!canAccessFile(file,p))return fail(c,"file not found",404);const b=await c.req.json();if(!String(b.body||"").trim())return fail(c,"comment is required");const row={id:`comment-${crypto.randomUUID().slice(0,8)}`,authorId:p.id,authorName:p.name,authorRole:p.role==="organizer"?"Organizer":"Speaker",body:String(b.body),createdAt:new Date().toISOString()};file.comments.push(row as any);await deps.persist();return c.json({data:row},201)});
  app.patch("/api/events/:eventId/content/files/:fileId/approval",async(c)=>{if(!event(c))return fail(c,"event not found",404);if(!org(c))return fail(c,"organizer role required",403);const file=deps.store.contentFiles.find(f=>f.id===c.req.param("fileId")),b=await c.req.json();if(!file)return fail(c,"file not found",404);if(!validStatus(b.status))return fail(c,"invalid approval status");file.status=b.status;file.approvalComment=b.comment||"";await deps.persist();return c.json({data:file})});
  app.post("/api/events/:eventId/content/reminders",async(c)=>{if(!event(c))return fail(c,"event not found",404);if(!org(c))return fail(c,"organizer role required",403);const b=await c.req.json().catch(()=>({}));const outstanding=contentReadiness(deps.store).filter(t=>t.status!=="complete"&&(!b.overdueOnly||t.overdue)),ids=[...new Set(outstanding.map(t=>t.speakerId))],sent=[];for(const speakerId of ids){const profile=deps.store.profiles.find(p=>p.speakerId===speakerId);if(!profile)continue;const names=outstanding.filter(t=>t.speakerId===speakerId).map(t=>`${t.name} (due ${t.dueAt.slice(0,10)})`);const result=await deps.mailer.send({to:profile.email,subject:"Speaker deliverables outstanding",text:`Please complete: ${names.join(", ")}`}).catch(()=>({status:"failed" as const}));deps.store.communications.push({id:`comm-${crypto.randomUUID().slice(0,8)}`,speakerId,subject:"Speaker deliverables outstanding",body:names.join("\n"),kind:"reminder",status:result.status,ics:"",createdAt:new Date().toISOString()});sent.push({speakerId,status:result.status});}await deps.persist();return c.json({data:sent})});
  app.patch("/api/events/:eventId/content/sessions/:sessionId",async(c)=>{
   if(!event(c))return fail(c,"event not found",404);if(!org(c))return fail(c,"organizer role required",403);
   const b=await c.req.json().catch(()=>null) as any;if(!b)return fail(c,"JSON body required");
   if(b.contentStatus&&!validStatus(b.contentStatus))return fail(c,"invalid approval status");
-  const schedule=await scheduleRepo.getSchedule?.(EVENT_ID);
+  const schedule=await scheduleRepo.getSchedule?.(deps.store.event.id);
   const p=deps.persona(c);
   const result=applySessionEdit({store:deps.store,schedule,id:c.req.param("sessionId"),patch:b,editor:{id:p.id,name:p.name}});
   if(!result.ok)return fail(c,result.error,result.status);
   // One propagation path: the canonical schedule object public projections read.
-  if(result.scheduleTouched&&schedule&&scheduleRepo.putSchedule)await scheduleRepo.putSchedule(EVENT_ID,schedule);
+  if(result.scheduleTouched&&schedule&&scheduleRepo.putSchedule)await scheduleRepo.putSchedule(deps.store.event.id,schedule);
   await deps.persist();
   const row=listEditableSessions(deps.store,schedule).find(x=>x.canonicalId===result.canonicalId);
   return c.json({data:{...row,id:result.canonicalId,contentStatus:result.contentStatus,propagated:result.scheduleTouched}});
@@ -61,12 +63,18 @@ export function createContentRoutes(deps:{store:LifecycleStore;persist:()=>Promi
   const h=deps.store.contentHistory.find(x=>x.id===c.req.param("historyId"));if(!h)return fail(c,"history not found",404);
   const p=deps.persona(c);
   if(h.entityType==="session"){
-   const schedule=await scheduleRepo.getSchedule?.(EVENT_ID);
+   const schedule=await scheduleRepo.getSchedule?.(deps.store.event.id);
    const result=restoreSessionHistory({store:deps.store,schedule,historyId:h.id,editor:{id:p.id,name:p.name}});
    if(!result.ok)return fail(c,result.error,result.status);
-   if(result.scheduleTouched&&schedule&&scheduleRepo.putSchedule)await scheduleRepo.putSchedule(EVENT_ID,schedule);
+   if(result.scheduleTouched&&schedule&&scheduleRepo.putSchedule)await scheduleRepo.putSchedule(deps.store.event.id,schedule);
   }else{const profile=deps.store.profiles.find(x=>x.speakerId===h.entityId);if(profile){Object.assign(profile,h.before);await syncSpeaker(profile.speakerId)}}
-  await deps.persist();return c.json({data:h});
+  await deps.persist();
+  if(h.entityType==="session"){
+   const schedule=await scheduleRepo.getSchedule?.(deps.store.event.id);
+   const row=listEditableSessions(deps.store,schedule).find(x=>x.canonicalId===h.entityId||x.lifecycleId===h.entityId);
+   return c.json({data:{...row,restoredHistoryId:h.id,restoredAt:new Date().toISOString()}});
+  }
+  return c.json({data:h});
  });
  app.patch("/api/events/:eventId/content/speakers/:speakerId",async(c)=>{if(!event(c))return fail(c,"event not found",404);if(!org(c))return fail(c,"organizer role required",403);const profile=deps.store.profiles.find(p=>p.speakerId===c.req.param("speakerId")),b=await c.req.json();if(!profile)return fail(c,"speaker not found",404);const before={bio:profile.bio,company:profile.company,title:profile.title,headshotUrl:(profile as any).headshotUrl};Object.assign(profile,{bio:b.bio??profile.bio,company:b.company??profile.company,title:b.title??profile.title});if(b.headshotUrl!==undefined)(profile as any).headshotUrl=b.headshotUrl;const p=deps.persona(c);deps.store.contentHistory.push({id:`history-${crypto.randomUUID().slice(0,8)}`,entityType:"speaker",entityId:profile.speakerId,editorId:p.id,editorName:p.name,createdAt:new Date().toISOString(),before,after:{bio:profile.bio,company:profile.company,title:profile.title,headshotUrl:(profile as any).headshotUrl}});await syncSpeaker(profile.speakerId);await deps.persist();return c.json({data:profile})});
  /**
@@ -125,6 +133,7 @@ export function createContentRoutes(deps:{store:LifecycleStore;persist:()=>Promi
    "content-disposition":"attachment; filename=cue-content-archive.zip",
    "x-cue-file-count":String(entries.length),
    "x-cue-grouping":grouping,
+   "x-cue-entry-names":encodeURIComponent(JSON.stringify(entries.map(entry=>entry.name))),
   });
  };
 

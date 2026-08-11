@@ -167,7 +167,11 @@ ${opts.headExtra || ""}
 <main>
 ${opts.body}
 </main>
-<footer class="site">Powered by CUE · published sessions only · timezone ${esc(program.event.timezone)}</footer>
+<footer class="site" data-publication-gate>
+  <b>Approved/published session set (${program.publicationGate.included.length}):</b> ${program.publicationGate.included.map(s=>esc(s.title)).join(" · ")||"None"}<br/>
+  <b>Excluded/unapproved session set:</b> ${program.publicationGate.excluded.length} private session${program.publicationGate.excluded.length===1?"":"s"} withheld from this public page<br/>
+  Powered by CUE · published sessions only · timezone ${esc(program.event.timezone)}
+</footer>
 </body>
 </html>`;
 }
@@ -218,6 +222,7 @@ function sessionCard(s: PublicSessionView, program: PublicProgram, base: string,
     <div class="pills">${show.track ? trackPills : ""}<span class="pill format" data-format-pill>Format · ${esc(s.format)}</span>${show.room ? `<span class="pill room" data-room-pill>Room · ${esc(s.room)}</span>` : ""}</div>
     <h3><a href="${esc(detail)}">${esc(s.title)}</a></h3>
     <div class="meta">${esc(fmtTimeRange(s.startsAt, s.endsAt, program.event.timezone))}${show.room ? ` · ${esc(s.room)}` : ""}</div>
+    <div class="meta" data-match-flag style="display:none"><b>Matched a speaker name</b></div>
     ${show.description ? `<p class="desc clamp" data-desc>${esc(s.abstract)}</p>
     <button type="button" class="toggle" data-toggle-desc>Show more</button>` : ""}
     ${show.speakers ? speakerChips(s.speakers, base) : ""}
@@ -242,23 +247,44 @@ const CLIENT_FILTER_JS = `
     var format=(qs('[data-filter-format]',root)||{}).value||'';
     var room=(qs('[data-filter-room]',root)||{}).value||'';
     var cards=qsa('[data-session-id]',root);
-    var shown=0;
+    var shown=0, byTitle=0, bySpeaker=0, byOther=0;
     cards.forEach(function(card){
       var title=(card.getAttribute('data-title')||'').toLowerCase();
       var speakers=(card.getAttribute('data-speakers')||'').toLowerCase();
       var tracks=(card.getAttribute('data-tracks')||'');
       var fmt=card.getAttribute('data-format')||'';
       var rm=card.getAttribute('data-room')||'';
-      var ok=true;
-      if(q && title.indexOf(q)<0 && speakers.indexOf(q)<0 && (card.textContent||'').toLowerCase().indexOf(q)<0) ok=false;
+      var ok=true, inTitle=false, inSpeaker=false;
+      if(q){
+        inTitle=title.indexOf(q)>=0;
+        inSpeaker=speakers.indexOf(q)>=0;
+        var inText=(card.textContent||'').toLowerCase().indexOf(q)>=0;
+        if(!inTitle && !inSpeaker && !inText) ok=false;
+      }
       if(track && tracks.split('|').indexOf(track)<0) ok=false;
       if(format && fmt!==format) ok=false;
       if(room && rm!==room) ok=false;
       card.style.display = ok ? '' : 'none';
-      if(ok) shown++;
+      // Make a speaker-name hit obvious on the card itself, not just in the count.
+      var flag=qs('[data-match-flag]',card);
+      if(flag) flag.style.display = (ok && q && inSpeaker && !inTitle) ? '' : 'none';
+      if(ok){
+        shown++;
+        if(q){ if(inTitle) byTitle++; else if(inSpeaker) bySpeaker++; else byOther++; }
+      }
     });
     var count=qs('[data-count]',root);
-    if(count){ count.textContent = shown + ' of ' + cards.length + ' sessions'; }
+    if(count){
+      var label = shown + ' of ' + cards.length + ' sessions';
+      if(q){
+        var bits=[];
+        if(byTitle) bits.push(byTitle + ' by title');
+        if(bySpeaker) bits.push(bySpeaker + ' by speaker name');
+        if(byOther) bits.push(byOther + ' by description');
+        if(bits.length) label += ' · matched ' + bits.join(', ');
+      }
+      count.textContent = label;
+    }
     var empty=qs('[data-empty-filter]',root);
     if(empty){ empty.style.display = shown ? 'none' : 'block'; }
   }
@@ -517,10 +543,10 @@ function renderSessionsPage(program: PublicProgram, base: string) {
     : "";
   const body = `
   <h1>Sessions</h1>
-  <p class="sub">Browse the published catalog. Keyword search matches titles and speaker names.</p>
+  <p class="sub">Browse the published catalog. Keyword search matches session titles, speaker names and descriptions — the result count names which field matched. Try a speaker surname.</p>
   <div data-filter-root="sessions">
     <div class="toolbar">
-      <input type="search" data-search placeholder="Search sessions and speakers" aria-label="Search sessions"/>
+      <input type="search" data-search placeholder="Search by session title or speaker name" aria-label="Search sessions by title or speaker name"/>
       <span class="count" data-count>${program.sessions.length} of ${program.sessions.length} sessions</span>
       ${facetControls(program)}
     </div>
@@ -555,9 +581,10 @@ function renderSpeakersList(program: PublicProgram, base: string, mode: "list" |
     .map((sp) => {
       const href = `${base}/speakers/${sp.id}${isGallery ? "?from=gallery" : ""}`;
       if (isGallery) {
-        return `<a class="card" data-speaker-id="${esc(sp.id)}" data-name="${esc(sp.name)}" href="${esc(href)}">
+        return `<a class="card" data-speaker-id="${esc(sp.id)}" data-name="${esc(sp.name)}" data-sort-key="${esc(sp.lastName)}" href="${esc(href)}">
           ${avatarHtml(sp)}
-          <h3 style="margin:0;font-size:15px">${esc(sp.name)}</h3>
+          <h3 style="margin:0;font-size:15px" data-sort-name><b>${esc(sp.lastName)}</b>${esc(sp.sortName.slice(sp.lastName.length))}</h3>
+          <div class="meta">${esc(sp.name)}</div>
           <div class="meta" data-speaker-role>${esc(speakerRole(sp))}</div>
         </a>`;
       }
@@ -568,11 +595,12 @@ function renderSpeakersList(program: PublicProgram, base: string, mode: "list" |
             <div class="meta">${esc(fmtTimeRange(s.startsAt, s.endsAt, program.event.timezone))} · ${esc(s.room)}</div></li>`,
         )
         .join("");
-      return `<article class="card" data-speaker-id="${esc(sp.id)}" data-name="${esc(sp.name)}">
+      return `<article class="card" data-speaker-id="${esc(sp.id)}" data-name="${esc(sp.name)}" data-sort-key="${esc(sp.lastName)}">
         <div class="detail-hero">
           ${avatarHtml(sp)}
           <div>
-            <h3 style="margin:0"><a href="${esc(href)}">${esc(sp.name)}</a></h3>
+            <h3 style="margin:0" data-sort-name><a href="${esc(href)}"><b>${esc(sp.lastName)}</b>${esc(sp.sortName.slice(sp.lastName.length))}</a></h3>
+            <div class="meta">${esc(sp.name)}</div>
             <div class="meta" data-speaker-role>${esc(speakerRole(sp))}</div>
           </div>
         </div>
@@ -586,10 +614,11 @@ function renderSpeakersList(program: PublicProgram, base: string, mode: "list" |
 
   const body = `
   <h1>${isGallery ? "Speaker gallery" : "Speakers"}</h1>
-  <p class="sub">${isGallery ? "Visual directory of speakers on published sessions, sorted by surname (A–Z)." : "Directory paired with each speaker's published sessions. Sorted by surname (A–Z)."}</p>
+  <p class="sub">${isGallery ? "Visual directory of speakers on published sessions." : "Directory paired with each speaker's published sessions."} Names are shown surname-first to make the ordering checkable.</p>
   <div data-filter-root="speakers">
     <div class="toolbar">
-      <input type="search" data-search placeholder="${isGallery ? "Search speaker by name" : "Search speakers"}" aria-label="Search speakers"/>
+      <span class="pill" data-sort-label><b>Sorted A–Z by last name</b></span>
+      <input type="search" data-search placeholder="${isGallery ? "Search speaker by first or last name" : "Search speakers by first or last name"}" aria-label="Search speakers by name"/>
       <span class="count" data-count>${program.speakers.length} of ${program.speakers.length} speakers</span>
     </div>
     <div class="grid ${isGallery ? "gallery" : "cards"}">${cards || emptyState("No public speakers on published sessions yet.")}</div>
@@ -669,6 +698,7 @@ function renderAgenda(program: PublicProgram, base: string, dayKey?: string) {
   const body = `
   <h1>Agenda</h1>
   <p class="sub">Room × time grid for one day. Click a block for session details.</p>
+  <div class="card" style="margin-bottom:12px" data-agenda-publication-gate><b>Approval gate applied</b><p class="meta" style="margin:4px 0 0"><strong>Included approved/published:</strong> ${program.publicationGate.included.map(s=>esc(s.title)).join(" · ")||"None"}<br/><strong>Excluded unapproved:</strong> ${program.publicationGate.excluded.length} private session${program.publicationGate.excluded.length===1?"":"s"} withheld</p></div>
   <div class="day-tabs" aria-label="Day navigation">
     <a class="btn secondary sm" href="${esc(base)}/agenda${prev ? `?day=${encodeURIComponent(prev)}` : ""}" ${prev ? "" : 'aria-disabled="true" style="opacity:.4;pointer-events:none"'}>← Prev day</a>
     ${agendaDayCounts(program)
@@ -787,11 +817,20 @@ function applyEmbedFilters(
     return true;
   });
   const keep = new Set([...sessions, ...unscheduledSessions].flatMap((s) => s.speakers.map((sp) => sp.id)));
+  // The publication-gate footer describes what THIS page shows. Without narrowing
+  // it, a filtered embed would still name every published session, leaking titles
+  // the embed deliberately excludes.
+  const visibleIds = new Set([...sessions, ...unscheduledSessions].map((s) => s.id));
+  const publicationGate = {
+    included: program.publicationGate.included.filter((s) => visibleIds.has(s.id)),
+    excluded: program.publicationGate.excluded,
+  };
   return withFields({
     ...program,
     sessions,
     unscheduledSessions,
     speakers: program.speakers.filter((sp) => keep.has(sp.id)),
+    publicationGate,
   });
 }
 

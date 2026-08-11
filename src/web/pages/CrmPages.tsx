@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, NavLink, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { api, subscribeData } from "../lib/api";
+import { api, getEventId, subscribeData, type EventSummary } from "../lib/api";
 import {
   Badge,
   Button,
@@ -448,7 +448,11 @@ export function CrmContactPage() {
   const [tagInput, setTagInput] = useState("");
   const [loaded, setLoaded] = useState(false);
   const [eventRole,setEventRole]=useState("speaker");
-  const [eventId,setEventId]=useState("evt-ai-summit-2026");
+  // The CRM is org-level: a contact can be handed off to ANY event.
+  const [eventId,setEventId]=useState(()=>getEventId());
+  const [eventOptions,setEventOptions]=useState<EventSummary[]>([]);
+  useEffect(()=>{api.events().then(r=>{const list=r.data||[];setEventOptions(list);setEventId(cur=>list.some(e=>e.id===cur)?cur:(list[0]?.id||cur))}).catch(()=>{})},[]);
+  const eventName=(id:string)=>eventOptions.find(e=>e.id===id)?.name||id;
   const [handoff,setHandoff]=useState("");
   const [noteBusy, setNoteBusy] = useState(false);
   const [noteSaved, setNoteSaved] = useState<{ body: string; author: string; at: string } | null>(null);
@@ -503,14 +507,18 @@ export function CrmContactPage() {
             <Button variant="secondary" onClick={() => navigate("/app/crm")}>
               Back to directory
             </Button>
-            <Select value={eventId} onChange={e=>setEventId(e.target.value)} aria-label="Event"><option value="evt-ai-summit-2026">AI Engineer Summit 2026</option></Select>
+            <Select value={eventId} onChange={e=>setEventId(e.target.value)} aria-label="Event" data-testid="crm-event-picker">
+              {(eventOptions.length?eventOptions:[{id:eventId,name:eventName(eventId)} as EventSummary]).map(e=>(
+                <option key={e.id} value={e.id}>{e.name}</option>
+              ))}
+            </Select>
             <Select value={eventRole} onChange={e=>setEventRole(e.target.value)} aria-label="Event role"><option value="speaker">Speaker</option><option value="reviewer">Reviewer</option></Select>
             <Button
               onClick={async () => {
                 try {
                   const r:any = await api.crmAddToEvent(contact.id,{eventId,role:eventRole});
                   const linked=r.data.speakerId||r.data.reviewerId;
-                  setHandoff(`${r.data.created?"Created":"Linked"} ${eventRole}: ${contact.name}${linked?` · ${linked}`:""} · AI Engineer Summit 2026`);
+                  setHandoff(`${r.data.created?"Created":"Linked"} ${eventRole}: ${contact.name}${linked?` · ${linked}`:""} · ${eventName(eventId)}`);
                   toast(r.data.created ? `Added to event as ${eventRole}` : "Already linked to event");
                   load();
                 } catch (e: any) {

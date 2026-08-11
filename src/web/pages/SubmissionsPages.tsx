@@ -241,11 +241,24 @@ export function ReviewStudioPage() {
   const [roundId, setRoundId] = useState<string>("");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+  // Assignments let the studio request an AI draft before any Review row exists.
+  const [assignments, setAssignments] = useState<any[]>([]);
+  const [aiDraft, setAiDraft] = useState<
+    | { status: "loading" }
+    | { status: "ready"; entries: { label: string; value: number }[]; notes: string; at: string }
+    | { status: "error"; error: string }
+    | null
+  >(null);
 
   const load = () =>
-    Promise.all([api.submission(id!), api.reviewRounds().catch(() => ({ data: [] as any[] }))])
-      .then(([r, rr]) => {
+    Promise.all([
+      api.submission(id!),
+      api.reviewRounds().catch(() => ({ data: [] as any[] })),
+      api.submissionAssignments(id!).catch(() => ({ data: [] as any[] })),
+    ])
+      .then(([r, rr, ra]) => {
         setData(r.data);
+        setAssignments(ra.data || []);
         const list = rr.data || [];
         setRounds(list);
         const preferred =
@@ -428,16 +441,58 @@ export function ReviewStudioPage() {
             ) : null}
           </div>
 
+          {aiDraft ? (
+            <div
+              className="mt-3 rounded-[18px] border border-line bg-soft p-3 text-sm"
+              data-testid="ai-draft-panel"
+              role="status"
+              aria-live="polite"
+            >
+              {aiDraft.status === "loading" ? (
+                <span data-testid="ai-draft-loading">Drafting AI review… scoring this abstract now.</span>
+              ) : aiDraft.status === "error" ? (
+                <span className="text-rose-600" data-testid="ai-draft-error">{aiDraft.error}</span>
+              ) : (
+                <>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge tone="ai">AI advisory draft</Badge>
+                    <span className="text-xs text-mid">generated {aiDraft.at} · advisory only — a human must review and save</span>
+                  </div>
+                  <ul className="mt-2 flex flex-wrap gap-3" data-testid="ai-draft-scores">
+                    {aiDraft.entries.map((e) => (
+                      <li key={e.label} className="rounded-[10px] bg-paper px-2 py-1">
+                        <b className="capitalize">{e.label}</b> <span className="font-mono">{e.value}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="mt-2 text-xs leading-relaxed text-ink-soft" data-testid="ai-draft-rationale">{aiDraft.notes}</p>
+                </>
+              )}
+            </div>
+          ) : null}
           <div className="mt-auto flex flex-wrap gap-2">
             <Button
               variant="secondary"
-              disabled={busy || !activeReview}
+              data-testid="ai-draft-button"
+              // Enabled as soon as a reviewer is assigned: the server materializes
+              // the Review row from an assignment id when none exists yet.
+              disabled={busy || (!activeReview && !assignments.length)}
               onClick={async () => {
-                if (!activeReview) return;
+                const target = activeReview?.id || assignments[0]?.id;
+                if (!target) return;
                 setBusy(true);
+                setAiDraft({ status: "loading" });
                 try {
-                  const r = await api.aiAssist(activeReview.id);
+                  const r = await api.aiAssist(target);
                   const aiScores = r.data.scores || {};
+                  setAiDraft({
+                    status: "ready",
+                    entries: Object.entries(aiScores)
+                      .filter(([, v]) => typeof v === "number")
+                      .map(([k, v]) => ({ label: k, value: Number(v) })),
+                    notes: String(r.data.notes || r.data.aiDraft || ""),
+                    at: new Date().toLocaleTimeString(),
+                  });
                   const mapped: Record<string, number | string> = { ...scores };
                   for (const c of criteria) {
                     if (c.type === "rating") {
@@ -462,13 +517,14 @@ export function ReviewStudioPage() {
                   toast("AI advisory draft applied — human remains responsible", "info");
                   load();
                 } catch (e: any) {
+                  setAiDraft({ status: "error", error: e?.message || "AI draft failed" });
                   toast(e.message, "danger");
                 } finally {
                   setBusy(false);
                 }
               }}
             >
-              AI draft review
+              {busy && aiDraft?.status === "loading" ? "Drafting AI review…" : "AI draft review"}
             </Button>
             <Button
               disabled={busy || !activeReview}

@@ -346,6 +346,8 @@ export function EvaluationPlanPage() {
     return { data: x.data.personas };
   });
   const [name, setName] = useState("");
+  const [addError, setAddError] = useState("");
+  const [addBusy, setAddBusy] = useState(false);
   const refresh = () => {
     reload();
     reloadBoot();
@@ -357,19 +359,44 @@ export function EvaluationPlanPage() {
         description="Edit dates, blind review, reviewer pools, and weighted scorecards with scales and options."
         actions={
           <Button
+            disabled={addBusy}
             onClick={async () => {
-              if (!name) return;
-              await api.createReviewRound({ name, status: "draft", blind: false, reviewerIds: [], criteria: [] });
-              setName("");
-              toast("Round created");
-              refresh();
+              if (!name.trim()) {
+                setAddError("Enter a round name first.");
+                return;
+              }
+              setAddBusy(true);
+              setAddError("");
+              try {
+                // A round is only useful once it can take assignments, so create it open.
+                await api.createReviewRound({ name: name.trim(), status: "open", blind: false, reviewerIds: [], criteria: [] });
+                setName("");
+                toast("Round created");
+                refresh();
+              } catch (e: any) {
+                // A duplicate name previously rejected the promise unhandled, so the
+                // organizer saw nothing at all and assumed the round existed.
+                const message = String(e?.message || "Could not create the round.");
+                setAddError(
+                  /already exists/i.test(message)
+                    ? `A round named “${name.trim()}” already exists — pick a different name (for example “${name.trim()} 2”).`
+                    : message,
+                );
+              } finally {
+                setAddBusy(false);
+              }
             }}
           >
-            Add round
+            {addBusy ? "Adding…" : "Add round"}
           </Button>
         }
       />
       <Notice tone="info">AI review assistance is advisory. Open any submission in <a className="font-semibold underline" href="/app/submissions">Review Studio</a> and choose <b>AI draft review</b>; a human must edit and submit it.</Notice>
+      {addError ? (
+        <Notice tone="danger" onClose={() => setAddError("")}>
+          <span data-testid="round-create-error">{addError}</span>
+        </Notice>
+      ) : null}
       {error ? <Notice tone="danger">{error}</Notice> : null}
       <div className="mb-4 max-w-sm">
         <Field label="New round name">
@@ -606,14 +633,39 @@ export function AssignmentsPage() {
   );
 }
 
+/** Default Review Progress to the round that received the most recent assignment.
+ *
+ * Status is deliberately NOT a filter: a round the organizer just created and
+ * assigned into must win even while it is still a draft. Ties and rounds with
+ * no assignments fall back to declaration order. Exported for tests. */
+export function defaultProgressRoundId(rounds: any[]): string {
+  if (!rounds?.length) return "";
+  const withAssignments = rounds.filter((r) => r.lastAssignmentAt);
+  if (!withAssignments.length) return rounds[0].id;
+  return [...withAssignments].sort((a, b) =>
+    String(b.lastAssignmentAt || "").localeCompare(String(a.lastAssignmentAt || "")),
+  )[0].id;
+}
+
 export function ReviewProgressPage() {
   const {data:rounds}=useData(api.reviewRounds);const [roundId,setRoundId]=useState("");
-  useEffect(()=>{if(!roundId&&rounds.length){const open=rounds.filter(r=>r.status==="open").sort((a,b)=>String(b.lastAssignmentAt||"").localeCompare(String(a.lastAssignmentAt||"")));setRoundId(open[0]?.id||rounds[0].id)}},[rounds,roundId]);
+  useEffect(()=>{if(!roundId&&rounds.length)setRoundId(defaultProgressRoundId(rounds))},[rounds,roundId]);
   const { data, reload } = useData(()=>api.reviewProgress(roundId||undefined));
   const { data: automationRows } = useData(async()=>{const r=await api.automation();return {data:[r.data]}});
   const automation=automationRows[0];
   const [message, setMessage] = useState("");
-  const outstanding = data.filter((r) => r.outstanding).map((r) => r.reviewerId);
+  // Defensive scoping: only ever render rows belonging to the selected round, so
+  // assignments made in other rounds can never inflate the header counts.
+  const rows = roundId ? data.filter((r: any) => r.roundId === roundId) : data;
+  const selectedRound = rounds.find((r: any) => r.id === roundId);
+  const totals = rows.reduce(
+    (acc: { assigned: number; completed: number }, r: any) => ({
+      assigned: acc.assigned + (r.assigned || 0),
+      completed: acc.completed + (r.completed || 0),
+    }),
+    { assigned: 0, completed: 0 },
+  );
+  const outstanding = rows.filter((r: any) => r.outstanding).map((r: any) => r.reviewerId);
   return (
     <div>
       <PageHeader
@@ -634,10 +686,18 @@ export function ReviewProgressPage() {
           </Button>
         }
       />
-      <Card className="mb-4 p-4"><Field label="Round"><Select aria-label="Progress round" value={roundId} onChange={e=>setRoundId(e.target.value)}>{rounds.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</Select></Field></Card>
+      <Card className="mb-4 p-4">
+        <Field label="Round"><Select aria-label="Progress round" value={roundId} onChange={e=>setRoundId(e.target.value)}>{rounds.map(r=><option key={r.id} value={r.id}>{r.name}{r.lastAssignmentAt?"":" · no assignments"}</option>)}</Select></Field>
+        <p className="mt-2 text-sm" data-testid="progress-round-summary">
+          <b>{selectedRound?.name || "No round selected"}</b> · <b data-testid="progress-total-assigned">{totals.assigned}</b> assigned ·{" "}
+          <b data-testid="progress-total-complete">{totals.completed}</b> complete · {rows.length} reviewer{rows.length===1?"":"s"}
+        </p>
+        <p className="text-xs text-mid">Counts cover this round only — assignments in other rounds are excluded.</p>
+      </Card>
       <Card className="mb-4 p-4"><b>Automation</b><p className="text-sm text-mid">{automation?.enabled?"Enabled":"Disabled"} · hourly ({automation?.schedule||"0 * * * *"})</p><p className="text-sm">Last run: {automation?.lastRunAt?new Date(automation.lastRunAt).toLocaleString():"Not run yet"} · speakers {automation?.speakerSent||0} · reviewers {automation?.reviewerSent||0} · {automation?.status||"never"}</p></Card>
       {message ? <Notice tone="ok">{message}</Notice> : null}
-      {data.map((r) => (
+      {!rows.length ? <Card className="mt-2 p-4 text-sm text-mid" data-testid="progress-empty">No reviewers are assigned in this round yet.</Card> : null}
+      {rows.map((r: any) => (
         <Card className="mt-2 flex justify-between p-4" key={`${r.roundId}-${r.reviewerId}`}>
           <b>{r.reviewer?.name || r.reviewerId}</b>
           <span>

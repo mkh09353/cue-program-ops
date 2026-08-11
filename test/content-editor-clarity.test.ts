@@ -131,6 +131,10 @@ test("history panel renders distinct rows newest-first and preserves restore", (
   assert.match(page, /api\.restoreContentHistory\(h\.id\)/);
   assert.match(page, /Restore this version/);
   assert.match(page, /aria-label=\{`Restore version from \$\{historyStamp\(h\.createdAt\)\}`\}/);
+  assert.match(page, /data-testid="session-history-always-visible"/, "history is pinned above the form");
+  assert.match(page, /\.slice\(0,2\)/, "two newest entries are pinned in view");
+  assert.match(page, /setEditing\(\{\.\.\.r\.data\}\)/, "restore keeps the editor open on returned content");
+  assert.ok(!/restoreContentHistory\(h\.id\)[\s\S]{0,180}setEditing\(null\)/.test(page), "restore does not close the editor");
 });
 
 test("restore from a history row still rewrites the session", async () => {

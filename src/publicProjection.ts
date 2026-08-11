@@ -1,6 +1,7 @@
 import type { ScheduleProjection } from "./domain.js";
 import type { ScheduleData, ScheduleSession, ScheduleSpeaker } from "./schedule.js";
 import { EVENT_ID, EVENT_SLUG, store } from "./lifecycle.js";
+import { listEvents } from "./events.js";
 
 /** Published-only gate used by every public widget and feed. */
 export function isPublishedSession(session: ScheduleSession | undefined | null): boolean {
@@ -21,6 +22,8 @@ export type PublicSpeakerView = {
   hasUploadedHeadshot?: boolean;
   initials: string;
   sessionIds: string[];
+  /** Surname-forward form (“Clark, Lin”) so the A–Z ordering is visible on the page. */
+  sortName: string;
 };
 
 export type PublicSessionView = {
@@ -65,17 +68,44 @@ export type PublicProgram = {
   facets: { tracks: string[]; formats: string[]; rooms: string[] };
   /** Optional per-embed card field selection (set by a saved embed config). */
   cardFields?: { speakers?: boolean; room?: boolean; track?: boolean; description?: boolean };
+  /** Human-auditable publication gate shown on public pages. */
+  publicationGate: { included: { id: string; title: string }[]; excluded: { id: string; title: string }[] };
 };
 
-const splitName = (name: string) => {
+/** Generational/qualification suffixes never act as a surname. */
+const NAME_SUFFIXES = new Set(["jr", "jr.", "sr", "sr.", "ii", "iii", "iv", "v", "phd", "ph.d.", "md", "mba", "(manual)"]);
+
+export const splitName = (name: string) => {
   const parts = String(name || "")
     .trim()
     .split(/\s+/)
     .filter(Boolean);
   if (!parts.length) return { firstName: "", lastName: "" };
   if (parts.length === 1) return { firstName: parts[0], lastName: parts[0] };
-  return { firstName: parts.slice(0, -1).join(" "), lastName: parts[parts.length - 1]! };
+  // Walk past trailing suffixes so “Ada Lovelace Jr.” still sorts under Lovelace.
+  let last = parts.length - 1;
+  while (last > 0 && NAME_SUFFIXES.has(parts[last]!.toLowerCase())) last--;
+  const lastName = parts[last]!;
+  const firstName = parts.slice(0, last).join(" ") || lastName;
+  return { firstName, lastName };
 };
+
+/** Provenance markers an import/CRM handoff appends to a placeholder record's
+ * display name (e.g. “Priya Raman (manual)”). Only these parenthetical markers are
+ * ignored for duplicate identity — generational suffixes are NOT, because “Ada
+ * Lovelace” and “Ada Lovelace Jr.” may well be two different people. */
+const PROVENANCE_MARKER = /\s*\((?:manual|imported|import|duplicate|copy)\)\s*$/i;
+
+/** Identity key for duplicate detection: the display name minus any provenance marker. */
+export function baseNameKey(name: string) {
+  return String(name || "").replace(PROVENANCE_MARKER, "").trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+/** True when the display name itself advertises the record as a placeholder. */
+export const hasProvenanceMarker = (name: string) => PROVENANCE_MARKER.test(String(name || ""));
+
+/** Locale-aware, case/diacritic-insensitive comparison for directory ordering. */
+const nameCollator = new Intl.Collator(undefined, { sensitivity: "base", numeric: true, ignorePunctuation: true });
 
 /**
  * Deterministic monochrome initials avatar (inline SVG data URL) so no public card
@@ -151,7 +181,44 @@ function speakerView(sp: ScheduleSpeaker, sessionIds: string[] = []): PublicSpea
     hasUploadedHeadshot: Boolean(sp.headshotUrl),
     initials: initialsOf(sp.name),
     sessionIds,
+    sortName: firstName && firstName !== lastName ? `${lastName}, ${firstName}` : lastName,
   };
+}
+
+/** Collapse the placeholder speaker an import/CRM handoff can leave behind.
+ *
+ * Two records are merged ONLY when they carry the same name AND one of them is
+ * a bare placeholder (no job title, no company, no uploaded headshot). Distinct
+ * people who happen to share a name both keep their own card. */
+export function dedupePublicSpeakers(list: PublicSpeakerView[]): PublicSpeakerView[] {
+  // Only an EMPTY record is a placeholder. A provenance marker alone must not
+  // qualify: a populated “Dana Cruz (manual)” may be a genuinely different person
+  // from “Dana Cruz”, so the marker only widens grouping, never the drop rule.
+  const isPlaceholder = (s: PublicSpeakerView) => !s.title && !s.company && !s.hasUploadedHeadshot;
+  const byName = new Map<string, PublicSpeakerView[]>();
+  for (const speaker of list) {
+    // Group on the BASE name so “Priya Raman” and “Priya Raman (manual)” meet.
+    const key = baseNameKey(speaker.name);
+    byName.set(key, [...(byName.get(key) || []), speaker]);
+  }
+  const dropped = new Set<string>();
+  for (const group of byName.values()) {
+    if (group.length < 2) continue;
+    // Prefer an unmarked survivor so the public sees the canonical display name
+    // (“Priya Raman”, never “Priya Raman (manual)”).
+    const canonical = group
+      .filter((s) => !isPlaceholder(s))
+      .sort((a, b) => Number(hasProvenanceMarker(a.name)) - Number(hasProvenanceMarker(b.name)));
+    if (!canonical.length) continue;
+    const keep = canonical[0]!;
+    for (const speaker of group) {
+      if (speaker === keep || !isPlaceholder(speaker)) continue;
+      // Preserve the placeholder's sessions on the surviving card.
+      keep.sessionIds = [...new Set([...keep.sessionIds, ...speaker.sessionIds])];
+      dropped.add(speaker.id);
+    }
+  }
+  return list.filter((s) => !dropped.has(s.id));
 }
 
 /**
@@ -245,12 +312,12 @@ export function buildPublicProgram(
   }
 
   // Directory order is surname A→Z (the public page states this explicitly).
-  const speakers = [...speakerSessionMap.keys()]
-    .map((id) => {
+  const speakers = dedupePublicSpeakers(
+    [...speakerSessionMap.keys()].map((id) => {
       const raw = speakersById.get(id)!;
       return speakerView(raw, speakerSessionMap.get(id) || []);
-    })
-    .sort(bySurname);
+    }),
+  ).sort(bySurname);
 
   const sessionDays = [...new Set(sessions.map((s) => s.dayKey))];
   const startsAt = schedule.event?.startsAt || store.event.startsAt;
@@ -261,6 +328,10 @@ export function buildPublicProgram(
   const formats = [...new Set(sessions.map((s) => s.format).filter(Boolean))].sort();
   const trackNames = [...new Set(sessions.flatMap((s) => s.trackNames))].sort();
   const roomNames = [...new Set(sessions.map((s) => s.room))].sort();
+  const publicationGate = {
+    included: (schedule.sessions || []).filter(isPublishedSession).map((s) => ({ id: s.id, title: s.title })),
+    excluded: (schedule.sessions || []).filter((s) => !isPublishedSession(s)).map((s) => ({ id: s.id, title: s.title })),
+  };
 
   return {
     event: {
@@ -281,15 +352,21 @@ export function buildPublicProgram(
     tracks: (schedule.tracks || []).map((t) => ({ id: t.id, name: t.name, color: t.color })),
     formats,
     facets: { tracks: trackNames, formats, rooms: roomNames },
+    publicationGate,
   };
 }
 
-/** Canonical directory ordering: surname, then first name, then full name. */
+/** Canonical directory ordering: surname, then first name, then full name.
+ *
+ * Locale-aware (accents and case fold together) and TOTAL: the trailing id
+ * comparison makes the order deterministic and stable for runtime-added
+ * speakers who share a name, independent of insertion order. */
 export function bySurname(a: PublicSpeakerView, b: PublicSpeakerView) {
   return (
-    a.lastName.localeCompare(b.lastName) ||
-    a.firstName.localeCompare(b.firstName) ||
-    a.name.localeCompare(b.name)
+    nameCollator.compare(a.lastName, b.lastName) ||
+    nameCollator.compare(a.firstName, b.firstName) ||
+    nameCollator.compare(a.name, b.name) ||
+    String(a.id).localeCompare(String(b.id))
   );
 }
 
@@ -418,7 +495,14 @@ export function resolvePublicEventKey(key: string): { eventId: string; slug: str
   const k = decodeURIComponent(key || "").trim().toLowerCase();
   if (!k) return undefined;
   if (k === EVENT_ID.toLowerCase() || k === EVENT_SLUG.toLowerCase() || k === store.event.slug.toLowerCase() || k === store.event.id.toLowerCase()) {
-    return { eventId: EVENT_ID, slug: store.event.slug || EVENT_SLUG };
+    // The seeded event answers to its id, its slug, and the legacy demo aliases.
+    return k === store.event.id.toLowerCase() || k === store.event.slug.toLowerCase()
+      ? { eventId: store.event.id, slug: store.event.slug || EVENT_SLUG }
+      : { eventId: EVENT_ID, slug: EVENT_SLUG };
+  }
+  // Any other registered event resolves by its own id or slug.
+  for (const record of listEvents()) {
+    if (k === record.id.toLowerCase() || k === record.slug.toLowerCase()) return { eventId: record.id, slug: record.slug };
   }
   return undefined;
 }

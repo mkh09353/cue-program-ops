@@ -55,6 +55,7 @@ test("archive export includes only the selected files, at their current version"
   assert.match(res.headers.get("content-type") || "", /application\/zip/);
   assert.equal(res.headers.get("x-cue-file-count"), "1", "count header matches entries");
   assert.equal(res.headers.get("x-cue-grouping"), "session");
+  assert.deepEqual(JSON.parse(decodeURIComponent(res.headers.get("x-cue-entry-names") || "")), ["Analytical Engines in Practice/deck.pdf"]);
 
   const entries = await unzip(res);
   assert.equal(entries.length, 1);
@@ -198,4 +199,7 @@ test("files tab exposes an archive dialog with selection, grouping and a disable
   assert.match(client, /contentExportZip: async \(selection: \{/, "client takes an explicit selection");
   assert.match(client, /method: "POST"/);
   assert.match(client, /sessionIds: selection\.sessionIds \|\| \[\]/);
+  assert.match(client, /x-cue-entry-names/);
+  assert.match(page, /data-testid="archive-entry-names"/);
+  assert.match(page, /data-testid="archive-download-again"/);
 });

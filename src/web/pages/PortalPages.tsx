@@ -35,6 +35,23 @@ export function sessionPlacementLine(session: { slot?: { startsAt: string; endsA
   return `${time} ${fmtTzLabel()}${session.roomName ? ` · ${session.roomName}` : ""}`;
 }
 
+/** Full, deterministic timestamp used by both sides of content file threads. */
+export function fileThreadStamp(iso: string) {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? String(iso || "unknown time") : d.toISOString().replace("T", " ").replace("Z", " UTC");
+}
+
+export function fileCommentRole(comment: { authorRole?: string }) {
+  return comment.authorRole === "Organizer" ? "Organizer" : "Speaker";
+}
+
+function deliverableForTask(task: any, deliverables: any[]) {
+  const wanted = task.type === "headshot" ? ["image/png", "image/jpeg"] : task.type === "slides" ? ["application/pdf"] : [];
+  return deliverables.find((d: any) => wanted.length
+    ? (d.acceptedTypes || []).some((type: string) => wanted.includes(type))
+    : task.type === "supporting_doc" && (d.acceptedTypes || []).some((type: string) => !type.startsWith("image/")));
+}
+
 function useSpeakerHome() {
   const [data, setData] = useState<any>(null);
   const [err, setErr] = useState("");
@@ -228,13 +245,17 @@ export function PortalTalksPage() {
 
 export function PortalTasksPage() {
   const { data, err } = useSpeakerHome();
+  const [deliverables,setDeliverables]=useState<any[]|null>(null);
+  useEffect(()=>{api.deliverables().then(r=>setDeliverables(r.data||[])).catch(()=>setDeliverables([]))},[getPersona().id]);
   if (!data && !err) return <Spinner />;
   if (err) return <Notice tone="danger">{err}</Notice>;
+  if(!deliverables)return <Spinner/>;
+  const linkedIds=new Set(data.tasks.map((task:any)=>deliverableForTask(task,deliverables)?.id).filter(Boolean));
   return (
     <div>
       <PageHeader title="Tasks" />
       <div className="space-y-2">
-        {data.tasks.map((t: any) => (
+        {data.tasks.map((t: any) => {const linked=deliverableForTask(t,deliverables);const effectiveStatus=linked?(linked.status==="complete"?"completed":"pending"):t.status;return (
           <Link
             key={t.id}
             to={`/p/tasks/${t.id}`}
@@ -247,10 +268,11 @@ export function PortalTasksPage() {
                 {t.dueAt ? ` · due ${String(t.dueAt).slice(0, 10)}` : ""}
               </div>
             </div>
-            <StatusBadge status={t.status} />
+            <StatusBadge status={effectiveStatus} />
           </Link>
-        ))}
-        {!data.tasks.length ? (
+        )})}
+        {deliverables.filter((d:any)=>!linkedIds.has(d.id)).map((d:any)=><Link key={d.id} to={`/p/deliverables/${d.id}`} data-testid={`portal-deliverable-task-${d.id}`} className="flex items-center justify-between rounded-[24px] border border-line bg-white p-4 hover:border-ink/20"><div><div className="font-semibold">{d.name}</div><div className="text-xs text-mid">Organizer file request · due {String(d.dueAt).slice(0,10)} · {d.uploadCount} version{d.uploadCount===1?"":"s"}</div></div><StatusBadge status={d.overdue?"overdue":d.status}/></Link>)}
+        {!data.tasks.length&&!deliverables.length ? (
           <EmptyState title="No tasks" description="Accepted speakers receive onboarding tasks here." />
         ) : null}
       </div>
@@ -321,6 +343,7 @@ export function PortalDeliverablesPage() {
 
 export function PortalDeliverableDetailPage() {
   const {id}=useParams();const[data,setData]=useState<any>(null),[err,setErr]=useState(""),[comment,setComment]=useState("");
+  const [postedComment,setPostedComment]=useState<any>(null);
   const persona=getPersona();
   // Re-selecting the SAME file must fire another change event, so the file input is
   // remounted (and its value cleared) after every upload.
@@ -350,7 +373,7 @@ export function PortalDeliverableDetailPage() {
   if(!data&&!err)return <Spinner/>;
   if(err)return <PersonaScopeNotice what="deliverable" error={err} backTo="/p/deliverables" backLabel="All my deliverables"/>;
   const file=data.file;
-  return <div><PageHeader title={data.name} description={`${data.session?.title||"Speaker deliverable"} · Due ${data.dueAt.slice(0,10)}`}/><Card className="p-5"><StatusBadge status={data.overdue?"overdue":data.status}/><p className="mt-3 text-sm">{data.instructions}</p><div className="mt-4 rounded-[18px] border border-dashed p-4"><b>Upload file</b><p className="mb-2 text-xs text-mid">Accepted: {data.acceptedTypes.join(", ")} · Maximum 2 MB. Re-uploading creates a new version.</p><Input key={`deliverable-upload-${uploadNonce}`} type="file" aria-label="Choose a file to upload" disabled={uploadBusy} accept={data.acceptedTypes.join(",")} onChange={e=>{const f=e.target.files?.[0];e.target.value="";if(f)void upload(f)}}/>{uploadBusy?<p className="mt-2 text-xs font-semibold text-ink">Uploading…</p>:null}{uploadResult?<Notice tone="ok" onClose={()=>setUploadResult("")}><span data-testid="upload-result">{uploadResult}</span></Notice>:null}</div>{file?<div className="mt-5"><h2 className="font-bold">{file.versions.find((v:any)=>v.current)?.name}</h2><p className="text-sm text-mid">Approval: {file.status} · <span data-testid="version-count">{file.versions.length}</span> version{file.versions.length===1?"":"s"}</p>{[...file.versions].reverse().map((v:any)=><div key={v.id} className="mt-2 flex justify-between rounded bg-soft p-2 text-sm"><span>v{v.version} · {new Date(v.uploadedAt).toLocaleString()}</span><span>{v.current?<Badge tone="ok">Current</Badge>:null} <a className="text-ink underline" href={`/api/content/files/${file.id}/versions/${v.id}`}>View</a></span></div>)}<h3 className="mt-4 text-xs font-bold uppercase text-mid">Comments</h3>{file.comments.map((c:any)=><p key={c.id} className="mt-2 rounded bg-soft p-2 text-sm"><b>{c.authorName}</b> · {new Date(c.createdAt).toLocaleString()}<br/>{c.body}</p>)}<div className="mt-2 flex gap-2"><Input value={comment} onChange={e=>setComment(e.target.value)} placeholder="Add a comment"/><Button onClick={async()=>{await api.addFileComment(file.id,comment);setComment("");load()}}>Comment</Button></div></div>:null}</Card></div>;
+  return <div><PageHeader title={data.name} description={`${data.session?.title||"Speaker deliverable"} · Due ${data.dueAt.slice(0,10)}`}/><Card className="p-5"><StatusBadge status={data.overdue?"overdue":data.status}/><p className="mt-3 text-sm">{data.instructions}</p><div className="mt-4 rounded-[18px] border border-dashed p-4"><b>Upload file</b><p className="mb-2 text-xs text-mid">Accepted: {data.acceptedTypes.join(", ")} · Maximum 2 MB. Re-uploading creates a new version.</p><Input key={`deliverable-upload-${uploadNonce}`} type="file" aria-label="Choose a file to upload" disabled={uploadBusy} accept={data.acceptedTypes.join(",")} onChange={e=>{const f=e.target.files?.[0];e.target.value="";if(f)void upload(f)}}/>{uploadBusy?<p className="mt-2 text-xs font-semibold text-ink">Uploading…</p>:null}{uploadResult?<Notice tone="ok" onClose={()=>setUploadResult("")}><span data-testid="upload-result">{uploadResult}</span></Notice>:null}</div>{file?<div className="mt-5"><h2 className="font-bold">{file.versions.find((v:any)=>v.current)?.name}</h2><p className="text-sm text-mid">Approval: {file.status} · <span data-testid="version-count">{file.versions.length}</span> version{file.versions.length===1?"":"s"}</p>{[...file.versions].reverse().map((v:any)=><div key={v.id} className="mt-2 flex justify-between rounded bg-soft p-2 text-sm"><span>v{v.version} · {new Date(v.uploadedAt).toLocaleString()}</span><span>{v.current?<Badge tone="ok">Current</Badge>:null} <a className="text-ink underline" href={`/api/content/files/${file.id}/versions/${v.id}`}>View</a></span></div>)}<h3 className="mt-4 text-xs font-bold uppercase text-mid">Comments</h3>{file.comments.map((c:any)=><p key={c.id} className="mt-2 rounded bg-soft p-2 text-sm"><Badge tone={fileCommentRole(c)==="Organizer"?"ok":"muted"}>{fileCommentRole(c)}</Badge>{" "}<b>{c.authorName}</b> · <span className="font-mono text-xs">{fileThreadStamp(c.createdAt)}</span><br/>{c.body}</p>)}<div className="mt-2 flex gap-2"><Input value={comment} onChange={e=>setComment(e.target.value)} placeholder="Add a comment"/><Button onClick={async()=>{await api.addFileComment(file.id,comment);setComment("");load()}}>Comment</Button></div></div>:null}</Card></div>;
 }
 
 const FILE_TYPES = new Set(["headshot", "slides", "supporting_doc"]);
@@ -420,6 +443,7 @@ export function PortalTaskDetailPage() {
   const [deliverables, setDeliverables] = useState<any[]>([]);
   const [linkedFile, setLinkedFile] = useState<any>(null);
   const [taskComment, setTaskComment] = useState("");
+  const [postedComment, setPostedComment] = useState<any>(null);
   const [uploadBusy, setUploadBusy] = useState(false);
   /** Bumped after each upload so re-choosing the SAME file fires a fresh change event. */
   const [taskUploadNonce, setTaskUploadNonce] = useState(0);
@@ -446,13 +470,7 @@ export function PortalTaskDetailPage() {
   const linkedId = (() => {
     const t = data?.tasks?.find((x: any) => x.id === id);
     if (!t) return "";
-    const wanted =
-      t.type === "headshot" ? ["image/png", "image/jpeg"] : t.type === "slides" ? ["application/pdf"] : [];
-    const match = deliverables.find((dv: any) =>
-      wanted.length
-        ? (dv.acceptedTypes || []).some((x: string) => wanted.includes(x))
-        : (dv.acceptedTypes || []).some((x: string) => !x.startsWith("image/")),
-    );
+    const match = deliverableForTask(t, deliverables);
     return match?.id || "";
   })();
 
@@ -499,14 +517,8 @@ export function PortalTaskDetailPage() {
   const isFile = FILE_TYPES.has(task.type);
   // Match this onboarding task to the canonical deliverable slot of the same kind so
   // uploads, versions and comments all live on ONE record.
-  const wantedTypes =
-    task.type === "headshot" ? ["image/png", "image/jpeg"] : task.type === "slides" ? ["application/pdf"] : [];
-  const linkedDeliverable =
-    deliverables.find((d: any) =>
-      wantedTypes.length
-        ? (d.acceptedTypes || []).some((t: string) => wantedTypes.includes(t))
-        : (d.acceptedTypes || []).some((t: string) => !t.startsWith("image/")),
-    ) || null;
+  const linkedDeliverable = deliverableForTask(task, deliverables) || null;
+  const effectiveTaskStatus = linkedDeliverable ? (linkedDeliverable.status === "complete" ? "completed" : "pending") : task.status;
   const formSchema =
     task.formSchema ||
     (task.type === "form"
@@ -669,7 +681,7 @@ export function PortalTaskDetailPage() {
               are rejected by the server.
             </p>
             <Button
-              disabled={!fileName.trim() || uploadBusy || (task.status === "completed" && !linkedDeliverable)}
+              disabled={!fileName.trim() || uploadBusy || (effectiveTaskStatus === "completed" && !linkedDeliverable)}
               onClick={async () => {
                 if (!fileName.trim()) {
                   toast("Choose or name a file first", "warn");
@@ -701,7 +713,7 @@ export function PortalTaskDetailPage() {
                       });
                     }
                   } catch (receiptError: any) {
-                    if (task.status !== "completed") throw receiptError;
+                    if (effectiveTaskStatus !== "completed") throw receiptError;
                   }
                   // Mirror the bytes onto the canonical deliverable slot so the task
                   // receipt and the versioned deliverable never diverge.
@@ -742,7 +754,7 @@ export function PortalTaskDetailPage() {
                 }
               }}
             >
-              {uploadBusy ? "Uploading…" : task.status === "completed" ? "Upload new version" : "Upload & complete"}
+              {uploadBusy ? "Uploading…" : effectiveTaskStatus === "completed" ? "Upload new version" : "Upload & complete"}
             </Button>
           </>
         ) : null}
@@ -774,7 +786,7 @@ export function PortalTaskDetailPage() {
                 <p className="mt-1 text-sm">
                   <b className="text-ink">{linkedFile.versions.find((v: any) => v.current)?.name || linkedFile.versions.at(-1)?.name}</b>
                   {" · "}
-                  uploaded {new Date(linkedFile.versions.find((v: any) => v.current)?.uploadedAt || linkedFile.versions.at(-1)?.uploadedAt).toLocaleString()}
+                  uploaded {fileThreadStamp(linkedFile.versions.find((v: any) => v.current)?.uploadedAt || linkedFile.versions.at(-1)?.uploadedAt)}
                   {" · approval: "}
                   {linkedFile.status}
                 </p>
@@ -782,7 +794,7 @@ export function PortalTaskDetailPage() {
                   {[...linkedFile.versions].reverse().map((v: any) => (
                     <li key={v.id} className="flex flex-wrap items-center justify-between gap-2 rounded bg-white p-2">
                       <span>
-                        v{v.version} · {v.name} · {new Date(v.uploadedAt).toLocaleString()}
+                        v{v.version} · {v.name} · {fileThreadStamp(v.uploadedAt)}
                       </span>
                       <span className="flex items-center gap-2">
                         {v.current ? <Badge tone="ok">Current</Badge> : null}
@@ -796,8 +808,8 @@ export function PortalTaskDetailPage() {
                 <div className="mt-3">
                   <b className="text-xs uppercase tracking-wide text-mid">Comments</b>
                   {(linkedFile.comments || []).map((c: any) => (
-                    <p key={c.id} className="mt-1 rounded bg-white p-2 text-xs">
-                      <b>{c.authorName}</b> · {new Date(c.createdAt).toLocaleString()}
+                    <p key={c.id} className={`mt-1 rounded border p-2 text-xs ${postedComment?.id===c.id?"border-ink bg-white ring-2 ring-ink/10":"border-transparent bg-white"}`}>
+                      <Badge tone={fileCommentRole(c)==="Organizer"?"ok":"muted"}>{fileCommentRole(c)}</Badge>{" "}<b>{c.authorName}</b> · <span className="font-mono">{fileThreadStamp(c.createdAt)}</span>
                       <br />
                       {c.body}
                     </p>
@@ -816,9 +828,10 @@ export function PortalTaskDetailPage() {
                       size="sm"
                       disabled={!taskComment.trim()}
                       onClick={async () => {
-                        await api.addFileComment(linkedFile.id, taskComment.trim());
+                        const posted:any=await api.addFileComment(linkedFile.id, taskComment.trim());
+                        setPostedComment(posted.data);
                         setTaskComment("");
-                        toast("Comment added");
+                        toast("Speaker comment posted and saved");
                         const r = await api.deliverable(linkedId);
                         setLinkedFile(r.data?.file || null);
                       }}
@@ -839,9 +852,10 @@ export function PortalTaskDetailPage() {
           </div>
         ) : null}
 
-        {task.status === "completed" && task.type !== "form" ? (
-          <p className="mt-4 text-sm text-ink">This task is complete.</p>
-        ) : isFile && task.status !== "completed" ? (
+        {postedComment?<Notice tone="ok"><b>Speaker reply posted and saved</b> · {fileThreadStamp(postedComment.createdAt)}<br/>{postedComment.body}</Notice>:null}
+        {effectiveTaskStatus === "completed" && task.type !== "form" ? (
+          <p className="mt-4 text-sm text-ink">This task is complete — organizer deliverable and portal completion agree.</p>
+        ) : isFile && effectiveTaskStatus !== "completed" ? (
           <p className="mt-4 text-xs text-mid">Required file tasks complete only after upload.</p>
         ) : null}
       </Card>

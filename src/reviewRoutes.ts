@@ -11,7 +11,7 @@ export function createReviewRoutes(deps: {
   mailer: Mailer;
 }) {
   const app = new Hono();
-  const event = (c: any) => c.req.param("eventId") === EVENT_ID;
+  const event = (c: any) => c.req.param("eventId") === deps.store.event.id;
   const organizer = (c: any) => deps.persona(c).role === "organizer";
   const round = (id: string) => deps.store.reviewRounds.find((r) => r.id === id);
 
@@ -103,6 +103,25 @@ export function createReviewRoutes(deps: {
   app.post("/:eventId/reviewer-queue/:assignmentId/recuse", async (c) => {
     if (!event(c)) return error(c, "event not found", 404); const p = deps.persona(c); const a = deps.store.reviewAssignments.find((x) => x.id === c.req.param("assignmentId") && x.reviewerId === p.id && x.status === "assigned"); if (!a) return error(c, "assignment not found", 404);
     const b = await c.req.json().catch(() => ({})); a.status = "recused"; deps.store.reviewConflicts.push({ id: `conflict-${crypto.randomUUID().slice(0,8)}`, assignmentId: a.id, reviewerId: p.id, submissionId: a.submissionId, reason: b.reason || "Conflict of interest", createdAt: new Date().toISOString() }); await deps.persist(); return c.json({ data: a });
+  });
+  /** Assignments for one submission. Review Studio needs this so it can request an
+   * AI advisory draft from an assignment id when no Review row exists yet. */
+  app.get("/:eventId/submissions/:submissionId/assignments", (c) => {
+    if (!event(c)) return error(c, "event not found", 404);
+    if (!organizer(c)) return error(c, "organizer role required", 403);
+    const submissionId = c.req.param("submissionId");
+    if (!deps.store.submissions.some((s) => s.id === submissionId)) return error(c, "submission not found", 404);
+    const data = deps.store.reviewAssignments
+      .filter((a) => a.submissionId === submissionId && a.status !== "recused")
+      .map((a) => ({
+        id: a.id,
+        reviewerId: a.reviewerId,
+        reviewerName: deps.store.personas.find((p) => p.id === a.reviewerId)?.name || a.reviewerId,
+        roundId: a.roundId,
+        roundName: round(a.roundId)?.name,
+        status: a.status,
+      }));
+    return c.json({ data });
   });
   /** Organizer list of recused assignments (for Assignments reinstate UI). */
   app.get("/:eventId/review-recusals", (c) => {

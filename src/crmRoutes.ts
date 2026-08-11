@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { activateEvent, activeEventId, getEventStore } from "./events.js";
 import {
   addContactToEvent,
   addNote,
@@ -138,18 +139,29 @@ export function createCrmRoutes(deps: {
     const denied = requireOrg(c);
     if (denied) return denied;
     const b = await c.req.json().catch(() => ({}));
+    // The CRM is org-level, so a handoff may target ANY event. Resolve the
+    // destination event's own lifecycle store; contacts stay org-level.
+    const target: LifecycleStore = (b.eventId ? getEventStore(String(b.eventId)) : undefined) || deps.store;
+    const targetId = target.event.id;
+    // Snapshot the event that actually changed, then restore the caller's context.
+    const persistTarget = async () => {
+      const previous = activeEventId();
+      if (targetId !== previous) activateEvent(targetId);
+      await deps.persist();
+      if (targetId !== previous) activateEvent(previous);
+    };
     if (b.role === "reviewer") {
       const contact=ensureCrm(deps.store).contacts.find(x=>x.id===c.req.param("id"));if(!contact)return fail(c,"contact not found",404);
-      let reviewer=deps.store.personas.find(x=>x.email.toLowerCase()===contact.email.toLowerCase());if(reviewer&&reviewer.role!=="reviewer")return fail(c,"email belongs to another event role");
-      if(!reviewer){reviewer={id:`rev-crm-${contact.id.slice(-8)}`,role:"reviewer",name:contact.name,email:contact.email};deps.store.personas.push(reviewer)}
-      const round=deps.store.reviewRounds.find(x=>x.id===(b.roundId||"round-initial"))||deps.store.reviewRounds[0];if(!round)return fail(c,"review round not found",404);if(!round.reviewerIds.includes(reviewer.id))round.reviewerIds.push(reviewer.id);
-      await deps.persist();return c.json({data:{contact,reviewerId:reviewer.id,roundId:round.id,role:"reviewer",created:true}},201);
+      let reviewer=target.personas.find(x=>x.email.toLowerCase()===contact.email.toLowerCase());if(reviewer&&reviewer.role!=="reviewer")return fail(c,"email belongs to another event role");
+      if(!reviewer){reviewer={id:`rev-crm-${contact.id.slice(-8)}`,role:"reviewer",name:contact.name,email:contact.email};target.personas.push(reviewer)}
+      const round=target.reviewRounds.find(x=>x.id===(b.roundId||"round-initial"))||target.reviewRounds[0];if(!round)return fail(c,"review round not found",404);if(!round.reviewerIds.includes(reviewer.id))round.reviewerIds.push(reviewer.id);
+      await persistTarget();return c.json({data:{contact,reviewerId:reviewer.id,roundId:round.id,role:"reviewer",created:true}},201);
     }
-    const result = addContactToEvent(c.req.param("id"), b, deps.store);
+    const result = addContactToEvent(c.req.param("id"), b, deps.store, target);
     if (!result.ok) return fail(c, result.error, result.error.includes("not found") ? 404 : 400);
-    const profile=deps.store.profiles.find(p=>p.speakerId===result.speakerId); if(profile)ensureSpeakerPersona(profile as any,deps.store);
-    await deps.persist();
-    return c.json({ data: result }, result.created ? 201 : 200);
+    const profile=target.profiles.find(p=>p.speakerId===result.speakerId); if(profile)ensureSpeakerPersona(profile as any,target);
+    await persistTarget();
+    return c.json({ data: result, eventId: targetId }, result.created ? 201 : 200);
   });
 
   app.post("/api/crm/contacts/merge", async (c) => {

@@ -303,7 +303,18 @@ const now = () => new Date().toISOString();
 
 export const RUBRIC_CRITERIA = ["relevance", "novelty", "clarity", "depth"] as const;
 
-export const store: LifecycleStore = {
+/** The ACTIVE event's lifecycle state.
+ *
+ * Multi-event support keeps one LifecycleStore per event in the registry
+ * (src/events.ts) and rebinds this export per request. It is an ESM live
+ * binding, so every `import { store }` consumer resolves the active event
+ * without threading an explicit resolver through ~300 call sites.
+ *
+ * CAVEAT: this is a request-scoped mutable global. It is correct for this
+ * demo (the Durable Object serializes requests and state is in-memory), but
+ * it is NOT safe under true request concurrency within one isolate.
+ */
+export let store: LifecycleStore = {
   reviewerInvites: [],
   embedConfigs: [],
   automation: {enabled:true,schedule:"0 * * * *",speakerSent:0,reviewerSent:0,status:"never"},
@@ -1294,3 +1305,9 @@ export function commandSnapshot() {
     recentComms: store.communications.slice(0, 5),
   };
 }
+
+/** The seeded default event's store, captured before any rebinding. */
+export const seededStore: LifecycleStore = store;
+
+/** Rebind the active event's lifecycle state. See the note on `store`. */
+export function setActiveStore(next: LifecycleStore) { store = next; }

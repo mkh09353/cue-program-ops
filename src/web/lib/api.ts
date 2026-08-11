@@ -1,9 +1,55 @@
 import {
   DEFAULT_PERSONAS,
-  EVENT_ID,
+  EVENT_ID as DEFAULT_EVENT_ID,
+  EVENT_NAME as DEFAULT_EVENT_NAME,
+  EVENT_SLUG as DEFAULT_EVENT_SLUG,
   type Persona,
   type Role,
 } from "./utils";
+
+// —— Active event ——
+// CUE now serves several events. Every organizer API path is scoped by event id,
+// so the selection lives here and is restored from localStorage on load.
+export interface EventSummary { id: string; name: string; slug: string; timezone: string; startsAt: string; endsAt: string; venue: string; seeded?: boolean }
+
+const EVENT_KEY = "cue-event-id";
+let activeEvent: EventSummary = {
+  id: DEFAULT_EVENT_ID, name: DEFAULT_EVENT_NAME, slug: DEFAULT_EVENT_SLUG,
+  timezone: "America/Los_Angeles", startsAt: "", endsAt: "", venue: "", seeded: true,
+};
+let eventCatalog: EventSummary[] = [activeEvent];
+const eventListeners = new Set<() => void>();
+
+try { const stored = localStorage.getItem(EVENT_KEY); if (stored) activeEvent = { ...activeEvent, id: stored }; } catch { /* storage unavailable */ }
+
+export const getEventId = () => activeEvent.id;
+export const getActiveEvent = () => activeEvent;
+export const getEventCatalog = () => eventCatalog;
+export function subscribeEvent(fn: () => void) { eventListeners.add(fn); return () => eventListeners.delete(fn); }
+const notifyEvent = () => { for (const fn of eventListeners) fn(); bumpData(); };
+
+/** Adopt the server's event list and re-resolve the stored selection. */
+export function setEventCatalog(list: EventSummary[]) {
+  if (!list?.length) return;
+  eventCatalog = list;
+  const match = list.find((e) => e.id === activeEvent.id) || list[0];
+  const changed = match.id !== activeEvent.id || match.name !== activeEvent.name;
+  activeEvent = match;
+  if (changed) notifyEvent();
+}
+
+/** Switch the organizer/reviewer/speaker shells to another event. */
+export function setActiveEventId(id: string) {
+  const match = eventCatalog.find((e) => e.id === id);
+  if (!match || match.id === activeEvent.id) return;
+  activeEvent = match;
+  try { localStorage.setItem(EVENT_KEY, id); } catch { /* storage unavailable */ }
+  notifyEvent();
+}
+
+/** Template-literal shim: every `${EVENT_ID}` in this module's API paths
+ * resolves the ACTIVE event id at call time rather than at import time. */
+const EVENT_ID = { toString: getEventId } as unknown as string;
 
 let persona: Persona = DEFAULT_PERSONAS[0];
 let personaCatalog: Persona[] = [...DEFAULT_PERSONAS];
@@ -170,6 +216,9 @@ function headers(extra?: HeadersInit): HeadersInit {
     "content-type": "application/json",
     "x-demo-role": persona.role,
     "x-demo-persona": persona.id,
+    // Scopes the route families that carry no :eventId (speaker portal,
+    // content, communications, calendar) to the selected event.
+    "x-cue-event": getEventId(),
   };
   if (persona.speakerId) h["x-demo-speaker"] = persona.speakerId;
   return { ...h, ...(extra as Record<string, string>) };
@@ -203,6 +252,9 @@ async function mut<T = any>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  events: () => req<{ data: EventSummary[] }>(`/api/events`),
+  createEvent: (body: { name: string; slug: string; startsAt: string; endsAt: string; timezone: string; venue?: string; rooms?: string; tracks?: string }) =>
+    mut<{ data: EventSummary }>(`/api/events`, { method: "POST", body: JSON.stringify(body) }),
   bootstrap: () => req<{ data: any }>(`/api/events/${EVENT_ID}/bootstrap`),
   command: () => req<{ data: any }>(`/api/events/${EVENT_ID}/command`),
   submissions: (filter?: string) =>
@@ -231,6 +283,8 @@ export const api = {
   reviewResultsCsv: () => `/api/events/${EVENT_ID}/review-results.csv`,
   saveReview: (id: string, body: any) =>
     mut(`/api/events/${EVENT_ID}/reviews/${id}`, { method: "POST", body: JSON.stringify(body) }),
+  submissionAssignments: (submissionId: string) =>
+    req<{ data: any[] }>(`/api/events/${EVENT_ID}/submissions/${submissionId}/assignments`),
   aiAssist: (id: string) =>
     mut(`/api/events/${EVENT_ID}/reviews/${id}/ai-assist`, { method: "POST", body: "{}" }),
   decide: (id: string, body: any) =>
@@ -331,8 +385,12 @@ export const api = {
     }
     const fileCount = Number(r.headers.get("x-cue-file-count") || "0");
     const grouping = r.headers.get("x-cue-grouping") || selection.grouping;
+    const entryNames = (() => {
+      try { return JSON.parse(decodeURIComponent(r.headers.get("x-cue-entry-names") || "%5B%5D")) as string[]; }
+      catch { return [] as string[]; }
+    })();
     const blob = await r.blob();
-    return { blob, fileCount, grouping, filename: "cue-content-archive.zip" };
+    return { blob, fileCount, grouping, entryNames, filename: "cue-content-archive.zip" };
   },
   resource: (slug: string) =>
     req<{ data: any }>(`/api/speaker/events/${EVENT_ID}/resources/${slug}`),

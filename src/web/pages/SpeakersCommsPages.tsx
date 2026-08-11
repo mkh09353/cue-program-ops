@@ -23,7 +23,7 @@ import { useAsyncData } from "../lib/useAsyncData";
 export const TASK_TEMPLATE_DUE_DAYS = 14;
 export const TASK_TEMPLATES = [
   { title: "Confirm participation", type: "confirm", description: "Confirm that you will participate in the event." },
-  { title: "Sign speaker release form", type: "form", description: "Complete the speaker release form." },
+  { title: "Sign speaker release form", type: "confirm", description: "Confirm that you signed the speaker release form." },
   { title: "Complete bio and profile", type: "profile", description: "Review and complete your speaker bio and profile." },
 ] as const;
 
@@ -251,7 +251,7 @@ export function SpeakersPage() {
         <Field label="Search">
           <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Name, company, email…" />
         </Field>
-        <Field label="Workflow status">
+        <Field label="Filter by workflow status">
           <select className="h-10 w-full rounded-lg border border-line bg-white px-3 text-sm" value={status} onChange={(e) => setStatus(e.target.value)}>
             <option value="">All</option>
             {["invited", "confirmed", "accepted", "declined", "withdrawn"].map((s) => (
@@ -639,6 +639,8 @@ export function SpeakerDetailPage() {
   const [edit, setEdit] = useState<any>(null);
   const [inviteMsg, setInviteMsg] = useState("");
   const [headshotBusy, setHeadshotBusy] = useState(false);
+  const [statusBusy, setStatusBusy] = useState(false);
+  const [statusConfirmation, setStatusConfirmation] = useState("");
 
   const detail = useAsyncData(async () => (await api.speakerDetail(id!)).data, [id]);
   const load = () => detail.reload();
@@ -743,18 +745,49 @@ export function SpeakerDetailPage() {
                 <Textarea rows={4} value={edit.bio} onChange={(e) => setEdit({ ...edit, bio: e.target.value })} />
               </Field>
               <Field label="Workflow status">
-                <select
-                  className="h-10 w-full rounded-lg border border-line bg-white px-3 text-sm"
-                  value={edit.workflowStatus}
-                  onChange={(e) => setEdit({ ...edit, workflowStatus: e.target.value })}
-                >
-                  {["invited", "confirmed", "accepted", "declined", "withdrawn"].map((s) => (
-                    <option key={s} value={s}>
-                      {s}
-                    </option>
-                  ))}
-                </select>
+                <div className="flex flex-wrap items-center gap-2">
+                  <select
+                    className="h-10 min-w-48 flex-1 rounded-lg border border-line bg-white px-3 text-sm"
+                    value={edit.workflowStatus}
+                    onChange={(e) => {
+                      setEdit({ ...edit, workflowStatus: e.target.value });
+                      setStatusConfirmation("");
+                    }}
+                  >
+                    {["invited", "confirmed", "accepted", "declined", "withdrawn"].map((s) => (
+                      <option key={s} value={s}>
+                        {s}
+                      </option>
+                    ))}
+                  </select>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    disabled={statusBusy || edit.workflowStatus === row.workflowStatus}
+                    onClick={async () => {
+                      setStatusBusy(true);
+                      try {
+                        const result = await api.setSpeakerStatus(row.speakerId, edit.workflowStatus);
+                        const saved = result.data.workflowStatus;
+                        setEdit((current: any) => ({ ...current, workflowStatus: saved }));
+                        setStatusConfirmation(`Workflow status updated to ${formatStatus(saved)}.`);
+                        await load();
+                      } catch (e: any) {
+                        toast(e.message || "Status update failed", "danger");
+                      } finally {
+                        setStatusBusy(false);
+                      }
+                    }}
+                  >
+                    {statusBusy ? "Updating…" : "Update status"}
+                  </Button>
+                </div>
               </Field>
+              {statusConfirmation ? (
+                <Notice tone="ok" onClose={() => setStatusConfirmation("")}>
+                  <span role="status">{statusConfirmation}</span>
+                </Notice>
+              ) : null}
               <Field label="Headshot">
                 <div className="space-y-2">
                   {(row.headshotUrl || row.profile?.headshotUrl) ? (
@@ -810,7 +843,8 @@ export function SpeakerDetailPage() {
               </Field>
               <Button
                 onClick={async () => {
-                  await api.updateSpeaker(row.speakerId, edit);
+                  const { workflowStatus: _workflowStatus, ...profileFields } = edit;
+                  await api.updateSpeaker(row.speakerId, profileFields);
                   toast("Speaker saved");
                   load();
                 }}

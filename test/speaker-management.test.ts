@@ -137,6 +137,64 @@ test("organizer-created speaker is registered in bootstrap and can open portal h
   assert.equal(home.status,200); assert.equal((await home.json()).data.profile.email,email);
 });
 
+test("runtime-created speaker receives organizer tasks in portal and completion drives organizer progress", async () => {
+  let snapshot: any;
+  const persistence = { save: async (value: any) => { snapshot = structuredClone(value); }, load: async () => snapshot };
+  const repo = new MemoryRepository();
+  const app = createApp({ repo, persistence });
+  const tag = crypto.randomUUID().slice(0, 8);
+  const made = await app.request(`/api/events/${EVENT_ID}/speakers`, {
+    method: "POST", headers: org,
+    body: JSON.stringify({ name: `Runtime Speaker ${tag}`, email: `runtime-${tag}@example.test`, sendInvite: false }),
+  });
+  assert.equal(made.status, 201);
+  const speakerId = ((await made.json()) as any).data.speakerId;
+  const titles = [`Confirm participation ${tag}`, `Sign speaker release ${tag}`];
+  const assigned = await app.request(`/api/events/${EVENT_ID}/speakers/tasks`, {
+    method: "POST", headers: org,
+    body: JSON.stringify({ title: titles[0], dueAt: "2027-04-01T23:59:59.000Z", type: "confirm", speakerIds: [speakerId] }),
+  });
+  assert.equal(assigned.status, 201);
+  const firstTask = ((await assigned.json()) as any).data[0];
+  const second = await app.request(`/api/events/${EVENT_ID}/speakers/tasks`, {
+    method: "POST", headers: org,
+    body: JSON.stringify({ title: titles[1], dueAt: "2027-04-15T23:59:59.000Z", type: "confirm", speakerIds: [speakerId] }),
+  });
+  assert.equal(second.status, 201);
+  const secondTask = ((await second.json()) as any).data[0];
+
+  // Cross the same snapshot restoration boundary used by deployments before reading
+  // through the independently registered portal routes.
+  const { restoreSnapshot } = await import("../src/app.js");
+  await restoreSnapshot({ repo, persistence });
+  const speakerHeaders = { "x-demo-persona": speakerId, "content-type": "application/json" };
+  const home = await app.request(`/api/speaker/events/${EVENT_ID}/home`, { headers: speakerHeaders });
+  assert.equal(home.status, 200);
+  const homeTasks = ((await home.json()) as any).data.tasks;
+  assert.ok(homeTasks.some((task: any) => task.id === firstTask.id && task.title === titles[0]));
+  assert.ok(homeTasks.some((task: any) => task.id === secondTask.id && task.title === titles[1]));
+  const list = await app.request(`/api/speaker/events/${EVENT_ID}/tasks`, { headers: speakerHeaders });
+  assert.equal(list.status, 200);
+  assert.ok(((await list.json()) as any).data.tasks.some((task: any) => task.id === firstTask.id));
+
+  const progressBefore = ((await (await app.request(`/api/events/${EVENT_ID}/speakers/progress`, { headers: org })).json()) as any).data;
+  const beforeRow = progressBefore.rows.find((row: any) => row.speakerId === speakerId);
+  assert.equal(beforeRow.cells[titles[0]].status, "not_started");
+  assert.equal(beforeRow.cells[titles[1]].status, "not_started");
+  const completedBefore = beforeRow.completed;
+
+  const completed = await app.request(`/api/speaker/events/${EVENT_ID}/tasks/${firstTask.id}`, {
+    method: "PATCH", headers: speakerHeaders, body: JSON.stringify({ status: "completed" }),
+  });
+  assert.equal(completed.status, 200);
+  const progressAfter = ((await (await app.request(`/api/events/${EVENT_ID}/speakers/progress`, { headers: org })).json()) as any).data;
+  const afterRow = progressAfter.rows.find((row: any) => row.speakerId === speakerId);
+  assert.equal(afterRow.cells[titles[0]].status, "completed");
+  assert.equal(afterRow.cells[titles[1]].status, "not_started");
+  assert.equal(afterRow.completed, completedBefore + 1);
+  assert.equal(afterRow.total, beforeRow.total);
+});
+
 test("manual confirmed workflow status wins across snapshot restore", async () => {
   let snapshot: any;
   const persistence = { save: async (value: any) => { snapshot = structuredClone(value); }, load: async () => snapshot };
@@ -725,7 +783,7 @@ test("assign-task modal exposes exactly the three template chips with prefilled 
     TASK_TEMPLATES.map((t: any) => t.title),
     ["Confirm participation", "Sign speaker release form", "Complete bio and profile"],
   );
-  assert.deepEqual(TASK_TEMPLATES.map((t: any) => t.type), ["confirm", "form", "profile"]);
+  assert.deepEqual(TASK_TEMPLATES.map((t: any) => t.type), ["confirm", "confirm", "profile"]);
   assert.ok(TASK_TEMPLATES.every((t: any) => t.description && t.description.length > 10), "descriptions are prefilled");
 
   // Deterministic relative due date in the date-input format the modal uses.
@@ -738,6 +796,16 @@ test("assign-task modal exposes exactly the three template chips with prefilled 
   const page = await readFile(new URL("../src/web/pages/SpeakersCommsPages.tsx", import.meta.url), "utf8");
   assert.match(page, /setTaskForm\(\(prev\) => \(\{ \.\.\.prev, \.\.\.template, dueAt: taskTemplateDueDate\(\) \}\)\)/, "functional update avoids stale taskForm");
   assert.match(page, /data-testid={`task-template-\$\{template\.type\}`}/);
+});
+
+test("speaker detail distinguishes the roster filter and explicitly persists workflow status", async () => {
+  const page = await readFile(new URL("../src/web/pages/SpeakersCommsPages.tsx", import.meta.url), "utf8");
+  assert.match(page, /<Field label="Filter by workflow status">/);
+  assert.match(page, /api\.setSpeakerStatus\(row\.speakerId, edit\.workflowStatus\)/);
+  assert.match(page, /Workflow status updated to \$\{formatStatus\(saved\)\}\./);
+  assert.match(page, /<span role="status">\{statusConfirmation\}<\/span>/);
+  assert.match(page, /await load\(\);/);
+  assert.match(page, /Update status/);
 });
 
 test("bulk comms send appends one log entry per recipient and returns the UI payload shape", async () => {

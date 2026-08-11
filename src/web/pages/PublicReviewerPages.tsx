@@ -640,6 +640,13 @@ export function ReviewerSubmissionPage() {
   const [recuseBusy, setRecuseBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const [aiBusy, setAiBusy] = useState(false);
+  /** Inline, screenshot-visible evidence of the advisory draft (never toast-only). */
+  const [aiDraft, setAiDraft] = useState<
+    | { status: "loading" }
+    | { status: "ready"; entries: { label: string; value: number }[]; notes: string; at: string }
+    | { status: "error"; error: string }
+    | null
+  >(null);
   const load = () =>
     api
       .reviewerAssignment(submissionId!)
@@ -678,7 +685,14 @@ export function ReviewerSubmissionPage() {
           </p>
         </Card>
         <Card className="p-5">
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-2"><div><h2 className="font-bold">Scorecard</h2><p className="text-xs text-mid">AI drafts are heuristic, advisory, and never submit or decide.</p></div><Button variant="secondary" disabled={aiBusy} onClick={async()=>{setAiBusy(true);try{const r:any=await api.aiAssist(data.review?.id || data.assignment.id);setResponses(x=>({...x,...(r.data.scores||{}),comments:r.data.notes||x.comments||""}));setNotice("AI advisory draft applied. Review and edit every value before submitting.")}catch(e:any){setErr(e.message)}finally{setAiBusy(false)}}}>{aiBusy?"Drafting…":"AI draft review"}</Button></div>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2"><div><h2 className="font-bold">Scorecard</h2><p className="text-xs text-mid">AI drafts are heuristic, advisory, and never submit or decide.</p></div><Button variant="secondary" data-testid="ai-draft-button" disabled={aiBusy} onClick={async()=>{setAiBusy(true);setAiDraft({status:"loading"});try{const r:any=await api.aiAssist(data.review?.id || data.assignment.id);setResponses(x=>({...x,...(r.data.scores||{}),comments:r.data.notes||x.comments||""}));setAiDraft({status:"ready",entries:Object.entries(r.data.scores||{}).filter(([,v])=>typeof v==="number").map(([k,v])=>({label:k,value:Number(v)})),notes:String(r.data.notes||r.data.aiDraft||""),at:new Date().toLocaleTimeString()});setNotice("AI advisory draft applied. Review and edit every value before submitting.")}catch(e:any){setAiDraft({status:"error",error:e?.message||"AI draft failed"});setErr(e.message)}finally{setAiBusy(false)}}}>{aiBusy?"Drafting AI review…":"AI draft review"}</Button></div>
+          {aiDraft?<div className="mb-4 rounded-[18px] border border-line bg-soft p-3 text-sm" data-testid="ai-draft-panel" role="status" aria-live="polite">
+            {aiDraft.status==="loading"?<span data-testid="ai-draft-loading">Drafting AI review… scoring this abstract now.</span>:aiDraft.status==="error"?<span className="text-rose-600" data-testid="ai-draft-error">{aiDraft.error}</span>:<>
+              <div className="flex flex-wrap items-center gap-2"><Badge tone="ai">AI advisory draft</Badge><span className="text-xs text-mid">generated {aiDraft.at} · advisory only — you remain responsible for the score</span></div>
+              <ul className="mt-2 flex flex-wrap gap-3" data-testid="ai-draft-scores">{aiDraft.entries.map(e=><li key={e.label} className="rounded-[10px] bg-paper px-2 py-1"><b className="capitalize">{e.label}</b> <span className="font-mono">{e.value}</span></li>)}</ul>
+              <p className="mt-2 text-xs leading-relaxed text-ink-soft" data-testid="ai-draft-rationale">{aiDraft.notes}</p>
+            </>}
+          </div>:null}
           {scoreCriteria.map((criterion: any) => {
             const min = criterion.min ?? 1;
             const max = criterion.max ?? 5;

@@ -569,25 +569,28 @@ export function addContactToEvent(
   contactId: string,
   opts: { eventId?: string; eventName?: string } = {},
   life: LifecycleStore = store,
+  /** Destination event's lifecycle store. The CRM directory (`life`) is
+   * org-level, so a handoff may create the speaker in a DIFFERENT event. */
+  target: LifecycleStore = life,
 ): { ok: true; contact: CrmContact; speakerId: string; created: boolean } | { ok: false; error: string } {
   const crm = ensureCrm(life);
   const contact = crm.contacts.find((c) => c.id === contactId);
   if (!contact) return { ok: false, error: "contact not found" };
-  const eventId = opts.eventId || life.event.id || EVENT_ID;
-  const eventName = opts.eventName || life.event.name;
+  const eventId = opts.eventId || target.event.id || EVENT_ID;
+  const eventName = opts.eventName || target.event.name;
   const existingLink = contact.eventHistory.find((e) => e.eventId === eventId && e.speakerId);
   if (existingLink?.speakerId) {
     return { ok: true, contact, speakerId: existingLink.speakerId, created: false };
   }
 
   // Prefer matching profile by email
-  let profile = life.profiles.find((p) => normalizeEmail(p.email) === normalizeEmail(contact.email));
+  let profile = target.profiles.find((p) => normalizeEmail(p.email) === normalizeEmail(contact.email));
   let speakerId = profile?.speakerId;
   let created = false;
   if (!speakerId) {
     speakerId = `spk-crm-${contact.id.slice(-8)}`;
     created = true;
-    life.profiles.push({
+    target.profiles.push({
       speakerId,
       name: contact.name,
       email: contact.email,
@@ -604,7 +607,7 @@ export function addContactToEvent(
   }
 
   // Ensure an accepted submission + session draft so Speakers list shows them
-  let sub = life.submissions.find((s) => s.speakerId === speakerId);
+  let sub = target.submissions.find((s) => s.speakerId === speakerId);
   if (!sub) {
     sub = {
       id: `sub-crm-${contact.id.slice(-8)}`,
@@ -622,17 +625,17 @@ export function addContactToEvent(
       round: "final",
       createdAt: now(),
     };
-    life.submissions.unshift(sub);
+    target.submissions.unshift(sub);
   } else if (sub.status !== "accepted") {
     sub.status = "accepted";
   }
 
-  if (!life.sessions.some((s) => s.speakerId === speakerId)) {
+  if (!target.sessions.some((s) => s.speakerId === speakerId)) {
     const track =
-      life.tracks.find((t) => t.name.toLowerCase() === (sub!.category || "").toLowerCase())?.id ||
-      life.tracks[0]?.id ||
+      target.tracks.find((t) => t.name.toLowerCase() === (sub!.category || "").toLowerCase())?.id ||
+      target.tracks[0]?.id ||
       "track-eng";
-    life.sessions.push({
+    target.sessions.push({
       id: `ses-crm-${contact.id.slice(-8)}`,
       submissionId: sub.id,
       speakerId,

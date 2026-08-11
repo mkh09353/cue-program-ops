@@ -2,6 +2,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import {
   CalendarDays,
+  ChevronDown,
   Command,
   ContactRound,
   FileText,
@@ -9,6 +10,7 @@ import {
   LayoutGrid,
   Megaphone,
   Menu,
+  Plus,
   Settings,
   Sparkles,
   Users,
@@ -29,9 +31,169 @@ import {
 } from "../lib/api";
 import { cn, EVENT_NAME, type Persona, type Role } from "../lib/utils";
 import { Button } from "./ui";
+import {
+  getActiveEvent,
+  getEventCatalog,
+  setActiveEventId,
+  setEventCatalog,
+  subscribeEvent,
+  type EventSummary,
+} from "../lib/api";
 
 function usePersona(): Persona {
   return useSyncExternalStore(subscribePersona, getPersona, getPersona);
+}
+
+function useActiveEvent(): EventSummary {
+  return useSyncExternalStore(subscribeEvent, getActiveEvent, getActiveEvent);
+}
+
+const BLANK_EVENT = { name: "", slug: "", startsAt: "", endsAt: "", timezone: "America/Los_Angeles", venue: "", rooms: "", tracks: "" };
+
+/** Header control for choosing which event every scoped API call targets,
+ * plus the create-event form. The selection persists in localStorage. */
+export function EventSwitcher({ readOnly }: { readOnly?: boolean } = {}) {
+  const active = useActiveEvent();
+  const [events, setEvents] = useState<EventSummary[]>(() => getEventCatalog());
+  const [open, setOpen] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [form, setForm] = useState({ ...BLANK_EVENT });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const load = () =>
+    api
+      .events()
+      .then((r) => {
+        const list = r.data || [];
+        if (list.length) {
+          setEventCatalog(list);
+          setEvents(list);
+        }
+      })
+      .catch(() => setError("Could not load the event list."));
+
+  useEffect(() => {
+    void load();
+  }, []);
+
+  const submit = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      const created = await api.createEvent({
+        name: form.name,
+        slug: form.slug || form.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""),
+        startsAt: form.startsAt ? new Date(form.startsAt).toISOString() : "",
+        endsAt: form.endsAt ? new Date(form.endsAt).toISOString() : "",
+        timezone: form.timezone,
+        venue: form.venue,
+        rooms: form.rooms,
+        tracks: form.tracks,
+      });
+      await load();
+      setActiveEventId(created.data.id);
+      setCreating(false);
+      setOpen(false);
+      setForm({ ...BLANK_EVENT });
+    } catch (e: any) {
+      setError(e?.message || "Could not create the event.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const field = (label: string, key: keyof typeof form, type = "text", placeholder = "") => (
+    <label className="block text-[11px] font-medium uppercase tracking-wide text-mid">
+      {label}
+      <input
+        type={type}
+        value={(form as any)[key]}
+        placeholder={placeholder}
+        onChange={(e) => setForm({ ...form, [key]: e.target.value })}
+        className="mt-1 w-full rounded-[10px] border border-line bg-paper px-2 py-1.5 text-sm font-normal normal-case tracking-normal text-ink"
+      />
+    </label>
+  );
+
+  return (
+    <div className="relative" data-testid="event-switcher">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={`Current event: ${active.name}. Switch event`}
+        className="flex max-w-[240px] items-center gap-2 rounded-[10px] border border-line bg-paper px-2.5 py-1.5 text-left text-sm text-ink hover:bg-soft"
+      >
+        <span className="truncate font-medium" data-testid="active-event-name">{active.name}</span>
+        <ChevronDown className="h-4 w-4 shrink-0 text-mid" />
+      </button>
+      {open ? (
+        <div role="menu" className="absolute right-0 z-40 mt-1 w-[320px] rounded-[14px] border border-line bg-paper p-2 shadow-card">
+          <div className="px-2 pb-1 pt-1 text-[11px] uppercase tracking-wide text-mid">Events</div>
+          {events.map((e) => (
+            <button
+              key={e.id}
+              role="menuitem"
+              type="button"
+              onClick={() => {
+                setActiveEventId(e.id);
+                setOpen(false);
+              }}
+              className={cn(
+                "flex w-full flex-col rounded-[10px] px-2 py-1.5 text-left text-sm hover:bg-soft",
+                e.id === active.id && "bg-soft font-medium",
+              )}
+            >
+              <span className="truncate text-ink">{e.name}</span>
+              <span className="truncate text-[11px] text-mid">
+                {e.venue || "No venue"} · {e.timezone}
+              </span>
+            </button>
+          ))}
+          {readOnly ? null : (
+            <>
+              <div className="my-1 border-t border-line" />
+              {creating ? (
+                <div className="space-y-2 p-2">
+                  {field("Event name", "name", "text", "DevFlow Conf 2027")}
+                  {field("URL slug", "slug", "text", "devflow-conf-2027")}
+                  <div className="grid grid-cols-2 gap-2">
+                    {field("Starts", "startsAt", "datetime-local")}
+                    {field("Ends", "endsAt", "datetime-local")}
+                  </div>
+                  {field("Timezone", "timezone", "text", "America/Los_Angeles")}
+                  {field("Venue", "venue", "text", "Moscone West")}
+                  {field("Rooms (comma separated)", "rooms", "text", "Room 2A, Room 2B")}
+                  {field("Tracks (comma separated)", "tracks", "text", "Platform, DX")}
+                  {error ? <div className="text-xs text-rose-600" role="alert">{error}</div> : null}
+                  <div className="flex gap-2">
+                    <Button size="sm" onClick={submit} disabled={busy || !form.name.trim()}>
+                      {busy ? "Creating…" : "Create event"}
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => setCreating(false)} disabled={busy}>
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => setCreating(true)}
+                  className="flex w-full items-center gap-2 rounded-[10px] px-2 py-1.5 text-left text-sm text-ink hover:bg-soft"
+                >
+                  <Plus className="h-4 w-4" /> New event
+                </button>
+              )}
+            </>
+          )}
+          {error && !creating ? <div className="px-2 py-1 text-xs text-rose-600" role="alert">{error}</div> : null}
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 function PersonaSwitcher({ lockRole }: { lockRole?: Role }) {
@@ -230,6 +392,7 @@ export function OrganizerShell() {
                 <Brand compact />
               </div>
               <div className="hidden text-sm text-mid sm:block">Organizer workspace</div>
+              <EventSwitcher />
             </div>
             <PersonaSwitcher />
           </header>
@@ -311,7 +474,10 @@ export function ReviewerShell() {
             ))}
           </nav>
         </div>
-        <PersonaSwitcher lockRole="reviewer" />
+        <div className="flex items-center gap-2">
+          <EventSwitcher readOnly />
+          <PersonaSwitcher lockRole="reviewer" />
+        </div>
       </header>
       <main id="main" className="mx-auto max-w-5xl p-4 sm:p-6" key={personaKey}>
         <Outlet />
@@ -360,7 +526,10 @@ export function PortalShell() {
               </NavLink>
             ))}
           </nav>
-          <PersonaSwitcher lockRole="speaker" />
+          <div className="flex items-center gap-2">
+            <EventSwitcher readOnly />
+            <PersonaSwitcher lockRole="speaker" />
+          </div>
         </div>
       </header>
       <main id="main" className="mx-auto max-w-3xl p-4 sm:p-6" key={personaKey}>

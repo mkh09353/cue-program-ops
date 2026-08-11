@@ -53,7 +53,7 @@ export function createSpeakerRoutes(deps: {
   const requireOrg = (c: any) => (!org(c) ? fail(c, "organizer role required", 403) : null);
   const speakerIdOf = (c: any) => deps.persona(c).speakerId;
 
-  const eventOk = (c: any) => c.req.param("eventId") === EVENT_ID;
+  const eventOk = (c: any) => c.req.param("eventId") === deps.store.event.id;
   const boot = () => enrichSpeakerMgmtDemo(deps.store);
 
   // —— Organizer roster ——

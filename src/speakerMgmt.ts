@@ -363,7 +363,9 @@ export async function syncProfileToSchedule(speakerId: string, life: LifecycleSt
   if (!profile) return;
   // Prefer injected repo; otherwise try MemoryRepository-shaped global via optional callback
   if (!repo?.getSchedule || !repo?.putSchedule) return;
-  const sched = await repo.getSchedule(EVENT_ID);
+  // Mirror into the schedule of the event this store belongs to.
+  const scheduleEventId = life.event.id || EVENT_ID;
+  const sched = await repo.getSchedule(scheduleEventId);
   if (!sched) return;
   const target = sched.speakers?.find((s: any) => s.id === speakerId);
   if (target) {
@@ -374,7 +376,7 @@ export async function syncProfileToSchedule(speakerId: string, life: LifecycleSt
       title: profile.title,
       headshotUrl: profile.headshotUrl || target.headshotUrl,
     });
-    await repo.putSchedule(EVENT_ID, sched);
+    await repo.putSchedule(scheduleEventId, sched);
   }
 }
 

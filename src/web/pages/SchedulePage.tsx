@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, getPersona, subscribeData } from "../lib/api";
-import { EVENT_ID, EVENT_TZ, PROGRAM_DAYS, cn, programDaysFromRange, type ProgramDay, fmtDate, fmtTime, fmtTzLabel, formatStatus } from "../lib/utils";
+import { getEventId } from "../lib/api";
+import { EVENT_TZ, PROGRAM_DAYS, cn, programDaysFromRange, type ProgramDay, fmtDate, fmtTime, fmtTzLabel, formatStatus } from "../lib/utils";
 import { isoToZonedWallTime, zonedDayKey, zonedWallTimeToIso } from "../../timezone";
 import { capacityWarningMessage } from "../../schedule";
 import {
@@ -179,7 +180,7 @@ export function SchedulePage() {
     try {
       const persona = getPersona();
       const path = renaming.kind === "room" ? "rooms" : "tracks";
-      const res = await fetch(`/api/events/${EVENT_ID}/agenda/${path}/${encodeURIComponent(renaming.id)}`, {
+      const res = await fetch(`/api/events/${getEventId()}/agenda/${path}/${encodeURIComponent(renaming.id)}`, {
         method: "PATCH",
         headers: { "content-type": "application/json", "x-demo-persona": persona.id, "x-demo-role": persona.role },
         body: JSON.stringify({ name }),
@@ -404,7 +405,7 @@ export function SchedulePage() {
         actions={
           <a
             className="text-sm font-semibold text-ink"
-            href={`/public/events/${EVENT_ID}/itinerary`}
+            href={`/public/events/${getEventId()}/itinerary`}
             target="_blank"
             rel="noreferrer"
           >
@@ -531,7 +532,7 @@ export function SchedulePage() {
           {" · "}
           <a
             className="font-semibold underline"
-            href={(d as any)?.lastAgendaPublish?.publicUrl || `/public/events/${EVENT_ID}/itinerary`}
+            href={(d as any)?.lastAgendaPublish?.publicUrl || `/public/events/${getEventId()}/itinerary`}
             target="_blank"
             rel="noreferrer"
           >

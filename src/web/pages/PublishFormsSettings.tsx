@@ -1,7 +1,10 @@
 import { useEffect, useState } from "react";
 import { api, subscribeData } from "../lib/api";
+import { getActiveEvent, getEventId } from "../lib/api";
+/** Public links follow the ACTIVE event, not the seeded demo event. */
+const EVENT_SLUG = { toString: () => getActiveEvent().slug } as unknown as string;
 import { useAsyncData } from "../lib/useAsyncData";
-import { EVENT_ID, EVENT_SLUG, adoptSaveResult, formatStatus } from "../lib/utils";
+import { adoptSaveResult, formatStatus } from "../lib/utils";
 import {
   Badge,
   Button,
@@ -19,6 +22,19 @@ import {
   toast,
 } from "../components/ui";
 
+/** Where saved-embed presentation preferences live (see the note in the manager). */
+export const EMBED_PREFS_KEY = "cue-embed-prefs";
+
+/** Build the copyable snippet for a saved embed.
+ * Basic = a bare iframe. Styled = iframe plus a scoped <style> block carrying the
+ * organizer's custom CSS, so the format choice produces genuinely different output. */
+export function embedSnippet(input: { url: string; name: string; format: "basic" | "styled"; css?: string }) {
+  const iframe = `<iframe src="${input.url}" title="${input.name}" style="width:100%;min-height:640px;border:0"></iframe>`;
+  if (input.format !== "styled") return iframe;
+  const css = (input.css || "").trim() || ".cue-embed{border-radius:18px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.1)}";
+  return `<style>\n${css}\n</style>\n<div class="cue-embed">\n  ${iframe}\n</div>`;
+}
+
 export function PublishPage() {
   const [sync, setSync] = useState<any>(null);
   const [runs, setRuns] = useState<any[]>([]);
@@ -28,7 +44,29 @@ export function PublishPage() {
   const [cardFields,setCardFields]=useState({speakers:true,room:true,track:true,description:true});
   const [configSaved,setConfigSaved]=useState("");
   const [configBusy,setConfigBusy]=useState(false);
+  const [configQuery,setConfigQuery]=useState("");
+  const [embedFormat,setEmbedFormat]=useState<"basic"|"styled">("basic");
+  const [customCss,setCustomCss]=useState("");
+  /** Presentation state for saved embeds (enabled flag, snippet format, custom CSS).
+   * The server's embed-config record does not carry these fields, so they are kept
+   * in this browser under EMBED_PREFS_KEY. See the note rendered next to the toggle. */
+  const [prefs,setPrefs]=useState<Record<string,{enabled:boolean;format:"basic"|"styled";css:string}>>(()=>{
+    try{return JSON.parse(localStorage.getItem(EMBED_PREFS_KEY)||"{}")}catch{return {}}
+  });
+  const prefFor=(id:string)=>prefs[id]||{enabled:true,format:"basic" as const,css:""};
+  const savePrefs=(next:Record<string,{enabled:boolean;format:"basic"|"styled";css:string}>)=>{
+    setPrefs(next);
+    try{localStorage.setItem(EMBED_PREFS_KEY,JSON.stringify(next))}catch{/* storage unavailable */}
+  };
   const loadConfigs=()=>api.embedConfigs().then(r=>setConfigs(r.data)).catch(()=>{});
+  const configMatches=(c:any,q:string)=>{
+    const needle=q.trim().toLowerCase();
+    if(!needle)return true;
+    const filters=[c.filters?.track,c.filters?.format,c.filters?.day,c.filters?.room].filter(Boolean).join(" ");
+    return [c.name,c.widget,filters].join(" ").toLowerCase().includes(needle);
+  };
+  const visibleConfigs=configs.filter(c=>configMatches(c,configQuery));
+  const enabledCount=configs.filter(c=>prefFor(c.id).enabled).length;
   const [facets,setFacets]=useState<{tracks:string[];formats:string[];rooms:string[];days:string[]}>({tracks:[],formats:[],rooms:[],days:[]});
   const origin = typeof window !== "undefined" ? window.location.origin : "";
 
@@ -52,8 +90,8 @@ export function PublishPage() {
     itinerary: `${origin}/e/${EVENT_SLUG}/public/itinerary.xml`,
     gallery: `${origin}/e/${EVENT_SLUG}/public/gallery.xml`,
   };
-  const legacyGallery = `/public/events/${EVENT_ID}/gallery`;
-  const legacyItinerary = `/public/events/${EVENT_ID}/itinerary`;
+  const legacyGallery = `/public/events/${getEventId()}/gallery`;
+  const legacyItinerary = `/public/events/${getEventId()}/itinerary`;
 
   const loadRuns = () => api.syncRuns().then(setRuns).catch(() => {});
 
@@ -127,13 +165,25 @@ export function PublishPage() {
                   // visible immediately on the first click, not after a later interaction.
                   setConfigs((prev:any[])=>prev.some(x=>x.id===r.data.id)?prev:[...prev,r.data]);
                   await loadConfigs();
+                  savePrefs({ ...prefs, [r.data.id]: { enabled: true, format: embedFormat, css: customCss } });
                   setConfigName("");
-                  setConfigSaved(`Saved "${r.data.name}" · ${r.data.widget} · embed URL ready below`);
+                  setConfigSaved(`Saved "${r.data.name}" · ${r.data.widget} · ${embedFormat === "styled" ? "styled" : "basic"} snippet ready below`);
                   toast("Embed configuration saved");
                 }catch(e:any){setConfigErr(e?.message||"Save failed");toast(e?.message||"Save failed","danger")}
                 finally{setConfigBusy(false)}
               }}>{configBusy?"Saving…":"Save config"}</Button>
             </div>
+          </div>
+          <div className="mt-3 grid gap-2 md:grid-cols-2">
+            <Field label="Snippet format" hint="Basic emits a bare iframe. Styled wraps it and applies your CSS.">
+              <Select aria-label="Embed snippet format" data-testid="embed-format" value={embedFormat} onChange={e=>setEmbedFormat(e.target.value as "basic"|"styled")}>
+                <option value="basic">Basic HTML (plain iframe)</option>
+                <option value="styled">Styled HTML (wrapper + custom CSS)</option>
+              </Select>
+            </Field>
+            <Field label="Custom CSS" hint="Applied to the styled snippet only; scope rules to .cue-embed.">
+              <Textarea aria-label="Embed custom CSS" data-testid="embed-css" rows={2} placeholder=".cue-embed{border-radius:18px}" value={customCss} onChange={e=>setCustomCss(e.target.value)}/>
+            </Field>
           </div>
           <div className="mt-3 rounded-[18px] border border-line p-3">
             <b className="text-xs uppercase tracking-wide text-mid">Card fields to display</b>
@@ -156,9 +206,19 @@ export function PublishPage() {
           </div>
           {configSaved?<Notice tone="ok" onClose={()=>setConfigSaved("")}>{configSaved}</Notice>:null}
           {configErr?<Notice tone="danger" onClose={()=>setConfigErr("")}>{configErr}</Notice>:null}
-          {configs.map(c=>{
+          <p className="mt-3 text-xs text-mid" data-testid="embed-prefs-note">
+            Enabled/disabled, snippet format and custom CSS are stored in this browser — the shared event record keeps name, widget, filters, branding and fields.
+          </p>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <Input aria-label="Search saved embeds" data-testid="embed-search" placeholder="Search saved embeds by name, widget or filter" value={configQuery} onChange={e=>setConfigQuery(e.target.value)}/>
+            <span className="text-xs text-mid" data-testid="embed-config-count">{visibleConfigs.length} of {configs.length} saved · {enabledCount} enabled · {configs.length-enabledCount} disabled</span>
+          </div>
+          {configs.length&&!visibleConfigs.length?<p className="mt-2 text-sm text-mid" data-testid="embed-search-empty">No saved embed matches “{configQuery}”.</p>:null}
+          {!configs.length?<p className="mt-2 text-sm text-mid" data-testid="embed-none-saved">No saved embeds yet — configure one above and click Save config.</p>:null}
+          {visibleConfigs.map(c=>{
             const url=`${origin}/e/${EVENT_SLUG}/public/${c.widget}?config=${c.id}`;
-            const snippet=`<iframe src="${url}" title="${c.name}" style="width:100%;min-height:640px;border:0"></iframe>`;
+            const pref=prefFor(c.id);
+            const snippet=embedSnippet({url,name:c.name,format:pref.format,css:pref.css});
             const filterBits=[c.filters?.track&&`track: ${c.filters.track}`,c.filters?.format&&`format: ${c.filters.format}`,c.filters?.day&&`day: ${c.filters.day}`].filter(Boolean);
             return <div key={c.id} className="mt-3 rounded-[18px] bg-soft p-3 text-sm">
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -167,14 +227,19 @@ export function PublishPage() {
                   <Badge tone="muted">{c.widget}</Badge>
                   {c.theme?.accent?<span className="inline-flex items-center gap-1 text-xs text-mid"><span className="inline-block h-3 w-3 rounded-full border border-line" style={{background:c.theme.accent}}/>{c.theme.accent}</span>:null}
                 </div>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge tone={pref.enabled?"ok":"muted"} data-testid={`embed-status-${c.id}`}>{pref.enabled?"Enabled":"Disabled"}</Badge>
+                  <Badge tone="muted">{pref.format==="styled"?"Styled HTML":"Basic HTML"}</Badge>
+                  <Button size="sm" variant="outline" data-testid={`embed-toggle-${c.id}`} onClick={()=>savePrefs({...prefs,[c.id]:{...pref,enabled:!pref.enabled}})}>{pref.enabled?"Disable":"Enable"}</Button>
                   <Button asChild size="sm" variant="ghost"><a href={url} target="_blank" rel="noreferrer">Open</a></Button>
                   <Button size="sm" variant="outline" onClick={async()=>{await api.deleteEmbedConfig(c.id);setConfigs(configs.filter(x=>x.id!==c.id))}}>Delete</Button>
                 </div>
               </div>
               <p className="mt-1 text-xs text-mid">{filterBits.length?filterBits.join(" · "):"No filters — full published program"}</p>
               {c.fields?<p className="text-xs text-mid">Fields: {Object.entries(c.fields).filter(([,v])=>v).map(([k])=>k).join(", ")||"title only"}</p>:null}
-              <code className="mt-1 block break-all text-xs">{snippet}</code>
+              {pref.enabled
+                ? <code className="mt-1 block whitespace-pre-wrap break-all text-xs" data-testid={`embed-snippet-${c.id}`}>{snippet}</code>
+                : <p className="mt-1 text-xs text-mid" data-testid={`embed-disabled-note-${c.id}`}>Disabled — the snippet is withheld here so it is not pasted by mistake. Re-enable to copy it. The public URL itself stays reachable until the config is deleted.</p>}
               <div className="mt-2 flex flex-wrap gap-2 text-xs">
                 <a className="underline" href={`${origin}/e/${EVENT_SLUG}/public/feed.json?config=${c.id}`} target="_blank" rel="noreferrer">JSON</a>
                 <a className="underline" href={`${origin}/e/${EVENT_SLUG}/public/${c.widget==="speakers"||c.widget==="gallery"?"speakers":"sessions"}.xml?config=${c.id}`} target="_blank" rel="noreferrer">XML</a>

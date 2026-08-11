@@ -91,7 +91,36 @@ const server = http.createServer(async (req, res) => {
           headers: { "x-api-key": XAI_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" },
           body: raw,
         });
-        res.writeHead(r.status, { "content-type": "application/json" }).end(await r.text());
+        const ct = r.headers.get("content-type") || "application/json";
+        res.writeHead(r.status, { "content-type": ct });
+        if (r.body && ct.includes("event-stream")) {
+          // xAI SSE nonconformance: every content_block_start uses index 0 and
+          // deltas carry no index, so the Anthropic SDK accumulates text onto the
+          // thinking block. Renumber block indices sequentially.
+          const reader = r.body.getReader();
+          const dec = new TextDecoder(); const enc = new TextEncoder();
+          let buf = ""; let blockIdx = -1;
+          const fixLine = (line) => {
+            if (!line.startsWith("data: ")) return line;
+            try {
+              const d = JSON.parse(line.slice(6));
+              if (d.type === "content_block_start") { blockIdx += 1; d.index = blockIdx; }
+              else if (d.type === "content_block_delta" || d.type === "content_block_stop") { d.index = Math.max(blockIdx, 0); }
+              return "data: " + JSON.stringify(d);
+            } catch { return line; }
+          };
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buf += dec.decode(value, { stream: true });
+            const parts = buf.split("\n");
+            buf = parts.pop() ?? "";
+            for (const line of parts) res.write(enc.encode(fixLine(line) + "\n"));
+          }
+          if (buf) res.write(enc.encode(fixLine(buf) + "\n"));
+          res.end();
+        } else if (r.body) { const { Readable } = await import("node:stream"); Readable.fromWeb(r.body).pipe(res); }
+        else res.end(await r.text());
         return;
       }
       const oaReq = toOpenAI(body);

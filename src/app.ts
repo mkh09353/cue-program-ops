@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { MockAcceleventsClient, HttpAcceleventsClient, type AcceleventsClient } from "./accelevents.js";
 import type { Repository } from "./domain.js";
 import { MemoryRepository } from "./repository.js";
+import { activateEvent, activeEventId, createBlankStore, createEvent, findEventBySlug, getEventStore, hasEvent, listEvents, recordFromStore, registerRestoredEvent } from "./events.js";
 import { SyncService } from "./sync.js";
 import {
   EVENT_ID,
@@ -109,7 +110,9 @@ export function createApp(deps: AppDeps = {}) {
     try {
       // Keep optional snapshot-export failures from changing an otherwise valid request result.
       const syncState = memory.exportSyncState?.() as CompetitionSnapshot["sync"] | undefined;
-      await persistence.save({version:1,eventId:EVENT_ID,savedAt:new Date().toISOString(),lifecycle:structuredClone(store),schedule:await memory.getSchedule?.(EVENT_ID),sync:syncState || {links:[],runs:[],items:[]}});
+      // Snapshot the ACTIVE event; each event persists under its own id.
+      const eventId = activeEventId();
+      await persistence.save({version:1,eventId,savedAt:new Date().toISOString(),lifecycle:structuredClone(store),schedule:await memory.getSchedule?.(eventId),sync:syncState || {links:[],runs:[],items:[]}});
     } catch (error) { console.error("CUE snapshot persistence failed", error instanceof Error ? error.message : "unknown error"); }
   };
   const deliver = async (row: ReturnType<typeof sendTemplate>) => {
@@ -118,10 +121,55 @@ export function createApp(deps: AppDeps = {}) {
     try { row.status=(await mailer.send({to,subject:row.subject,text:row.body,attachments:row.ics?[{filename:"invite.ics",content:row.ics,contentType:"text/calendar"}]:undefined})).status; }
     catch (error) { row.status="failed"; console.error("CUE mail delivery failed", error instanceof Error ? error.message : "unknown error"); }
   };
-  app.use("/api/events/:eventId/*", async (c, next) => c.req.param("eventId") === EVENT_ID ? next() : fail(c, "event not found", 404));
-  app.route("/", createSpeakerRoutes({ store, persist, persona: personaOf, mailer, repo }));
-  app.route("/api/events", createReviewRoutes({ store, persist, persona: personaOf, mailer }));
-  app.route("/", createContentRoutes({ store, persist, persona: personaOf, mailer, repo }));
+  // —— Multi-event resolution ——
+  // Every scoped route family activates its event before the handler runs, so
+  // `store` (an ESM live binding) and `deps.store` (a getter) resolve per event.
+  const resolveById = async (c: any, next: any) => {
+    const eventId = c.req.param("eventId");
+    if (!eventId || !activateEvent(eventId)) return fail(c, "event not found", 404);
+    return next();
+  };
+  const resolveBySlug = async (c: any, next: any) => {
+    const found = findEventBySlug(c.req.param("slug"));
+    if (!found || !activateEvent(found.id)) return fail(c, "event not found", 404);
+    return next();
+  };
+  // Route families that carry no :eventId (speaker portal, content,
+  // communications, calendar) are scoped by this header from the web client.
+  // Path-based resolvers below run afterwards and always win.
+  app.use("/api/*", async (c, next) => {
+    const header = c.req.header("x-cue-event");
+    if (header && hasEvent(header)) activateEvent(header);
+    return next();
+  });
+  // The CRM is org-level, not event-scoped: anchor it to the default event's
+  // store so contacts do not appear to change with the organizer's selection.
+  app.use("/api/crm/*", async (c, next) => { activateEvent(EVENT_ID); return next(); });
+  app.use("/api/events/:eventId/*", resolveById);
+  app.use("/public/events/:eventId/*", resolveById);
+  app.use("/api/public/events/:slug/*", resolveBySlug);
+  app.use("/e/:slug/*", resolveBySlug);
+
+  app.get("/api/events", (c) => c.json({ data: listEvents() }));
+  app.post("/api/events", async (c) => {
+    if (actor(c) !== "organizer") return fail(c, "organizer role required", 403);
+    const b = (await c.req.json().catch(() => null)) as any;
+    if (!b) return fail(c, "JSON body required");
+    const result = await createEvent(b, repo as any);
+    if (!result.ok) return fail(c, result.error, result.status);
+    // Persist the new event's own (empty) snapshot without losing the caller's context.
+    const previous = activeEventId();
+    activateEvent(result.record.id);
+    await persist();
+    activateEvent(previous);
+    return c.json({ data: result.record }, 201);
+  });
+
+  // One deps object whose `store` getter resolves the ACTIVE event per request.
+  const routeDeps = { get store() { return store; }, persist, persona: personaOf, mailer, repo };
+  app.route("/", createSpeakerRoutes(routeDeps));
+  app.route("/api/events", createReviewRoutes(routeDeps));
+  app.route("/", createContentRoutes(routeDeps));
   app.route("/", createPublicSite({ repo }));
   // CRM typed custom-field definitions. Registered here (not in crmRoutes.ts) to keep
   // this addition isolated from the contact/merge handlers.
@@ -141,8 +189,8 @@ export function createApp(deps: AppDeps = {}) {
     await persist();
     return c.body(null, 204);
   });
-  app.route("/", createCrmRoutes({ store, persist, persona: personaOf, mailer }));
-  app.route("/", createAgendaRoutes({ store, repo, persist, persona: personaOf }));
+  app.route("/", createCrmRoutes(routeDeps));
+  app.route("/", createAgendaRoutes(routeDeps));
   app.get("/api/events/:eventId/automation",(c)=>c.json({data:store.automation||{enabled:true,schedule:"0 * * * *",speakerSent:0,reviewerSent:0,status:"never"}}));
   app.post("/api/internal/automation/run",async(c)=>{
     if(c.req.header("x-cue-automation")!=="scheduled"||new URL(c.req.url).hostname!=="cue.internal")return fail(c,"automation caller required",403);
@@ -160,7 +208,6 @@ export function createApp(deps: AppDeps = {}) {
 
   // —— Bootstrap / command ——
   app.get("/api/events/:eventId/bootstrap", (c) => {
-    if (c.req.param("eventId") !== EVENT_ID) return fail(c, "event not found", 404);
     // Compatibility projection for old snapshots without speaker personas. Keep GET
     // pure: current mutations register personas at write time, while legacy profiles
     // are projected into this response without changing the lifecycle singleton.
@@ -196,7 +243,6 @@ export function createApp(deps: AppDeps = {}) {
   // Demo-only reviewer persona links. These select an existing reviewer persona and
   // deliberately do not claim to create a password, session, or production login.
   app.post("/api/events/:eventId/reviewers/:reviewerId/invite-link", async (c) => {
-    if (c.req.param("eventId") !== EVENT_ID) return fail(c, "event not found", 404);
     if (actor(c) !== "organizer") return fail(c, "organizer role required", 403);
     const b = await c.req.json().catch(() => null) as { roundId?: string } | null;
     const reviewer = store.personas.find((p) => p.id === c.req.param("reviewerId") && p.role === "reviewer");
@@ -205,7 +251,7 @@ export function createApp(deps: AppDeps = {}) {
     if (!round || !round.reviewerIds.includes(reviewer.id)) return fail(c, "reviewer is not invited to that round");
     store.reviewerInvites ||= [];
     const invite = {
-      token: crypto.randomUUID(), eventId: EVENT_ID, reviewerId: reviewer.id,
+      token: crypto.randomUUID(), eventId: store.event.id, reviewerId: reviewer.id,
       roundId: round.id, email: reviewer.email, createdAt: new Date().toISOString(),
     };
     store.reviewerInvites.push(invite);
@@ -216,7 +262,7 @@ export function createApp(deps: AppDeps = {}) {
 
   app.get("/api/public/reviewer-invites/:token", (c) => {
     const invite = (store.reviewerInvites || []).find((x) => x.token === c.req.param("token"));
-    if (!invite || invite.eventId !== EVENT_ID || invite.revokedAt || (invite.expiresAt && Date.parse(invite.expiresAt) <= Date.now())) return fail(c, "Reviewer demo access link is invalid or expired", 404);
+    if (!invite || invite.eventId !== store.event.id || invite.revokedAt || (invite.expiresAt && Date.parse(invite.expiresAt) <= Date.now())) return fail(c, "Reviewer demo access link is invalid or expired", 404);
     const reviewer = store.personas.find((p) => p.id === invite.reviewerId && p.role === "reviewer" && p.email === invite.email);
     const round = store.reviewRounds.find((r) => r.id === invite.roundId && r.reviewerIds.includes(invite.reviewerId));
     if (!reviewer || !round) return fail(c, "Reviewer demo access link is invalid or expired", 404);
@@ -224,9 +270,8 @@ export function createApp(deps: AppDeps = {}) {
   });
 
   app.get("/api/events/:eventId/command", async (c) => {
-    if (c.req.param("eventId") !== EVENT_ID) return fail(c, "event not found", 404);
     // Schedule projection is the canonical source for the command-center schedule KPI.
-    const metrics = await canonicalScheduleMetrics(repo as any, EVENT_ID);
+    const metrics = await canonicalScheduleMetrics(repo as any, activeEventId());
     const snapshot = commandSnapshot();
     snapshot.kpis.acceptedUnscheduled = metrics.acceptedUnscheduled;
     const blocker = snapshot.blockers.find((item) => item.id === "unscheduled");
@@ -312,8 +357,7 @@ export function createApp(deps: AppDeps = {}) {
 
   // —— Public CFP ——
   app.get("/api/public/events/:slug/cfp", (c) => {
-    if (c.req.param("slug") !== EVENT_SLUG && c.req.param("slug") !== "ai-engineer-sandbox-event")
-      return fail(c, "event not found", 404);
+    // Slug resolution (and the 404 for an unknown slug) happens in middleware.
     return c.json({
       data: {
         event: store.event,
@@ -336,7 +380,6 @@ export function createApp(deps: AppDeps = {}) {
   });
 
   app.post("/api/public/events/:slug/submissions", async (c) => {
-    if (c.req.param("slug") !== EVENT_SLUG && c.req.param("slug") !== "ai-engineer-sandbox-event") return fail(c, "event not found", 404);
     if (!cfpWindow().open) return fail(c, cfpWindow().reason);
     const b = (await c.req.json().catch(() => null)) as Record<string, unknown> | null;
     if (!b) return fail(c, "JSON body required");
@@ -358,7 +401,7 @@ export function createApp(deps: AppDeps = {}) {
     if (!name.trim() || !email.trim()) return fail(c, "name and email are required");
     const submission: Submission = {
       id,
-      eventId: EVENT_ID,
+      eventId: store.event.id,
       speakerId,
       name,
       email: normalizedEmail,
@@ -427,7 +470,6 @@ export function createApp(deps: AppDeps = {}) {
 
   // —— Submissions / review ——
   app.get("/api/events/:eventId/submissions", (c) => {
-    if (c.req.param("eventId") !== EVENT_ID) return fail(c, "event not found", 404);
     const filter = c.req.query("filter");
     const persona = personaOf(c);
     let rows = persona.role === "reviewer" ? store.submissions.filter((s) => store.reviewAssignments.some((a) => a.submissionId === s.id && a.reviewerId === persona.id && a.status !== "recused")) : [...store.submissions];
@@ -449,7 +491,6 @@ export function createApp(deps: AppDeps = {}) {
   });
 
   app.get("/api/events/:eventId/submissions/:id", (c) => {
-    if (c.req.param("eventId") !== EVENT_ID) return fail(c, "event not found", 404);
     const s = store.submissions.find((x) => x.id === c.req.param("id"));
     if (!s) return fail(c, "submission not found", 404);
     const persona = personaOf(c);
@@ -614,7 +655,7 @@ export function createApp(deps: AppDeps = {}) {
     // Speakers must see the CANONICAL session title organizers edit (schedule session),
     // not the "<name> (manual)" placeholder an organizer-created record starts with.
     const scheduleRepo = repo as Repository & { getSchedule?: (id: string) => Promise<any> };
-    const sched = await scheduleRepo.getSchedule?.(EVENT_ID);
+    const sched = await scheduleRepo.getSchedule?.(activeEventId());
     const { links } = linkSessions(store, sched);
     const canonicalByDraft = new Map<string, any>();
     for (const [canonicalId, draft] of links) {
@@ -1041,7 +1082,7 @@ async function mirrorAcceptedToSchedule(repo: Repository, s: Submission) {
     putSchedule?: (id: string, schedule: any) => Promise<void>;
   };
   if (!r.getSchedule || !r.putSchedule) return;
-  const sched = await r.getSchedule(EVENT_ID);
+  const sched = await r.getSchedule(store.event.id);
   if (!sched) return;
   const sessionId = `ses-${s.id}`;
   let track = sched.tracks.find((t: any) => t.name.trim().toLowerCase() === s.category.trim().toLowerCase())?.id;
@@ -1051,7 +1092,7 @@ async function mirrorAcceptedToSchedule(repo: Repository, s: Submission) {
     sched.tracks.push({id:track,name:s.category.trim(),color:"#64748b"});
   }
   const existing=sched.sessions.find((x: any) => x.id === sessionId || x.id === s.id || x.acceptedSubmissionId === s.id);
-  if(existing){existing.trackIds=track?[track]:existing.trackIds;existing.speakerIds=[s.speakerId,...(s.additionalSpeakers||[]).map(x=>x.id)];await r.putSchedule(EVENT_ID,sched);return}
+  if(existing){existing.trackIds=track?[track]:existing.trackIds;existing.speakerIds=[s.speakerId,...(s.additionalSpeakers||[]).map(x=>x.id)];await r.putSchedule(store.event.id,sched);return}
   if (!existing) {
     sched.speakers = sched.speakers || [];
     const allSpeakers=[{id:s.speakerId,name:s.name,email:s.email},...(s.additionalSpeakers||[])];
@@ -1082,7 +1123,7 @@ async function mirrorAcceptedToSchedule(repo: Repository, s: Submission) {
     // Keep lifecycle session id aligned when possible
     const life = store.sessions.find((x) => x.submissionId === s.id);
     if (life) life.id = sessionId;
-    await r.putSchedule(EVENT_ID, sched);
+    await r.putSchedule(store.event.id, sched);
   }
 }
 
@@ -1101,18 +1142,42 @@ export function configuredClient(env: Record<string, string | undefined>): Accel
 
 /** Load is intentionally explicit because Worker fetch handlers cannot await construction. */
 export async function restoreSnapshot(deps: { repo: Repository; persistence: SnapshotPersistence }) {
-  const snapshot=await deps.persistence.load(EVENT_ID);
-  if (!snapshot) return false;
   const target=deps.repo as MemoryRepository & { putSchedule?: (id:string,s:any)=>Promise<void>; importSyncState?: (s:CompetitionSnapshot["sync"])=>void };
-  if (snapshot.schedule && target.putSchedule) await target.putSchedule(EVENT_ID,snapshot.schedule);
-  target.importSyncState?.(snapshot.sync);
-  // Keep the exported singleton identity so existing lifecycle helpers continue to reference it.
-  for (const key of Object.keys(store) as (keyof typeof store)[]) {
-    const restored = snapshot.lifecycle[key];
-    if (restored !== undefined) (store as any)[key]=structuredClone(restored);
+
+  /** Copy a snapshot's lifecycle payload INTO an existing store object so that
+   * long-lived references (the exported singleton, registry entries) survive. */
+  const hydrate = (into: typeof store, snapshot: CompetitionSnapshot) => {
+    for (const key of Object.keys(into) as (keyof typeof store)[]) {
+      const restored = snapshot.lifecycle[key];
+      if (restored !== undefined) (into as any)[key]=structuredClone(restored);
+    }
+    // Optional CRM extension may not be present on older snapshots or on the typed store keys.
+    const life = snapshot.lifecycle as typeof snapshot.lifecycle & { crm?: unknown };
+    if (life.crm !== undefined) (into as any).crm = structuredClone(life.crm);
+  };
+
+  // Older single-event snapshots report no event list; the default id still loads.
+  const listed = (await deps.persistence.listEventIds?.().catch(() => [])) || [];
+  const ids = [...new Set([EVENT_ID, ...listed])];
+  let restoredAny = false;
+
+  for (const eventId of ids) {
+    const snapshot = await deps.persistence.load(eventId).catch(() => undefined);
+    if (!snapshot) continue;
+    if (snapshot.schedule && target.putSchedule) await target.putSchedule(eventId, snapshot.schedule);
+    // Sync state is global to the repo; only the default event's copy is authoritative.
+    if (eventId === EVENT_ID) target.importSyncState?.(snapshot.sync);
+    if (eventId === EVENT_ID) {
+      // Keep the exported singleton identity so existing lifecycle helpers continue to reference it.
+      hydrate(store, snapshot);
+    } else {
+      const record = recordFromStore(snapshot.lifecycle);
+      const into = getEventStore(eventId) ?? createBlankStore(record);
+      hydrate(into, snapshot);
+      registerRestoredEvent(record, into);
+    }
+    restoredAny = true;
   }
-  // Optional CRM extension may not be present on older snapshots or on the typed store keys.
-  const life = snapshot.lifecycle as typeof snapshot.lifecycle & { crm?: unknown };
-  if (life.crm !== undefined) (store as any).crm = structuredClone(life.crm);
-  return true;
+  activateEvent(EVENT_ID);
+  return restoredAny;
 }
