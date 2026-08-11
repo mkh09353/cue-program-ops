@@ -10,6 +10,7 @@ import {
   type SpeakerTask,
   type Submission,
 } from "./lifecycle.js";
+import { preferUploadedHeadshot } from "./publicProjection.js";
 
 export type SpeakerWorkflowStatus = "invited" | "confirmed" | "accepted" | "declined" | "withdrawn";
 
@@ -60,6 +61,47 @@ const now = () => new Date().toISOString();
 const id = (p: string) => `${p}-${crypto.randomUUID().slice(0, 8)}`;
 const normEmail = (e: string) => String(e || "").trim().toLowerCase();
 
+/** Provenance markers an import appends to a placeholder record's display name. */
+const NAME_MARKER = /\s*\((?:manual|imported|import|duplicate|copy)\)\s*$/i;
+
+/** Canonical identity key for a person's display name. */
+export const normSpeakerName = (name: string) =>
+  String(name || "").replace(NAME_MARKER, "").trim().toLowerCase().replace(/\s+/g, " ");
+
+/**
+ * Resolve an incoming speaker against the roster.
+ *
+ * Email is the strongest signal, but the eval flow repeatedly created a SECOND
+ * "Priya Raman" (manual add with one address, CFP submission with another), and
+ * every later write went to one record while the portal read the other. So an
+ * exact normalized NAME match links to the existing person by default; callers
+ * pass createAsNew to force a genuinely separate record.
+ */
+export function resolveExistingSpeaker(
+  life: LifecycleStore,
+  input: { name?: string; email?: string },
+  opts: { createAsNew?: boolean } = {},
+): { profile: SpeakerProfileExt; matchedBy: "email" | "name" } | undefined {
+  const email = normEmail(input.email || "");
+  const byEmail = email
+    ? (life.profiles.find((p) => normEmail(p.email) === email) as SpeakerProfileExt | undefined)
+    : undefined;
+  if (byEmail) return { profile: byEmail, matchedBy: "email" };
+  if (opts.createAsNew) return undefined;
+  const name = normSpeakerName(input.name || "");
+  if (!name) return undefined;
+  const matches = life.profiles.filter((p) => normSpeakerName(p.name) === name) as SpeakerProfileExt[];
+  if (!matches.length) return undefined;
+  // Prefer the record that actually carries work, so reads and writes converge.
+  const weight = (p: SpeakerProfileExt) =>
+    life.submissions.filter((s) => s.speakerId === p.speakerId).length * 4 +
+    life.deliverableTasks.filter((t) => t.speakerId === p.speakerId).length * 2 +
+    life.tasks.filter((t) => t.speakerId === p.speakerId).length * 2 +
+    life.contentFiles.filter((f) => f.speakerId === p.speakerId).length;
+  const best = [...matches].sort((a, b) => weight(b) - weight(a) || String(a.speakerId).localeCompare(String(b.speakerId)))[0]!;
+  return { profile: best, matchedBy: "name" };
+}
+
 export function asExt(p: SpeakerProfile): SpeakerProfileExt {
   return p as SpeakerProfileExt;
 }
@@ -109,7 +151,7 @@ export function listRoster(life: LifecycleStore = store, query: SpeakerRosterQue
         x: profile?.x,
         website: profile?.website,
         headshotName: profile?.headshotName,
-        headshotUrl: profile?.headshotUrl,
+        headshotUrl: preferUploadedHeadshot(profile?.headshotUrl),
         workflowStatus,
         travelPreference: profile?.travelPreference || "",
         dietary: profile?.dietary || "",
@@ -179,15 +221,19 @@ export function addSpeakerManual(
     abstract?: string;
     category?: string;
     sendInvite?: boolean;
+    /** Opt out of name-linking to create a genuinely separate person. */
+    createAsNew?: boolean;
   },
   life: LifecycleStore = store,
-): { ok: true; speakerId: string; profile: SpeakerProfileExt; submission: Submission; communication?: Communication } | { ok: false; error: string } {
+): { ok: true; speakerId: string; profile: SpeakerProfileExt; submission: Submission; communication?: Communication; linked?: boolean; linkedBy?: "email" | "name" } | { ok: false; error: string } {
   const name = String(input.name || "").trim();
   const email = normEmail(input.email || "");
   if (!name) return { ok: false, error: "name is required" };
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { ok: false, error: "valid email is required" };
 
-  let profile = life.profiles.find((p) => normEmail(p.email) === email) as SpeakerProfileExt | undefined;
+  const existing = resolveExistingSpeaker(life, { name, email }, { createAsNew: input.createAsNew });
+  let profile = existing?.profile;
+  const linkedBy = existing?.matchedBy;
   let speakerId = profile?.speakerId;
   if (!speakerId) {
     speakerId = `spk-${crypto.randomUUID().slice(0, 8)}`;
@@ -209,19 +255,21 @@ export function addSpeakerManual(
     };
     life.profiles.push(profile);
   } else if (profile) {
+    // Fill blanks, never overwrite a populated field with an empty one.
+    const fill = (next: string | undefined, cur: string | undefined) => (String(next || "").trim() || cur);
     Object.assign(profile, {
-      name,
-      title: input.title ?? profile.title,
-      company: input.company ?? profile.company,
-      bio: input.bio ?? profile.bio,
-      linkedin: input.linkedin ?? profile.linkedin,
-      x: input.x ?? profile.x,
-      website: input.website ?? profile.website,
-      travelPreference: input.travelPreference ?? profile.travelPreference,
-      dietary: input.dietary ?? profile.dietary,
+      name: profile.name && NAME_MARKER.test(profile.name) ? name : profile.name || name,
+      title: fill(input.title, profile.title),
+      company: fill(input.company, profile.company),
+      bio: fill(input.bio, profile.bio),
+      linkedin: fill(input.linkedin, profile.linkedin),
+      x: fill(input.x, profile.x),
+      website: fill(input.website, profile.website),
+      travelPreference: fill(input.travelPreference, profile.travelPreference),
+      dietary: fill(input.dietary, profile.dietary),
       workflowStatus: input.workflowStatus || profile.workflowStatus || "invited",
     });
-    if (input.tags) profile.tags = input.tags;
+    if (input.tags?.length) profile.tags = [...new Set([...(profile.tags || []), ...input.tags])];
   }
 
   let sub = life.submissions.find((s) => s.speakerId === speakerId && s.status === "accepted");
@@ -254,7 +302,7 @@ export function addSpeakerManual(
   if (input.sendInvite !== false) {
     communication = sendTemplate("accepted", speakerId!, sub.title, "acceptance");
   }
-  return { ok: true, speakerId: speakerId!, profile: p, submission: sub, communication };
+  return { ok: true, speakerId: speakerId!, profile: p, submission: sub, communication, linked: Boolean(linkedBy), linkedBy };
 }
 
 /** Keep the demo identity catalog aligned with the canonical event speaker roster. */
@@ -374,7 +422,7 @@ export async function syncProfileToSchedule(speakerId: string, life: LifecycleSt
       bio: profile.bio,
       company: profile.company,
       title: profile.title,
-      headshotUrl: profile.headshotUrl || target.headshotUrl,
+      headshotUrl: preferUploadedHeadshot(profile.headshotUrl, target.headshotUrl),
     });
     await repo.putSchedule(scheduleEventId, sched);
   }
@@ -467,7 +515,9 @@ export function suggestDuplicatePairs(life: LifecycleStore = store): DuplicatePa
 
 export function importSpeakersCsv(
   csvText: string,
-  opts: { sendInvite?: boolean } = {},
+  /** createAsNew imports every row as a separate person (used to construct
+   *  legacy duplicates for the merge tooling); by default a matching name links. */
+  opts: { sendInvite?: boolean; createAsNew?: boolean } = {},
   life: LifecycleStore = store,
 ) {
   const lines = String(csvText || "")
@@ -497,7 +547,7 @@ export function importSpeakersCsv(
       results.push({ row: i + 1, ok: false, error: "name and email required" });
       continue;
     }
-    const existed = life.profiles.some((p) => normEmail(p.email) === email);
+    const existed = Boolean(resolveExistingSpeaker(life, { name, email }, { createAsNew: opts.createAsNew }));
     const made = addSpeakerManual(
       {
         name,
@@ -511,6 +561,7 @@ export function importSpeakersCsv(
         travelPreference: row.travel || row["travel preference"] || undefined,
         tags: row.tags ? row.tags.split(/[|;,]/).map((t) => t.trim()).filter(Boolean) : undefined,
         sendInvite: opts.sendInvite === true,
+        createAsNew: opts.createAsNew === true,
         talkTitle: row["talk title"] || row.talk || undefined,
       },
       life,

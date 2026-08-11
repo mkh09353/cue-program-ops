@@ -1,4 +1,5 @@
 import { EVENT_ID, store, type LifecycleStore, type Role } from "./lifecycle.js";
+import { resolveExistingSpeaker } from "./speakerMgmt.js";
 
 export type CrmStage = "prospect" | "contacted" | "invited" | "confirmed" | "alumni" | "declined";
 
@@ -583,8 +584,11 @@ export function addContactToEvent(
     return { ok: true, contact, speakerId: existingLink.speakerId, created: false };
   }
 
-  // Prefer matching profile by email
-  let profile = target.profiles.find((p) => normalizeEmail(p.email) === normalizeEmail(contact.email));
+  // Match by email, then by exact name: a CRM handoff for a person already on the
+  // roster must land on THEIR record, not create a second one the portal ignores.
+  let profile = resolveExistingSpeaker(target, { name: contact.name, email: contact.email })?.profile as
+    | (typeof target.profiles)[number]
+    | undefined;
   let speakerId = profile?.speakerId;
   let created = false;
   if (!speakerId) {

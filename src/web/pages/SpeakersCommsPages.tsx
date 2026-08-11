@@ -78,6 +78,9 @@ export function SpeakersPage() {
   const [readiness, setReadiness] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
   const [showAdd, setShowAdd] = useState(false);
+  /** Duplicate-name handling: link by default, opt out explicitly. */
+  const [createAsNew, setCreateAsNew] = useState(false);
+  const [linkNotice, setLinkNotice] = useState("");
   const [showImport, setShowImport] = useState(false);
   const [showTask, setShowTask] = useState(false);
   const [form, setForm] = useState({ name: "", email: "", title: "", company: "", bio: "", travelPreference: "" });
@@ -363,7 +366,7 @@ export function SpeakersPage() {
       )}
 
       {showAdd ? (
-        <Modal title="Add speaker" onClose={() => setShowAdd(false)}>
+        <Modal title="Add speaker" onClose={() => { setShowAdd(false); setLinkNotice(""); }}>
           {(["name", "email", "title", "company"] as const).map((k) => (
             <Field key={k} label={k}>
               <Input value={(form as any)[k]} onChange={(e) => setForm({ ...form, [k]: e.target.value })} />
@@ -375,13 +378,40 @@ export function SpeakersPage() {
           <Field label="Travel preference">
             <Input value={form.travelPreference} onChange={(e) => setForm({ ...form, travelPreference: e.target.value })} />
           </Field>
+          <label htmlFor="create-as-new" className="mt-2 flex cursor-pointer items-start gap-2 rounded-[18px] border border-line bg-soft p-3 text-sm">
+            <input
+              id="create-as-new"
+              type="checkbox"
+              className="mt-0.5"
+              checked={createAsNew}
+              onChange={(e) => setCreateAsNew(e.target.checked)}
+              data-testid="create-as-new"
+            />
+            <span>
+              <b className="block">This is a different person with the same name</b>
+              <span className="text-xs text-mid">
+                By default a matching name links to the existing speaker so tasks, files and portal edits stay on one record.
+              </span>
+            </span>
+          </label>
+          {linkNotice ? (
+            <Notice tone="ok" onClose={() => setLinkNotice("")}>
+              <span data-testid="speaker-link-notice">{linkNotice}</span>
+            </Notice>
+          ) : null}
           <Button
             onClick={async () => {
               try {
-                await api.addSpeaker({ ...form, sendInvite: true });
-                toast("Speaker added + invite logged");
-                setShowAdd(false);
+                const r: any = await api.addSpeaker({ ...form, sendInvite: true, createAsNew });
+                const linked = r?.data?.linked;
+                const label = linked
+                  ? `Linked to existing speaker ${r.data.profile?.name || form.name} — details merged onto their record (${r.data.speakerId}).`
+                  : `Speaker added + invite logged`;
+                setLinkNotice(label);
+                toast(linked ? `Linked to existing speaker ${r.data.profile?.name || form.name}` : "Speaker added + invite logged");
+                if (!linked) setShowAdd(false);
                 setForm({ name: "", email: "", title: "", company: "", bio: "", travelPreference: "" });
+                setCreateAsNew(false);
                 load();
               } catch (e: any) {
                 toast(e.message || "Failed", "danger");

@@ -386,6 +386,7 @@ test("manual add, CSV import, workflow status filter, invite", async () => {
   assert.ok(created.speakerId);
   assert.ok(created.communication?.id);
 
+  const importTag = crypto.randomUUID().slice(0, 6);
   const csv = await app.request(`/api/events/${EVENT_ID}/speakers/import`, {
     method: "POST",
     headers: org,
@@ -393,7 +394,7 @@ test("manual add, CSV import, workflow status filter, invite", async () => {
       csv: [
         "name,email,title,company,bio",
         "Priya Raman,priya.raman.spk@example.test,Principal Engineer,Latticework Systems,dup",
-        "Dana Kowalski,dana.kowalski.spk@example.test,Staff Engineer,Northwind,New import row",
+        `Dana Kowalski ${importTag},dana.kowalski.spk@example.test,Staff Engineer,Northwind,New import row`,
       ].join("\n"),
     }),
   });
@@ -452,15 +453,16 @@ test("session assignment visibility on roster and portal home", async () => {
 
 test("domain helpers: CSV, merge, headshot", () => {
   const before = store.profiles.length;
+  const zedTag = crypto.randomUUID().slice(0, 6);
   const imp = importSpeakersCsv(
-    "name,email,title,company,bio\nZed Import,zed.import@example.test,Eng,ZedCo,Bio text here",
+    `name,email,title,company,bio\nZed Import ${zedTag},zed.import.${zedTag}@example.test,Eng,ZedCo,Bio text here`,
     { sendInvite: false },
   );
   assert.ok(imp.created >= 1);
   assert.ok(store.profiles.length >= before);
 
   const danaEmail = `dana.kowalski.${crypto.randomUUID()}@example.test`;
-  const danaCsv = `name,email,title\nDana Kowalski,${danaEmail},Engineer`;
+  const danaCsv = `name,email,title\nDana Kowalski ${zedTag},${danaEmail},Engineer`;
   const firstDana = importSpeakersCsv(danaCsv, { sendInvite: false });
   const secondDana = importSpeakersCsv(danaCsv, { sendInvite: false });
   assert.equal(firstDana.created, 1);
@@ -481,8 +483,10 @@ test("domain helpers: CSV, merge, headshot", () => {
   assert.equal(matching[0]!.speakerId, existingId);
   assert.equal(matching[0]!.title, "Principal Engineer");
 
+  // A prior record under this exact name is required for a duplicate suggestion.
+  importSpeakersCsv(`name,email\nDana Updated,dana.updated.${zedTag}@example.test`, { sendInvite: false, createAsNew: true });
   const sameNameDifferentEmail = `dana.other.${crypto.randomUUID()}@example.test`;
-  const suggestion = importSpeakersCsv(`name,email\nDana Updated,${sameNameDifferentEmail}`, { sendInvite: false });
+  const suggestion = importSpeakersCsv(`name,email\nDana Updated,${sameNameDifferentEmail}`, { sendInvite: false, createAsNew: true });
   assert.equal(suggestion.created, 1);
   assert.ok(suggestion.nearDuplicates.some((pair: any) => pair.duplicate.email === sameNameDifferentEmail));
 
@@ -543,7 +547,7 @@ test("bulk merge-suggestions collapses two independent name-match pairs in one c
   const imported = await app.request(`/api/events/${EVENT_ID}/speakers/import`, {
     method: "POST",
     headers: org,
-    body: JSON.stringify({ csv }),
+    body: JSON.stringify({ csv, createAsNew: true }),
   });
   assert.equal(imported.status, 200);
   const importBody = (await imported.json()) as any;
@@ -599,7 +603,7 @@ test("bulk merge tolerates overlapping pairs and already-removed records", async
     `${name},tam.c.${tag}@example.test,,,`,
   ].join("\n");
   const imported = (await (
-    await app.request(`/api/events/${EVENT_ID}/speakers/import`, { method: "POST", headers: org, body: JSON.stringify({ csv }) })
+    await app.request(`/api/events/${EVENT_ID}/speakers/import`, { method: "POST", headers: org, body: JSON.stringify({ csv, createAsNew: true }) })
   ).json()) as any;
   const pairs = imported.data.nearDuplicates.filter((p: any) => p.primary.name === name);
   assert.equal(pairs.length, 2, "two duplicates share one primary");
@@ -635,7 +639,7 @@ test("merge-suggestions GET lists current pairs and an empty POST merges them al
   await app.request(`/api/events/${EVENT_ID}/speakers/import`, {
     method: "POST",
     headers: org,
-    body: JSON.stringify({ csv: `name,email,title\n${name},noor.a.${tag}@example.test,Staff Engineer\n${name},noor.b.${tag}@example.test,` }),
+    body: JSON.stringify({ csv: `name,email,title\n${name},noor.a.${tag}@example.test,Staff Engineer\n${name},noor.b.${tag}@example.test,` , createAsNew: true }),
   });
   const listed = (await (await app.request(`/api/events/${EVENT_ID}/speakers/merge-suggestions`, { headers: org })).json()) as any;
   assert.ok(listed.data.some((p: any) => p.primary.name === name), "GET exposes the roster panel's pairs");
@@ -660,10 +664,10 @@ test("primary selection prefers the richer record and falls back to the older on
   const tag = crypto.randomUUID().slice(0, 6);
   const name = `Priya Sundaram ${tag}`;
   // Sparse record imported FIRST, richer one second: richness must beat array order.
-  importSpeakersCsv(`name,email\n${name},priya.sparse.${tag}@example.test`, { sendInvite: false });
+  importSpeakersCsv(`name,email\n${name},priya.sparse.${tag}@example.test`, { sendInvite: false, createAsNew: true });
   importSpeakersCsv(
     `name,email,title,company,bio\n${name},priya.rich.${tag}@example.test,Principal Engineer,Latticework,Build systems specialist`,
-    { sendInvite: false },
+    { sendInvite: false, createAsNew: true },
   );
   const pair = suggestDuplicatePairs(store).find((p) => p.primary.name === name)!;
   assert.ok(pair, "a suggestion is produced");
@@ -673,8 +677,8 @@ test("primary selection prefers the richer record and falls back to the older on
   // Two equally sparse records: the older (earlier submission) is primary.
   const evenTag = crypto.randomUUID().slice(0, 6);
   const evenName = `Sam Okafor ${evenTag}`;
-  importSpeakersCsv(`name,email\n${evenName},older.${evenTag}@example.test`, { sendInvite: false });
-  importSpeakersCsv(`name,email\n${evenName},newer.${evenTag}@example.test`, { sendInvite: false });
+  importSpeakersCsv(`name,email\n${evenName},older.${evenTag}@example.test`, { sendInvite: false, createAsNew: true });
+  importSpeakersCsv(`name,email\n${evenName},newer.${evenTag}@example.test`, { sendInvite: false, createAsNew: true });
   const evenPair = suggestDuplicatePairs(store).find((p) => p.primary.name === evenName)!;
   assert.equal(evenPair.primary.email, `older.${evenTag}@example.test`, "older record breaks the tie");
 

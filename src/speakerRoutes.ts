@@ -186,7 +186,7 @@ export function createSpeakerRoutes(deps: {
     const denied = requireOrg(c);
     if (denied) return denied;
     const b = await c.req.json();
-    const result = importSpeakersCsv(String(b.csv || b.text || ""), { sendInvite: Boolean(b.sendInvite) }, deps.store);
+    const result = importSpeakersCsv(String(b.csv || b.text || ""), { sendInvite: Boolean(b.sendInvite), createAsNew: Boolean(b.createAsNew) }, deps.store);
     await deps.persist(deps.store.event.id, deps.store);
     return c.json({ data: result });
   });

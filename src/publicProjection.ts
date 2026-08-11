@@ -111,6 +111,16 @@ const nameCollator = new Intl.Collator(undefined, { sensitivity: "base", numeric
  * Deterministic monochrome initials avatar (inline SVG data URL) so no public card
  * ever renders a broken/missing image for a speaker without an uploaded headshot.
  */
+/** True for the generated initials placeholder (never a real uploaded image). */
+export const isGeneratedAvatar = (url?: string) =>
+  typeof url === "string" && url.startsWith("data:image/svg+xml") && url.includes("192");
+
+/** A real uploaded headshot always beats a generated placeholder, whichever side it is on. */
+export function preferUploadedHeadshot(...candidates: (string | undefined)[]) {
+  const values = candidates.filter((v): v is string => Boolean(v && String(v).trim()));
+  return values.find((v) => !isGeneratedAvatar(v)) || values[0];
+}
+
 export function initialsAvatarDataUrl(name: string) {
   const initials = initialsOf(name) || "?";
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 192 192"><rect width="192" height="192" fill="#12141A"/><text x="96" y="124" font-family="Helvetica,Arial,sans-serif" font-size="76" font-weight="700" fill="#F7F4EF" text-anchor="middle">${initials}</text></svg>`;

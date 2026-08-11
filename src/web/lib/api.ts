@@ -74,9 +74,33 @@ export function getPersonaCatalog() {
   return personaCatalog;
 }
 
+/** Collapse speaker personas that name the same person.
+ *
+ * A duplicated roster record (manual add + CFP submission under a different
+ * email) used to surface as two identical “Priya Raman” entries, and picking the
+ * empty one made tasks, files and profile edits look missing. Keeping one entry
+ * per name means the portal always lands on the record that carries the work. */
+export function collapseSpeakerPersonas(list: Persona[]): Persona[] {
+  const key = (p: Persona) => `${p.role}|${String(p.name || "").trim().toLowerCase().replace(/\s+/g, " ")}`;
+  const seen = new Map<string, Persona>();
+  const out: Persona[] = [];
+  for (const persona of list) {
+    if (persona.role !== "speaker") { out.push(persona); continue; }
+    const k = key(persona);
+    const existing = seen.get(k);
+    if (!existing) { seen.set(k, persona); out.push(persona); continue; }
+    // Server order is authoritative; prefer an entry that actually has a speakerId.
+    if (!existing.speakerId && persona.speakerId) {
+      out.splice(out.indexOf(existing), 1, persona);
+      seen.set(k, persona);
+    }
+  }
+  return out;
+}
+
 export function setPersonaCatalog(list: Persona[]) {
   if (list?.length) {
-    personaCatalog = list;
+    personaCatalog = collapseSpeakerPersonas(list);
     // A public CFP confirmation can persist a newly-created persona before the
     // server catalog is loaded. Re-resolve it immediately when bootstrap arrives.
     restorePersonaFromSession();
