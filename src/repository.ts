@@ -1,5 +1,7 @@
 import type { CanonicalData, EntityType, Repository, ScheduleProjection, SyncLink, SyncRun, SyncRunItem } from "./domain.js";
 import { canonicalFromSchedule } from "./projection.js";
+// The pre-seeded fixture event ships an empty-but-usable canonical schedule.
+import { SECOND_EVENT_ID, secondEventSchedule } from "./events.js";
 
 const EVENT_ID="evt-ai-summit-2026";
 export const demoSchedule: ScheduleProjection = {
@@ -31,7 +33,7 @@ export const demoData: CanonicalData = canonicalFromSchedule(EVENT_ID,demoSchedu
 
 export class MemoryRepository implements Repository {
   /** Legacy tests may mutate this map; getData is canonical whenever a schedule exists. */
-  data = new Map([[EVENT_ID, structuredClone(demoData)] ]); links = new Map<string, SyncLink>(); runs = new Map<string, SyncRun>(); items = new Map<string, SyncRunItem[]>(); schedules = new Map([[EVENT_ID, structuredClone(demoSchedule)]]);
+  data = new Map([[EVENT_ID, structuredClone(demoData)] ]); links = new Map<string, SyncLink>(); runs = new Map<string, SyncRun>(); items = new Map<string, SyncRunItem[]>(); schedules = new Map([[EVENT_ID, structuredClone(demoSchedule)], [SECOND_EVENT_ID, secondEventSchedule()]]);
   async getData(eventId: string) { const schedule=this.schedules.get(eventId); if(!schedule) return this.data.get(eventId) && structuredClone(this.data.get(eventId)!); const canonical=canonicalFromSchedule(eventId,structuredClone(schedule)); /* Legacy compatibility: tests/tools may override profile fields in .data; schedule remains entity/time authority. */ const legacy=this.data.get(eventId); for(const speaker of canonical.speakers){const old=legacy?.speakers.find(x=>x.id===speaker.id);if(old){speaker.bio=old.bio;speaker.company=old.company;speaker.email=old.email;}} return canonical }
   async createRun(run: SyncRun) { this.runs.set(run.id, structuredClone(run)); this.items.set(run.id, []) }
   async updateRun(run: SyncRun) { this.runs.set(run.id, structuredClone(run)) }

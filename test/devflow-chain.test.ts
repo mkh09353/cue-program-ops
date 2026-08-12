@@ -40,7 +40,9 @@ test("DevFlow Conf 2027: create → CFP → review → decide → schedule → p
   assert.equal(createRes.status, 201, "event created");
   const ev = (await json(createRes)).data;
   const E = ev.id;
-  assert.equal(ev.slug, "devflow-conf-2027");
+  // "devflow-conf-2027" ships pre-seeded, so creating it again uniquifies the slug.
+  // Everything downstream must follow the RETURNED slug, not the requested one.
+  assert.equal(ev.slug, "devflow-conf-2027-2");
 
   const sched0 = await json(await get(`/api/events/${E}/schedule`));
   assert.deepEqual(sched0.rooms.map((r: any) => r.name), ["Room 2A", "Room 2B"], "fixture rooms exist");

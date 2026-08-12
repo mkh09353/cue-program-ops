@@ -91,7 +91,7 @@ export function EventSwitcher({ readOnly }: { readOnly?: boolean } = {}) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   /** Persistent confirmation that the workspace switched to the new event. */
-  const [created, setCreated] = useState<{ id: string; name: string; slug: string; at: string } | null>(null);
+  const [created, setCreated] = useState<{ id: string; name: string; slug: string; at: string; slugAdjusted?: boolean; requestedSlug?: string } | null>(null);
 
   const load = () =>
     api
@@ -130,7 +130,7 @@ export function EventSwitcher({ readOnly }: { readOnly?: boolean } = {}) {
       // later click operate on an empty workspace. Confirm, and let the organizer
       // switch deliberately.
       await load();
-      setCreated({ id: created.data.id, name: created.data.name, slug: created.data.slug, at: new Date().toLocaleTimeString() });
+      setCreated({ id: created.data.id, name: created.data.name, slug: created.data.slug, at: new Date().toLocaleTimeString(), slugAdjusted: Boolean((created as any).slugAdjusted), requestedSlug: (created as any).requestedSlug });
       setCreating(false);
       setOpen(false);
       setForm({ ...BLANK_EVENT });
@@ -177,6 +177,11 @@ export function EventSwitcher({ readOnly }: { readOnly?: boolean } = {}) {
           <span className="block font-semibold">Created {created.name}</span>
           <span className="block text-xs text-mid">
             {created.at} · slug {created.slug} · empty by design: no submissions, speakers or sessions yet.
+            {created.slugAdjusted ? (
+              <span className="mt-1 block" data-testid="slug-adjusted-note">
+                “{created.requestedSlug}” was already taken, so this event uses <b>{created.slug}</b>.
+              </span>
+            ) : null}
             You are still working in <b>{active.name}</b>.
           </span>
           <div className="mt-2 flex flex-wrap gap-2">

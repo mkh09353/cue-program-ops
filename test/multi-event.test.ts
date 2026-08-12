@@ -37,7 +37,7 @@ test("organizer can create a new event with arbitrary rooms, and it appears in t
   assert.equal(created.status, 201);
   const record = (await json(created)).data;
   assert.equal(record.name, "DevFlow Conf 2027");
-  assert.equal(record.slug, "devflow-conf-2027");
+  assert.equal(record.slug, "devflow-conf-2027-2", "the pre-seeded fixture slug is uniquified");
   assert.equal(record.timezone, "America/New_York");
   assert.equal(record.venue, "Brooklyn Expo Center");
 
@@ -61,10 +61,12 @@ test("event creation validates name, slug, dates and timezone", async () => {
   assert.equal((await post(app, "/api/events", { ...DEVFLOW, startsAt: "nonsense" })).status, 400);
   assert.equal((await post(app, "/api/events", { ...DEVFLOW, endsAt: "2020-01-01T00:00:00.000Z" })).status, 400);
   assert.equal((await post(app, "/api/events", { ...DEVFLOW, timezone: "Mars/Olympus" })).status, 400);
-  // Duplicate slug, including the seeded event's own slug.
-  assert.equal((await post(app, "/api/events", { ...DEVFLOW, slug: "ai-engineer-summit" })).status, 409);
+  // A taken slug (including a seeded event's own) is uniquified, never rejected.
+  const clash = await post(app, "/api/events", { ...DEVFLOW, slug: "ai-engineer-summit" });
+  assert.equal(clash.status, 201);
+  assert.equal((await json(clash)).data.slug, "ai-engineer-summit-2");
   assert.equal((await post(app, "/api/events", DEVFLOW)).status, 201);
-  assert.equal((await post(app, "/api/events", DEVFLOW)).status, 409);
+  assert.equal((await post(app, "/api/events", DEVFLOW)).status, 201);
   // Non-organizers cannot create events.
   assert.equal((await post(app, "/api/events", { ...DEVFLOW, slug: "other-conf" }, { "content-type": "application/json", "x-demo-role": "speaker" })).status, 403);
   resetEventRegistry();
@@ -207,7 +209,7 @@ test("an older single-event snapshot (no listEventIds) still restores", async ()
   const legacy: any = { load: (id: string) => persistence.load(id), save: (s: any) => persistence.save(s) };
   const rebooted = new MemoryRepository();
   assert.equal(await restoreSnapshot({ repo: rebooted, persistence: legacy }), true);
-  assert.equal(listEvents().length, 1, "no phantom events appear from a legacy snapshot");
+  assert.equal(listEvents().length, 2, "only the two pre-seeded events; a legacy snapshot adds no phantoms");
 });
 
 test("bootstrap returns the selected event's own metadata, so schedule day tabs derive from its dates", async () => {

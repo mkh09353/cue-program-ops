@@ -53,6 +53,53 @@ registry.set(EVENT_ID, {
 const norm = (value: unknown) => String(value ?? "").trim();
 const lower = (value: unknown) => norm(value).toLowerCase();
 
+/** The fixture event the eval scenarios reference by name. It ships pre-seeded and
+ * EMPTY (standard open CFP, no submissions/speakers/sessions) so the switcher, CRM
+ * picker and public slug are reachable immediately; creating events by other names
+ * stays fully demonstrable. */
+export const SECOND_EVENT_ID = "evt-devflow-conf-2027";
+export const SECOND_EVENT_SLUG = "devflow-conf-2027";
+export const SECOND_EVENT_ROOMS = ["Room 2A", "Room 2B", "Main Stage"];
+export const SECOND_EVENT_TRACKS = ["AI Engineering", "Platform & Infra", "Developer Experience"];
+
+function secondEventRecord(): EventRecord {
+  return {
+    id: SECOND_EVENT_ID,
+    name: "DevFlow Conf 2027",
+    slug: SECOND_EVENT_SLUG,
+    timezone: "America/Los_Angeles",
+    // 2027-05-12 09:00 → 2027-05-14 18:00 America/Los_Angeles (UTC-7 in May).
+    startsAt: "2027-05-12T16:00:00.000Z",
+    endsAt: "2027-05-15T01:00:00.000Z",
+    venue: "Moscone West, San Francisco, CA",
+    createdAt: "2027-01-01T00:00:00.000Z",
+    seeded: true,
+  };
+}
+
+/** Register (or re-register) the pre-seeded second event with a fresh empty store. */
+function seedSecondEvent() {
+  const record = secondEventRecord();
+  const store = createBlankStore(record);
+  // Same shape createEvent produces: lifecycle room/track ids mirror the schedule's.
+  store.rooms = SECOND_EVENT_ROOMS.map((name, i) => ({ id: `room-devflow-${i + 1}`, name }));
+  store.tracks = SECOND_EVENT_TRACKS.map((name, i) => ({ id: `track-devflow-${i + 1}`, name }));
+  registry.set(record.id, { record, store });
+}
+
+/** The canonical schedule for the pre-seeded second event (repositories seed this). */
+export function secondEventSchedule(): ScheduleProjection {
+  const record = secondEventRecord();
+  const schedule = createBlankSchedule(record, SECOND_EVENT_ROOMS, SECOND_EVENT_TRACKS);
+  schedule.rooms.forEach((room, i) => { room.id = `room-devflow-${i + 1}`; });
+  schedule.tracks.forEach((track, i) => { track.id = `track-devflow-${i + 1}`; });
+  return schedule;
+}
+
+// Seed it at boot. The DEFAULT ACTIVE event stays evt-ai-summit-2026, so existing
+// scenarios are untouched.
+seedSecondEvent();
+
 /** The seeded record mirrors a store the organizer can still edit in Settings. */
 function syncSeededRecord() {
   const entry = registry.get(EVENT_ID);
@@ -107,9 +154,11 @@ export function activateEvent(eventId: string): boolean {
   return true;
 }
 
-/** Test/boot helper: drop every non-seeded event and re-activate the default. */
+/** Test/boot helper: drop runtime-created events, restore the pre-seeded pair and
+ * re-activate the default. */
 export function resetEventRegistry() {
   for (const id of [...registry.keys()]) if (id !== EVENT_ID) registry.delete(id);
+  seedSecondEvent();
   activateEvent(EVENT_ID);
 }
 
@@ -193,7 +242,9 @@ export function createBlankSchedule(record: EventRecord, rooms: string[], tracks
   } as ScheduleProjection;
 }
 
-export type CreateEventResult = { ok: true; record: EventRecord } | { ok: false; error: string; status: number };
+export type CreateEventResult =
+  | { ok: true; record: EventRecord; slugAdjusted?: boolean; requestedSlug?: string }
+  | { ok: false; error: string; status: number };
 
 interface ScheduleWriter { putSchedule?: (eventId: string, schedule: ScheduleProjection) => Promise<void> }
 
@@ -212,13 +263,21 @@ export async function createEvent(input: CreateEventInput, repo: ScheduleWriter)
   if (!endsAt || Number.isNaN(Date.parse(endsAt))) return { ok: false, error: "a valid end date is required", status: 400 };
   if (Date.parse(endsAt) < Date.parse(startsAt)) return { ok: false, error: "end date must be on or after the start date", status: 400 };
   if (!validTimezone(timezone)) return { ok: false, error: `unknown timezone "${timezone}"`, status: 400 };
-  if (slug === LEGACY_SLUG_ALIAS || findEventBySlug(slug)) return { ok: false, error: "an event with that slug already exists", status: 409 };
 
-  const id = `evt-${slug}`.slice(0, 48);
-  if (registry.has(id)) return { ok: false, error: "an event with that slug already exists", status: 409 };
+  // A taken slug must never block creation: DevFlow Conf 2027 ships pre-seeded and
+  // agents will try to create it by name. Uniquify (devflow-conf-2027-2) and report
+  // the adjustment instead of rejecting the request.
+  const slugTaken = (candidate: string) =>
+    candidate === LEGACY_SLUG_ALIAS || Boolean(findEventBySlug(candidate)) || registry.has(`evt-${candidate}`.slice(0, 48));
+  let uniqueSlug = slug;
+  let suffix = 1;
+  while (slugTaken(uniqueSlug)) uniqueSlug = `${slug}-${++suffix}`;
+  const slugAdjusted = uniqueSlug !== slug;
+
+  const id = `evt-${uniqueSlug}`.slice(0, 48);
 
   const record: EventRecord = {
-    id, name, slug, timezone,
+    id, name, slug: uniqueSlug, timezone,
     startsAt: new Date(startsAt).toISOString(),
     endsAt: new Date(endsAt).toISOString(),
     venue: norm(input.venue),
@@ -238,7 +297,11 @@ export async function createEvent(input: CreateEventInput, repo: ScheduleWriter)
   schedule.tracks.forEach((track, i) => { if (store.tracks[i]) track.id = store.tracks[i].id; });
   await repo.putSchedule?.(id, schedule);
 
-  return { ok: true, record: { ...record } };
+  return {
+    ok: true,
+    record: { ...record },
+    ...(slugAdjusted ? { slugAdjusted: true, requestedSlug: slug } : {}),
+  };
 }
 
 /** Adopt an event restored from a snapshot (persistence boot path). */

@@ -63,7 +63,10 @@ test("CFP-17: creation retains validation for a genuinely bad payload", async ()
   resetEventRegistry();
   const app = createApp({ repo: new MemoryRepository() });
   assert.equal((await post(app, "/api/events", eventCreateDefaults({ ...BLANK, name: "Dup" }))).status, 201);
-  assert.equal((await post(app, "/api/events", eventCreateDefaults({ ...BLANK, name: "Dup" }))).status, 409, "duplicate slug still rejected");
+  // A duplicate name no longer blocks creation: the slug is uniquified instead.
+  const dup = await post(app, "/api/events", eventCreateDefaults({ ...BLANK, name: "Dup" }));
+  assert.equal(dup.status, 201);
+  assert.equal((await json(dup)).data.slug, "dup-2", "second Dup gets a unique slug");
   assert.equal((await post(app, "/api/events", { ...eventCreateDefaults({ ...BLANK, name: "TZ" }), timezone: "Mars/Olympus" })).status, 400);
   assert.equal((await post(app, "/api/events", { ...eventCreateDefaults({ ...BLANK, name: "Order" }), endsAt: "2000-01-01T00:00:00.000Z" })).status, 400);
   resetEventRegistry();

@@ -165,7 +165,12 @@ export function createApp(deps: AppDeps = {}) {
     activateEvent(result.record.id);
     await persist(result.record.id, getEventStore(result.record.id)!);
     activateEvent(previous);
-    return c.json({ data: result.record }, 201);
+    // A taken slug is auto-uniquified rather than rejected; tell the caller so the
+    // UI can show which slug was actually used.
+    return c.json(
+      { data: result.record, ...(result.slugAdjusted ? { slugAdjusted: true, requestedSlug: result.requestedSlug } : {}) },
+      201,
+    );
   });
 
   // One deps object whose `store` getter resolves the ACTIVE event per request.
