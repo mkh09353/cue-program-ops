@@ -12,7 +12,8 @@ export class MockMailer implements Mailer {
 
 /** Minimal Resend-compatible HTTP seam. Selected only with MAILER_API_KEY and MAILER_FROM. */
 export class HttpMailer implements Mailer {
-  constructor(private readonly apiKey: string, private readonly from: string, private readonly fetcher: typeof fetch = fetch, private readonly url = "https://api.resend.com/emails") {}
+  // Workers requires fetch to be invoked with the correct `this`; a bare reference throws "Illegal invocation".
+  constructor(private readonly apiKey: string, private readonly from: string, private readonly fetcher: typeof fetch = (...args) => fetch(...args), private readonly url = "https://api.resend.com/emails") {}
   async send(message: MailMessage) {
     const response = await this.fetcher(this.url, { method: "POST", headers: { Authorization: `Bearer ${this.apiKey}`, "Content-Type": "application/json" }, body: JSON.stringify({ from: this.from, to: [message.to], subject: message.subject, text: message.text, attachments: message.attachments?.map(a => ({ filename: a.filename, content: a.content, content_type: a.contentType })) }) });
     if (response.status === 422) {
