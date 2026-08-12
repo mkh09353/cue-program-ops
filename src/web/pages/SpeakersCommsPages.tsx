@@ -26,6 +26,11 @@ export const TASK_TEMPLATES = [
   { title: "Confirm participation", type: "confirm", description: "Confirm that you will participate in the event." },
   { title: "Sign speaker release form", type: "confirm", description: "Confirm that you signed the speaker release form." },
   { title: "Complete bio and profile", type: "profile", description: "Review and complete your speaker bio and profile." },
+  { title: "Speaker details form", type: "form", description: "Complete speaker logistics and event preparation details.", formSchema: [
+    { key: "shirt_size", label: "Shirt size", type: "select", required: true, options: ["XS", "S", "M", "L", "XL", "XXL"] },
+    { key: "av_needs", label: "AV needs", type: "textarea", required: false },
+    { key: "arrival_date", label: "Arrival date", type: "text", required: true },
+  ] },
 ] as const;
 
 /** Deterministic relative due date (YYYY-MM-DD), matching the date input convention. */
@@ -971,11 +976,21 @@ export function SpeakerDetailPage() {
                       {taskTypeLabel(t.type)} · due {t.dueAt?.slice(0, 10)}
                       {t.formAnswers && Object.keys(t.formAnswers).length ? ` · form submitted` : ""}
                     </div>
+                    {t.type === "form" ? <Badge tone="muted">Form to complete</Badge> : null}
+                    {t.formAnswers && Object.keys(t.formAnswers).length ? <dl className="mt-2 text-xs">{Object.entries(t.formAnswers).map(([key,value])=><div key={key}><dt className="inline font-semibold">{t.formSchema?.find((f:any)=>f.key===key)?.label || key}: </dt><dd className="inline">{String(value)}</dd></div>)}</dl> : null}
                   </div>
                   <StatusBadge status={t.status} />
                 </li>
               ))}
               {!row.tasks?.length ? <li className="py-4 text-sm text-mid">No onboarding tasks.</li> : null}
+            </ul>
+          </Card>
+
+          <Card className="p-4">
+            <h3 className="text-xs font-bold uppercase tracking-wide text-mid">Communication history</h3>
+            <ul className="mt-2 space-y-2 text-sm">
+              {(row.communications || []).map((c:any)=><li key={c.id} className="rounded border border-line p-2"><div className="flex items-center justify-between gap-2"><b>{c.subject}</b><StatusBadge status={c.status}/></div><div className="text-xs text-mid">{c.createdAt}{c.status === "sent" && c.providerId ? ` · provider id ${c.providerId}` : ""}</div></li>)}
+              {!row.communications?.length ? <li className="text-mid">No communication history.</li> : null}
             </ul>
           </Card>
 
@@ -1338,6 +1353,7 @@ export function CommsPage() {
                   {c.recipientName || c.speakerId} · {c.recipientEmail || "no email"} · {formatStatus(c.kind)} · {c.createdAt}
                 </p>
                 <p className="mt-1 text-[11px] text-mid">{c.deliveryNote || (c.status === "mock_sent" ? "Mock delivery" : "")}</p>
+                {c.status === "sent" && c.providerId ? <p className="mt-1 text-[11px] font-semibold text-mid">provider id {c.providerId}</p> : null}
                 <p className="mt-2 line-clamp-3 whitespace-pre-wrap text-xs text-mid">{c.body}</p>
                 <a className="mt-2 inline-block text-xs font-semibold text-ink" href={`/api/communications/${c.id}/calendar.ics`}>
                   Download ICS (not calendar-push)

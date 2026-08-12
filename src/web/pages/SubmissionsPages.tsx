@@ -14,6 +14,7 @@ import {
   StatusBadge,
   Textarea,
   toast,
+  Select,
 } from "../components/ui";
 
 const CRITERIA = ["relevance", "novelty", "clarity", "depth"] as const;
@@ -145,12 +146,21 @@ export function SubmissionsListPage() {
     }
   }, [rawFilter, setParams]);
 
+  // Which submission form each proposal came from (only shown once a second
+  // form exists, so the single-form inbox is unchanged).
+  const [formTabs, setFormTabs] = useState<any[]>([]);
+  const [formFilter, setFormFilter] = useState("");
+  useEffect(() => { api.forms().then((r) => setFormTabs(r.data || [])).catch(() => {}); }, []);
+  const formTitle = (id?: string) => formTabs.find((f: any) => f.id === (id || "form-cfp"))?.title || "Primary form";
+
   const enriched = useMemo(() => {
-    return rows.map((s) => ({
-      ...s,
-      reviews: reviews.filter((r) => r.submissionId === s.id),
-    }));
-  }, [rows, reviews]);
+    return rows
+      .filter((s) => !formFilter || (s.formId || "form-cfp") === formFilter)
+      .map((s) => ({
+        ...s,
+        reviews: reviews.filter((r) => r.submissionId === s.id),
+      }));
+  }, [rows, reviews, formFilter]);
 
   return (
     <div>
@@ -186,6 +196,20 @@ export function SubmissionsListPage() {
             {label}
           </Button>
         ))}
+        {formTabs.length > 1 ? (
+          <Select
+            className="max-w-56"
+            aria-label="Submission form filter"
+            data-testid="form-filter"
+            value={formFilter}
+            onChange={(e: any) => setFormFilter(e.target.value)}
+          >
+            <option value="">All forms</option>
+            {formTabs.map((f: any) => (
+              <option key={f.id} value={f.id}>{f.title}</option>
+            ))}
+          </Select>
+        ) : null}
       </div>
       {!loaded || loading ? (
         <Spinner />
@@ -211,7 +235,14 @@ export function SubmissionsListPage() {
                       <Link className="font-semibold text-ink hover:text-ink" to={`/app/submissions/${s.id}`}>
                         {s.title}
                       </Link>
-                      <div className="text-xs text-mid">{s.format}</div>
+                      <div className="text-xs text-mid">
+                        {s.format}
+                        {formTabs.length > 1 ? (
+                          <Badge className="ml-2" tone="muted" data-testid={`submission-form-${s.id}`}>
+                            {formTitle(s.formId)}
+                          </Badge>
+                        ) : null}
+                      </div>
                     </td>
                     <td className="px-4 py-3">
                       {(s.participants || [{ name: s.name, role: "lead" }, ...(s.additionalSpeakers || [])]).map((p:any)=><div key={p.id||`${p.name}-${p.role}`}><span className="font-medium">{p.name}</span> <span className="text-xs text-mid">({p.role === "co-author" ? "co-author" : p.role === "lead" ? "lead" : "co-presenter"})</span></div>)}

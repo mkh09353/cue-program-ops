@@ -125,6 +125,7 @@ export function createSpeakerRoutes(deps: {
           text: made.communication.body,
         });
         made.communication.status = result.status;
+        made.communication.providerId = result.providerId;
       } catch {
         made.communication.status = "failed";
       }
@@ -182,6 +183,7 @@ export function createSpeakerRoutes(deps: {
     try {
       const result = await deps.mailer.send({ to: profile.email, subject: comm.subject, text: comm.body });
       comm.status = result.status;
+      comm.providerId = result.providerId;
     } catch {
       comm.status = "failed";
     }
@@ -429,6 +431,7 @@ export function createSpeakerRoutes(deps: {
               : undefined,
           });
           row.status = result.status;
+          row.providerId = result.providerId;
         } catch {
           row.status = "failed";
         }
@@ -442,6 +445,7 @@ export function createSpeakerRoutes(deps: {
         name: profile?.name,
         subject: row.subject,
         status: row.status,
+        providerId: row.providerId,
         kind: row.kind,
         createdAt: row.createdAt,
         hasIcs: Boolean(row.ics),
@@ -509,6 +513,7 @@ export function createSpeakerRoutes(deps: {
       try {
         const result = await deps.mailer.send({ to: profile.email, subject: row.subject, text: row.body });
         row.status = result.status;
+        row.providerId = result.providerId;
       } catch {
         row.status = "failed";
       }

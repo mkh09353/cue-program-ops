@@ -207,7 +207,7 @@ test("DevFlow Conf 2027: create → CFP → review → decide → schedule → p
 test("public surfaces are slug-driven, never a constant", async () => {
   const { readFileSync } = await import("node:fs");
   const api = readFileSync("src/web/lib/api.ts", "utf8");
-  assert.match(api, /publicCfp: \(slug: string\)/, "publicCfp takes the URL slug");
+  assert.match(api, /publicCfp: \(slug: string, formId\?: string\)/, "publicCfp takes the URL slug (and an optional form id)");
   assert.match(api, /submitCfp: \(slug: string, body: any\)/);
   assert.match(api, /publicSubmission: \(slug:string,id:string,token:string\)/);
   assert.match(api, /savePublicSubmission: \(slug:string,id:string,body:any\)/);

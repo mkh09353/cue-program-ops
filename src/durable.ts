@@ -14,6 +14,7 @@ export interface CueEnv {
   MAILER_API_KEY?: string;
   MAILER_FROM?: string;
   DB?: D1Database;
+  AI?: { run(model: string, input: Record<string, unknown>): Promise<unknown> };
 }
 
 /** Single named instance owns CUE's mutable demo runtime. It never touches DO storage. */
@@ -42,6 +43,7 @@ export class CueState extends DurableObject<CueEnv> {
         client: configuredClient(variables),
         persistence,
         mailer: configuredMailer(variables),
+        ai: env.AI,
       });
       await restoreSnapshot({ repo, persistence }).catch((error) =>
         console.error("CUE Durable Object snapshot restore failed", error instanceof Error ? error.message : "unknown error"),

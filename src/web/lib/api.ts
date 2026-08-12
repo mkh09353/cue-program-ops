@@ -364,12 +364,16 @@ export const api = {
   },
 
   form: (id = "form-cfp") => req<{ data: any }>(`/api/events/${EVENT_ID}/forms/${id}`),
+  forms: () => req<{ data: any[] }>(`/api/events/${EVENT_ID}/forms`),
+  createForm: (body: { name: string; slug?: string }) =>
+    mut<{ data: any }>(`/api/events/${EVENT_ID}/forms`, { method: "POST", body: JSON.stringify(body) }),
   saveForm: (id: string, body: any) =>
     mut(`/api/events/${EVENT_ID}/forms/${id}`, { method: "PUT", body: JSON.stringify(body) }),
   // —— Public CFP: ALWAYS slug-driven ——
   // These endpoints are reached from /e/:slug/cfp. A hardcoded slug made a runtime
   // event's public page render the seeded event's form, so the slug is required.
-  publicCfp: (slug: string) => req<{ data: any }>(`/api/public/events/${encodeURIComponent(slug)}/cfp`),
+  publicCfp: (slug: string, formId?: string) =>
+    req<{ data: any }>(`/api/public/events/${encodeURIComponent(slug)}/cfp${formId ? `/${encodeURIComponent(formId)}` : ""}`),
   submitCfp: (slug: string, body: any) =>
     mut(`/api/public/events/${encodeURIComponent(slug)}/submissions`, {
       method: "POST",

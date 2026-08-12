@@ -99,6 +99,7 @@ Restart the API for a clean built-in seed unless Airtable restoration is enabled
 CUE exposes a Hono JSON/HTML API for every major workflow, including public program feeds, organizer review/speaker/content/CRM/agenda operations, scoped speaker/reviewer operations and one-way sync history.
 
 - **Reference:** [docs/API.md](docs/API.md)
+- **OpenAPI 3.1:** [docs/openapi.yaml](docs/openapi.yaml) - every registered path and method, grouped by tag (generated from the route registrations). The same document is served at `GET /api/openapi.yaml`.
 - **Lifecycle source:** `src/lifecycle.ts`
 - **Route modules:** `src/{review,speaker,content,crm,agenda}Routes.ts`
 - **Public projections:** `src/publicSite.ts`, `src/publicProjection.ts`

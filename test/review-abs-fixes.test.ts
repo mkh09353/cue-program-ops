@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createApp } from "../src/app.js";
-import { EVENT_ID, store } from "../src/lifecycle.js";
+import { advisoryAi, EVENT_ID, store } from "../src/lifecycle.js";
 import { defaultProgressRoundId } from "../src/web/pages/ReviewManagementPages.js";
 
 const h = (id: string) => ({ "content-type": "application/json", "x-demo-persona": id });
@@ -111,6 +111,7 @@ test("ABS-14: ai-assist works from an assignment id when no review row exists ye
     roundId: round.id, reviewerId: reviewer.id, submissionIds: [sub.id], method: "specific",
   }))).body.data[0];
   assert.ok(assignment, "assignment created");
+  const expectedHeuristic = advisoryAi(sub);
 
   const reviewsBefore = store.reviews.filter((r) => r.submissionId === sub.id).length;
   const draft = await read(await app.request(`/api/events/${EVENT_ID}/reviews/${assignment.id}/ai-assist`, {
@@ -121,9 +122,51 @@ test("ABS-14: ai-assist works from an assignment id when no review row exists ye
   assert.ok(numeric.length >= 1, "draft returns numeric scores");
   assert.ok(String(draft.body.data.notes || "").length > 20, "draft returns a rationale");
   assert.equal(draft.body.data.advisory, true, "provenance stays advisory");
+  assert.deepEqual(draft.body.data.scores, expectedHeuristic.scores, "no binding preserves the existing deterministic heuristic exactly");
+  assert.equal(draft.body.data.notes, expectedHeuristic.notes);
+  assert.equal(draft.body.data.provenance, "ai_draft (heuristic)");
   assert.ok(store.reviews.filter((r) => r.submissionId === sub.id).length > reviewsBefore, "a review row is materialized from the assignment");
   const created = store.reviews.find((r) => r.submissionId === sub.id && r.source === "ai_draft")!;
   assert.equal(created.status, "assigned", "AI never advances the submission on its own");
+  assert.equal(created.aiDraftProvenance, "ai_draft (heuristic)");
+});
+
+test("ABS-14: Workers AI receives proposal and round criteria and stores provider provenance", async () => {
+  const calls: { model: string; input: Record<string, unknown> }[] = [];
+  const app = createApp({ ai: { async run(model, input) {
+    calls.push({ model, input });
+    return { response: `\`\`\`json\n${JSON.stringify({ scores: { provider_relevance: 4, ignored_text: 5, unknown: 3 }, rationale: "Strong fit with a concrete, testable approach." })}\n\`\`\`` };
+  } } });
+  const reviewer = store.personas.find((p) => p.role === "reviewer")!;
+  const round = (await read(await post(app, `/api/events/${EVENT_ID}/review-rounds`, {
+    name: `Workers AI Round ${Date.now()}`, status: "open", reviewerIds: [reviewer.id],
+    criteria: [
+      { id: "provider_relevance", label: "Program relevance", type: "rating", weight: 1, min: 1, max: 5 },
+      { id: "ignored_text", label: "Private notes", type: "text", weight: 0 },
+    ],
+  }))).body.data;
+  const sub = store.submissions.find((s) => s.status !== "draft")!;
+  const assignment = (await read(await post(app, `/api/events/${EVENT_ID}/review-assignments`, {
+    roundId: round.id, reviewerId: reviewer.id, submissionIds: [sub.id], method: "specific",
+  }))).body.data[0];
+
+  const response = await read(await app.request(`/api/events/${EVENT_ID}/reviews/${assignment.id}/ai-assist`, {
+    method: "POST", headers: h("org-swyx"), body: "{}",
+  }));
+  assert.equal(response.status, 200);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0]!.model, "@cf/meta/llama-3.1-8b-instruct");
+  const prompt = String(calls[0]!.input.prompt);
+  assert.match(prompt, new RegExp(sub.title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.match(prompt, new RegExp(sub.abstract.slice(0, 30).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.match(prompt, /provider_relevance/);
+  assert.match(prompt, /Program relevance/);
+  assert.deepEqual(response.body.data.scores, { provider_relevance: 4 }, "only valid rating criteria survive parsing");
+  assert.equal(response.body.data.provenance, "ai_draft (workers-ai llama-3.1-8b)");
+  const saved = store.reviews.find((review) => review.id === response.body.data.id || (review.submissionId === sub.id && review.roundId === round.id));
+  assert.equal(saved?.source, "ai_draft");
+  assert.equal(saved?.status, "assigned");
+  assert.equal(saved?.aiDraftProvenance, "ai_draft (workers-ai llama-3.1-8b)");
 });
 
 test("ABS-14: organizers can list a submission's assignments for the draft fallback", async () => {

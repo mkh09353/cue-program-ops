@@ -104,6 +104,7 @@ export function PortalHomePage() {
           <div className="text-xs font-bold uppercase tracking-wide text-ink">Up next</div>
           <h2 className="mt-1 text-xl font-bold">{next.title}</h2>
           <p className="mt-1 text-xs text-mid">{taskTypeLabel(next.type)}</p>
+          {next.type === "form" ? <Badge tone="muted">Form to complete</Badge> : null}
           <Button asChild className="mt-3">
             <Link to={`/p/tasks/${next.id}`}>Continue task</Link>
           </Button>
@@ -267,6 +268,7 @@ export function PortalTasksPage() {
                 {taskTypeLabel(t.type)}
                 {t.dueAt ? ` · due ${String(t.dueAt).slice(0, 10)}` : ""}
               </div>
+              {t.type === "form" ? <Badge tone="muted">Form to complete</Badge> : null}
             </div>
             <StatusBadge status={effectiveStatus} />
           </Link>

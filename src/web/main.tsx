@@ -95,6 +95,8 @@ function App() {
 
         <Route path="/e/:slug" element={<PublicShell />}>
           <Route path="cfp" element={<PublicCfpPage />} />
+          {/* Additional submission forms; /cfp keeps serving the primary form. */}
+          <Route path="cfp/:formId" element={<PublicCfpPage />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/" replace />} />

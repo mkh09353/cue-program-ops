@@ -66,6 +66,8 @@ export interface SpeakerInvite {
 }
 
 export interface Submission {
+  /** Which submission form produced this proposal (defaults to the primary form). */
+  formId?: string;
   id: string;
   eventId: string;
   speakerId: string;
@@ -94,6 +96,7 @@ export interface Review {
   notes: string;
   status: "assigned" | "submitted";
   aiDraft?: string;
+  aiDraftProvenance?: "ai_draft (workers-ai llama-3.1-8b)" | "ai_draft (heuristic)";
   source?: "human" | "ai_draft";
   responses?: Record<string, string | number>;
   recommendation?: string;
@@ -217,6 +220,8 @@ export interface Communication {
   ics: string;
   createdAt: string;
   submissionId?: string;
+  /** Provider receipt retained only when an external provider accepts the send. */
+  providerId?: string;
 }
 
 export interface Resource {
@@ -259,7 +264,7 @@ export const isSafeAccent = (value: unknown): value is string => {
   const v = value.trim();
   return /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(v) || ACCENT_NAMED_COLORS.has(v.toLowerCase());
 };
-export interface AutomationState { enabled:boolean; schedule:string; lastRunAt?:string; speakerSent:number; reviewerSent:number; status:"never"|"completed"|"failed" }
+export interface AutomationState { enabled:boolean; schedule:string; lastRunAt?:string; speakerSent:number; reviewerSent:number; status:"never"|"completed"|"failed"; eventResults?:{eventId:string;speakerSent:number;reviewerSent:number;status:"completed"|"failed";ranAt:string}[] }
 
 export interface SessionDraft {
   id: string;
@@ -287,6 +292,9 @@ export interface LifecycleStore {
     location: string;
   };
   form: CfpForm;
+  /** Additional submission forms for this event. The primary form (`form`) is
+   * untouched so every existing single-form path keeps working unchanged. */
+  extraForms?: CfpForm[];
   submissions: Submission[];
   reviews: Review[];
   reviewRounds: ReviewRound[];
@@ -1392,4 +1400,42 @@ export function resolveSpeakerInvite(token: string, life: LifecycleStore) {
   const profile = life.profiles.find((p) => p.speakerId === invite.speakerId);
   if (!persona || !profile) return undefined;
   return { invite, persona, profile };
+}
+
+
+/** Every submission form for an event, primary first. */
+export function formsOf(life: LifecycleStore = store): CfpForm[] {
+  return [life.form, ...(life.extraForms || [])];
+}
+
+/** Resolve a form by id (primary or additional). */
+export function findForm(id: string, life: LifecycleStore = store): CfpForm | undefined {
+  return formsOf(life).find((f) => f.id === id);
+}
+
+/** The id every legacy/default path uses. */
+export const PRIMARY_FORM_ID = "form-cfp";
+
+/** Build an additional form from the primary as a template. */
+export function createEventForm(input: { name?: string; slug?: string }, life: LifecycleStore = store):
+  | { ok: true; form: CfpForm }
+  | { ok: false; error: string } {
+  const name = String(input.name || "").trim();
+  if (!name) return { ok: false, error: "form name is required" };
+  const base = String(input.slug || name).toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40);
+  if (!base) return { ok: false, error: "form name must contain letters or numbers" };
+  let id = `form-${base}`;
+  let n = 1;
+  while (findForm(id, life)) id = `form-${base}-${++n}`;
+  const form: CfpForm = {
+    ...structuredClone(life.form),
+    id,
+    title: name,
+    status: "open",
+    welcomeMd: `## ${name}\n\nSubmit your proposal for **${name}**.`,
+    successMd: life.form.successMd,
+  };
+  life.extraForms ||= [];
+  life.extraForms.push(form);
+  return { ok: true, form };
 }

@@ -19,6 +19,10 @@ import {
   readiness,
   isSafeAccent,
   resolveDemoPersona,
+  formsOf,
+  findForm,
+  createEventForm,
+  PRIMARY_FORM_ID,
   resolveSpeakerInvite,
   issueSpeakerInvite,
   speakerInvitePath,
@@ -33,6 +37,7 @@ import {
   deleteResource,
   validateCfpSubmission,
   type Role,
+  type ReviewCriterion,
   type Submission,
 } from "./lifecycle.js";
 import { applyScheduleMove, publicSchedule, recordPlacement, scheduleWarnings, validateSlot, type AgendaSlot } from "./schedule.js";
@@ -48,12 +53,77 @@ import { deleteFieldDefinition, listFieldDefinitions, saveFieldDefinition } from
 import { createSpeakerRoutes } from "./speakerRoutes.js";
 import { blindSubmission } from "./review.js";
 import { createAgendaRoutes } from "./agendaRoutes.js";
+import { OPENAPI_CONTENT_TYPE, OPENAPI_PATH, OPENAPI_YAML } from "./openapi.js";
 
 export interface AppDeps {
   repo?: Repository;
   client?: AcceleventsClient;
   persistence?: SnapshotPersistence;
   mailer?: Mailer;
+  ai?: WorkersAiRunner;
+}
+
+/** Narrow structural seam implemented by Cloudflare's AI binding and simple test stubs. */
+export interface WorkersAiRunner {
+  run(model: string, input: Record<string, unknown>): Promise<unknown>;
+}
+
+const WORKERS_AI_MODEL = "@cf/meta/llama-3.1-8b-instruct";
+const WORKERS_AI_PROVENANCE = "ai_draft (workers-ai llama-3.1-8b)" as const;
+const HEURISTIC_AI_PROVENANCE = "ai_draft (heuristic)" as const;
+
+function parseJsonObject(value: unknown): Record<string, unknown> | undefined {
+  if (value && typeof value === "object" && !Array.isArray(value)) return value as Record<string, unknown>;
+  if (typeof value !== "string") return undefined;
+  const unfenced = value.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "");
+  const candidates = [unfenced];
+  const first = unfenced.indexOf("{");
+  const last = unfenced.lastIndexOf("}");
+  if (first >= 0 && last > first) candidates.push(unfenced.slice(first, last + 1));
+  for (const candidate of candidates) {
+    try {
+      const parsed = JSON.parse(candidate);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed as Record<string, unknown>;
+    } catch { /* try the next defensive shape */ }
+  }
+  return undefined;
+}
+
+function parseWorkersAiDraft(output: unknown, criteria: ReviewCriterion[]) {
+  const envelope = parseJsonObject(output);
+  const payload = parseJsonObject(envelope?.response) || envelope;
+  if (!payload) return undefined;
+  const rawScores = parseJsonObject(payload.scores);
+  const notes = typeof payload.rationale === "string" ? payload.rationale.trim() : typeof payload.notes === "string" ? payload.notes.trim() : "";
+  if (!rawScores || !notes) return undefined;
+  const ratings = new Map(criteria.filter((criterion) => criterion.type === "rating").map((criterion) => [criterion.id, criterion]));
+  const scores: Record<string, number> = {};
+  for (const [id, value] of Object.entries(rawScores)) {
+    const criterion = ratings.get(id);
+    if (!criterion || typeof value !== "number" || !Number.isFinite(value)) continue;
+    const min = criterion.min ?? 1;
+    const max = criterion.max ?? 5;
+    if (value < min || value > max) continue;
+    scores[id] = value;
+  }
+  return Object.keys(scores).length ? { scores, notes } : undefined;
+}
+
+async function workersAiDraft(ai: WorkersAiRunner | undefined, submission: Submission, criteria: ReviewCriterion[]) {
+  if (!ai || !criteria.some((criterion) => criterion.type === "rating")) return undefined;
+  const prompt = [
+    "You are an advisory conference proposal reviewer. Never submit, accept, reject, or make a final decision.",
+    "Return JSON only in this shape: {\"scores\":{\"criterion_id\":number},\"rationale\":\"concise explanation\"}.",
+    `Submission title: ${submission.title}`,
+    `Submission abstract: ${submission.abstract}`,
+    `Review round criteria: ${JSON.stringify(criteria.map(({ id, label, type, weight, min, max, options }) => ({ id, label, type, weight, min, max, options })))}`,
+    "Score only rating criteria, using each criterion id and its stated inclusive bounds.",
+  ].join("\n\n");
+  try {
+    return parseWorkersAiDraft(await ai.run(WORKERS_AI_MODEL, { prompt }), criteria);
+  } catch {
+    return undefined;
+  }
 }
 
 const fail = (c: any, message: string, status = 400) =>
@@ -121,10 +191,10 @@ export function createApp(deps: AppDeps = {}) {
       await persistence.save({version:1,eventId,savedAt:new Date().toISOString(),lifecycle,schedule:await memory.getSchedule?.(eventId),sync:syncState || {links:[],runs:[],items:[]}});
     } catch (error) { console.error("CUE snapshot persistence failed", error instanceof Error ? error.message : "unknown error"); }
   };
-  const deliver = async (row: ReturnType<typeof sendTemplate>) => {
-    const to=store.profiles.find(p=>p.speakerId===row.speakerId)?.email || store.submissions.find(s=>s.speakerId===row.speakerId)?.email;
+  const deliver = async (row: ReturnType<typeof sendTemplate>, life = store) => {
+    const to=life.profiles.find(p=>p.speakerId===row.speakerId)?.email || life.submissions.find(s=>s.speakerId===row.speakerId)?.email;
     if (!to) { row.status="failed"; return; }
-    try { row.status=(await mailer.send({to,subject:row.subject,text:row.body,attachments:row.ics?[{filename:"invite.ics",content:row.ics,contentType:"text/calendar"}]:undefined})).status; }
+    try { const result=await mailer.send({to,subject:row.subject,text:row.body,attachments:row.ics?[{filename:"invite.ics",content:row.ics,contentType:"text/calendar"}]:undefined});row.status=result.status;row.providerId="providerId" in result?result.providerId:undefined; }
     catch (error) { row.status="failed"; console.error("CUE mail delivery failed", error instanceof Error ? error.message : "unknown error"); }
   };
   // —— Multi-event resolution ——
@@ -205,8 +275,8 @@ export function createApp(deps: AppDeps = {}) {
   app.get("/api/events/:eventId/automation",(c)=>c.json({data:store.automation||{enabled:true,schedule:"0 * * * *",speakerSent:0,reviewerSent:0,status:"never"}}));
   app.post("/api/internal/automation/run",async(c)=>{
     if(c.req.header("x-cue-automation")!=="scheduled"||new URL(c.req.url).hostname!=="cue.internal")return fail(c,"automation caller required",403);
-    const state=store.automation||(store.automation={enabled:true,schedule:"0 * * * *",speakerSent:0,reviewerSent:0,status:"never"});let speakerSent=0,reviewerSent=0;
-    try{const plans=reminderPlans(),deliverableIds=store.deliverableTasks.filter(x=>x.status!=="complete"&&Date.parse(x.dueAt)<=Date.now()+7*86400000).map(x=>x.speakerId),speakerIds=[...new Set([...plans.map(x=>x.speakerId),...deliverableIds])];for(const speakerId of speakerIds){const row=sendTemplate("task_reminder",speakerId,"outstanding tasks and deliverables","reminder");await deliver(row);speakerSent++}for(const reviewerId of [...new Set(store.reviewAssignments.filter(a=>a.status==="assigned").map(a=>a.reviewerId))]){const p=store.personas.find(x=>x.id===reviewerId&&x.role==="reviewer");if(!p)continue;const outstanding=store.reviewAssignments.filter(a=>a.reviewerId===reviewerId&&a.status==="assigned").length,result=await mailer.send({to:p.email,subject:`${outstanding} CUE reviews outstanding`,text:`Please complete your ${outstanding} assigned reviews.`}).catch(()=>({status:"failed" as const}));store.communications.push({id:`comm-${crypto.randomUUID().slice(0,8)}`,speakerId:reviewerId,subject:`${outstanding} CUE reviews outstanding`,body:`Scheduled reviewer reminder for ${p.name}`,kind:"reminder",status:result.status,ics:"",createdAt:new Date().toISOString()});reviewerSent++}Object.assign(state,{lastRunAt:new Date().toISOString(),speakerSent,reviewerSent,status:"completed"});await persist();return c.json({data:state})}catch(error){Object.assign(state,{lastRunAt:new Date().toISOString(),speakerSent,reviewerSent,status:"failed"});await persist();return fail(c,error instanceof Error?error.message:"automation failed",500)}
+    const previous=activeEventId(),eventResults=[];let totalSpeakerSent=0,totalReviewerSent=0;
+    try{for(const event of listEvents()){activateEvent(event.id);const life=getEventStore(event.id)!;const state=life.automation||(life.automation={enabled:true,schedule:"0 * * * *",speakerSent:0,reviewerSent:0,status:"never"});let speakerSent=0,reviewerSent=0;const ranAt=new Date().toISOString();try{const plans=reminderPlans(new Date(),life),deliverableIds=life.deliverableTasks.filter(x=>x.status!=="complete"&&Date.parse(x.dueAt)<=Date.now()+7*86400000).map(x=>x.speakerId),speakerIds=[...new Set([...plans.map(x=>x.speakerId),...deliverableIds])];for(const speakerId of speakerIds){const row=sendTemplate("task_reminder",speakerId,"outstanding tasks and deliverables","reminder",life);await deliver(row,life);speakerSent++}for(const reviewerId of [...new Set(life.reviewAssignments.filter(a=>a.status==="assigned").map(a=>a.reviewerId))]){const p=life.personas.find(x=>x.id===reviewerId&&x.role==="reviewer");if(!p)continue;const outstanding=life.reviewAssignments.filter(a=>a.reviewerId===reviewerId&&a.status==="assigned").length,result=await mailer.send({to:p.email,subject:`${outstanding} CUE reviews outstanding`,text:`Please complete your ${outstanding} assigned reviews.`}).catch(()=>({status:"failed" as const}));life.communications.push({id:`comm-${crypto.randomUUID().slice(0,8)}`,speakerId:reviewerId,subject:`${outstanding} CUE reviews outstanding`,body:`Scheduled reviewer reminder for ${p.name}`,kind:"reminder",status:result.status,providerId:"providerId" in result?result.providerId:undefined,ics:"",createdAt:ranAt});reviewerSent++}const result={eventId:event.id,speakerSent,reviewerSent,status:"completed" as const,ranAt};Object.assign(state,{lastRunAt:ranAt,speakerSent,reviewerSent,status:"completed",eventResults:[result]});eventResults.push(result);totalSpeakerSent+=speakerSent;totalReviewerSent+=reviewerSent;await persist(event.id,life)}catch(error){const result={eventId:event.id,speakerSent,reviewerSent,status:"failed" as const,ranAt};Object.assign(state,{lastRunAt:ranAt,speakerSent,reviewerSent,status:"failed",eventResults:[result]});eventResults.push(result);await persist(event.id,life)}}const lastRunAt=new Date().toISOString();return c.json({data:{status:eventResults.some(x=>x.status==="failed")?"failed":"completed",lastRunAt,speakerSent:totalSpeakerSent,reviewerSent:totalReviewerSent,eventResults}})}finally{activateEvent(previous)}
   });
   app.get("/api/events/:eventId/embed-configs",(c)=>c.json({data:store.embedConfigs||[]}));
   app.post("/api/events/:eventId/embed-configs",async(c)=>{if(actor(c)!=="organizer")return fail(c,"organizer role required",403);const b=await c.req.json().catch(()=>null) as any;if(!b?.name||!["sessions","speakers","agenda","itinerary","gallery"].includes(b.widget))return fail(c,"name and valid widget required");store.embedConfigs||=[];const accent=isSafeAccent(b.theme?.accent)?String(b.theme.accent).trim():undefined;if(b.theme?.accent&&!accent)return fail(c,"accent must be a hex color like #4B5563");const row={id:`embed-${crypto.randomUUID().slice(0,8)}`,name:String(b.name),widget:b.widget,filters:{track:b.filters?.track||undefined,format:b.filters?.format||undefined,room:b.filters?.room||undefined,day:b.filters?.day||undefined},theme:{accent},fields:{speakers:b.fields?.speakers!==false,room:b.fields?.room!==false,track:b.fields?.track!==false,description:b.fields?.description!==false},createdAt:new Date().toISOString()};store.embedConfigs.push(row);await persist();return c.json({data:row},201)});
@@ -215,6 +285,7 @@ export function createApp(deps: AppDeps = {}) {
   app.get("/health", (c) =>
     c.json({ ok: true, mode: client instanceof MockAcceleventsClient ? "mock" : "configured", product: "CUE" }),
   );
+  app.get(OPENAPI_PATH, (c) => c.body(OPENAPI_YAML, 200, { "content-type": OPENAPI_CONTENT_TYPE }));
   app.get("/demo", async (c) => c.json(await repo.getData("evt-ai-summit-2026")));
 
   // —— Bootstrap / command ——
@@ -332,23 +403,34 @@ export function createApp(deps: AppDeps = {}) {
   });
 
   // —— Forms ——
-  app.get("/api/events/:eventId/forms", (c) => c.json({ data: [store.form] }));
+  app.get("/api/events/:eventId/forms", (c) => c.json({ data: formsOf(store) }));
+  app.post("/api/events/:eventId/forms", async (c) => {
+    if (actor(c) !== "organizer") return fail(c, "organizer role required", 403);
+    const b = (await c.req.json().catch(() => null)) as { name?: string; slug?: string } | null;
+    if (!b) return fail(c, "JSON body required");
+    const made = createEventForm(b, store);
+    if (!made.ok) return fail(c, made.error);
+    await persist();
+    return c.json({ data: made.form }, 201);
+  });
   app.get("/api/events/:eventId/forms/:id", (c) => {
-    if (store.form.id !== c.req.param("id")) return fail(c, "form not found", 404);
-    return c.json({ data: store.form });
+    const form = findForm(c.req.param("id"), store);
+    if (!form) return fail(c, "form not found", 404);
+    return c.json({ data: form });
   });
   app.put("/api/events/:eventId/forms/:id", async (c) => {
     if (actor(c) !== "organizer") return fail(c, "organizer role required", 403);
-    if (store.form.id !== c.req.param("id")) return fail(c, "form not found", 404);
-    const b = (await c.req.json().catch(() => null)) as Partial<typeof store.form> | null;
+    const target = findForm(c.req.param("id"), store);
+    if (!target) return fail(c, "form not found", 404);
+    const b = (await c.req.json().catch(() => null)) as Partial<typeof target> | null;
     if (!b) return fail(c, "JSON body required");
-    if (b.title) store.form.title = String(b.title);
-    if (b.welcomeMd != null) store.form.welcomeMd = String(b.welcomeMd);
-    if (b.successMd != null) store.form.successMd = String(b.successMd);
-    if (b.status === "open" || b.status === "closed") store.form.status = b.status;
-    if (b.openAt) store.form.openAt = String(b.openAt);
-    if (b.closeAt) store.form.closeAt = String(b.closeAt);
-    if (typeof b.maxPerUser === "number") store.form.maxPerUser = b.maxPerUser;
+    if (b.title) target.title = String(b.title);
+    if (b.welcomeMd != null) target.welcomeMd = String(b.welcomeMd);
+    if (b.successMd != null) target.successMd = String(b.successMd);
+    if (b.status === "open" || b.status === "closed") target.status = b.status;
+    if (b.openAt) target.openAt = String(b.openAt);
+    if (b.closeAt) target.closeAt = String(b.closeAt);
+    if (typeof b.maxPerUser === "number") target.maxPerUser = b.maxPerUser;
     if (Array.isArray(b.fields)) {
       const allowed = new Set(["text", "textarea", "select", "checkbox", "file", "speaker_block"]);
       const fields = b.fields.map((raw: any) => {
@@ -384,14 +466,37 @@ export function createApp(deps: AppDeps = {}) {
         if (trigger.options?.length && !trigger.options.includes(field.visibleWhen.equals)) return fail(c, `conditional value is not an option for ${trigger.key}: ${field.visibleWhen.equals}`);
       }
       if (!fields.some((field: any) => field.key === "title")) return fail(c, "title field is required");
-      store.form.fields = fields as typeof store.form.fields;
+      target.fields = fields as typeof target.fields;
     }
-    if (Array.isArray(b.routes)) store.form.routes = b.routes as typeof store.form.routes;
+    if (Array.isArray(b.routes)) target.routes = b.routes as typeof target.routes;
     await persist();
-    return c.json({ data: store.form });
+    return c.json({ data: target });
   });
 
   // —— Public CFP ——
+  /** Shared payload builder so the default path and per-form paths cannot drift. */
+  const publicCfpPayload = (form: typeof store.form) => ({
+    event: store.event,
+    form: {
+      ...form,
+      welcomeMd: form.welcomeMd
+        .split("\n")
+        .filter((line) => !/^\s*(tracks?|categories)\s*:/i.test(line))
+        .join("\n"),
+      routes: form.routes.filter((route) =>
+        (form.fields.find((f) => f.key === "category")?.options || []).includes(route.category),
+      ),
+    },
+    categories: form.fields.find((f) => f.key === "category")?.options || [],
+    forms: formsOf(store).map((f) => ({ id: f.id, title: f.title, status: f.status })),
+    window: cfpWindow(),
+  });
+  /** Additional forms get their own public link; /cfp keeps serving the primary. */
+  app.get("/api/public/events/:slug/cfp/:formId", (c) => {
+    const form = findForm(c.req.param("formId"), store);
+    if (!form) return fail(c, "form not found", 404);
+    return c.json({ data: publicCfpPayload(form) });
+  });
   app.get("/api/public/events/:slug/cfp", (c) => {
     // Slug resolution (and the 404 for an unknown slug) happens in middleware.
     return c.json({
@@ -410,6 +515,7 @@ export function createApp(deps: AppDeps = {}) {
           ),
         },
         categories: store.form.fields.find((f) => f.key === "category")?.options || [],
+        forms: formsOf(store).map((f) => ({ id: f.id, title: f.title, status: f.status })),
         window: cfpWindow(),
       },
     });
@@ -420,6 +526,10 @@ export function createApp(deps: AppDeps = {}) {
     const b = (await c.req.json().catch(() => null)) as Record<string, unknown> | null;
     if (!b) return fail(c, "JSON body required");
     const answers = (b.answers || {}) as Record<string, unknown>;
+    // Which submission form produced this proposal. Absent = the primary form, so
+    // every existing caller behaves exactly as before.
+    const submittedForm = b.formId ? findForm(String(b.formId), store) : store.form;
+    if (!submittedForm) return fail(c, "form not found", 404);
     const category = String(answers.category || "");
     const format = String(answers.format || "Talk");
     const requestedStatus = b.status === "draft" ? "draft" : "submitted";
@@ -436,6 +546,7 @@ export function createApp(deps: AppDeps = {}) {
     const email = String(b.email || "");
     if (!name.trim() || !email.trim()) return fail(c, "name and email are required");
     const submission: Submission = {
+      formId: submittedForm.id,
       id,
       eventId: store.event.id,
       speakerId,
@@ -640,15 +751,21 @@ export function createApp(deps: AppDeps = {}) {
     if (!r) return fail(c, "review not found", 404);
     const sub = store.submissions.find((s) => s.id === r.submissionId);
     if (!sub) return fail(c, "submission not found", 404);
-    const draft = advisoryAi(sub);
+    const matchingAssignment = store.reviewAssignments.find((assignment) =>
+      assignment.submissionId === r!.submissionId && assignment.reviewerId === r!.reviewerId,
+    );
+    const round = store.reviewRounds.find((candidate) => candidate.id === (r!.roundId || matchingAssignment?.roundId));
+    const providerDraft = await workersAiDraft(deps.ai, sub, round?.criteria || []);
+    const draft = providerDraft || advisoryAi(sub);
     r.aiDraft = draft.notes;
+    r.aiDraftProvenance = providerDraft ? WORKERS_AI_PROVENANCE : HEURISTIC_AI_PROVENANCE;
     r.scores = draft.scores;
     r.notes = draft.notes;
     r.source = "ai_draft";
     // Keep assigned — human must submit
     r.status = "assigned";
     await persist();
-    return c.json({ data: { aiDraft: r.aiDraft, scores: r.scores, notes: r.notes, advisory: true } });
+    return c.json({ data: { aiDraft: r.aiDraft, scores: r.scores, notes: r.notes, advisory: true, provenance: r.aiDraftProvenance } });
   });
 
   app.post("/api/events/:eventId/submissions/:id/decision", async (c) => {
@@ -892,7 +1009,7 @@ export function createApp(deps: AppDeps = {}) {
   app.post("/api/events/:eventId/comms/decisions/send", async (c) => {
     if (actor(c) !== "organizer") return fail(c, "organizer role required", 403);
     const life=store,eventId=life.event.id,b=await c.req.json(),cohorts=Array.isArray(b.cohorts)?b.cohorts:["accepted","rejected"],targets=life.submissions.filter(s=>cohorts.includes(s.status));const rows=[];
-    for(const sub of targets){const merge=(text:string)=>text.replaceAll("{{name}}",sub.name).replaceAll("{{talk_title}}",sub.title).replaceAll("{{decision}}",sub.status);const subject=merge(String(b.subject||"Decision for {{talk_title}}")),body=merge(String(b.body||"Hi {{name}}, your proposal {{talk_title}} was {{decision}}."));const result=await mailer.send({to:sub.email,subject,text:body}).catch(()=>({status:"failed" as const}));const row={id:`comm-${crypto.randomUUID()}`,speakerId:sub.speakerId,submissionId:sub.id,subject,body,kind:(sub.status==="accepted"?"acceptance":"rejection") as "acceptance"|"rejection",status:result.status,ics:"",createdAt:new Date().toISOString()};life.communications.unshift(row);rows.push(row)}await persist(eventId,life);return c.json({data:rows},201);
+    for(const sub of targets){const merge=(text:string)=>text.replaceAll("{{name}}",sub.name).replaceAll("{{talk_title}}",sub.title).replaceAll("{{decision}}",sub.status);const subject=merge(String(b.subject||"Decision for {{talk_title}}")),body=merge(String(b.body||"Hi {{name}}, your proposal {{talk_title}} was {{decision}}."));const result=await mailer.send({to:sub.email,subject,text:body}).catch(()=>({status:"failed" as const}));const row={id:`comm-${crypto.randomUUID()}`,speakerId:sub.speakerId,submissionId:sub.id,subject,body,kind:(sub.status==="accepted"?"acceptance":"rejection") as "acceptance"|"rejection",status:result.status,providerId:"providerId" in result?result.providerId:undefined,ics:"",createdAt:new Date().toISOString()};life.communications.unshift(row);rows.push(row)}await persist(eventId,life);return c.json({data:rows},201);
   });
   app.post("/api/events/:eventId/comms/reminders/plan", (c) => {
     if (actor(c) !== "organizer") return fail(c, "organizer role required", 403);
@@ -945,7 +1062,7 @@ export function createApp(deps: AppDeps = {}) {
         sent.push(sendTemplate(b.templateKey!, speakerId, title, b.templateKey === "task_reminder" ? "reminder" : "custom"));
       }
     }
-    await Promise.all(sent.map(deliver)); await persist();
+    await Promise.all(sent.map((row)=>deliver(row))); await persist();
     return c.json({ data: sent }, 201);
   });
 

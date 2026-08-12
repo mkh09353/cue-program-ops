@@ -2,6 +2,7 @@ import type { CueEnv } from "./durable.js";
 import { runScheduledAutomation } from "./automation.js";
 export { CueState } from "./durable.js";
 export interface Env extends CueEnv {
+  AI?: CueEnv["AI"];
   ACCELEVENTS_LIVE?: string;
   ACCELEVENTS_BASE_URL?: string;
   ACCELEVENTS_EVENT_ID?: string;

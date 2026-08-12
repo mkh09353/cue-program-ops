@@ -787,13 +787,13 @@ test("organizer speaker and comms pages use the bounded LoadState loader", async
   assert.match(page, /subscribeData\(\(\) => comms\.reload\(\)\)/);
 });
 
-test("assign-task modal exposes exactly the three template chips with prefilled fields", async () => {
+test("assign-task modal exposes quick-add template chips with prefilled fields", async () => {
   const { TASK_TEMPLATES, TASK_TEMPLATE_DUE_DAYS, taskTemplateDueDate } = await import("../src/web/pages/SpeakersCommsPages.js");
   assert.deepEqual(
     TASK_TEMPLATES.map((t: any) => t.title),
-    ["Confirm participation", "Sign speaker release form", "Complete bio and profile"],
+    ["Confirm participation", "Sign speaker release form", "Complete bio and profile", "Speaker details form"],
   );
-  assert.deepEqual(TASK_TEMPLATES.map((t: any) => t.type), ["confirm", "confirm", "profile"]);
+  assert.deepEqual(TASK_TEMPLATES.map((t: any) => t.type), ["confirm", "confirm", "profile", "form"]);
   assert.ok(TASK_TEMPLATES.every((t: any) => t.description && t.description.length > 10), "descriptions are prefilled");
 
   // Deterministic relative due date in the date-input format the modal uses.

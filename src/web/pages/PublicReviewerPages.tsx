@@ -204,12 +204,12 @@ export function PublicCfpPage() {
   >(null);
   const [draftBusy, setDraftBusy] = useState(false);
   const [search] = useSearchParams();
-  const { slug } = useParams();
+  const { slug, formId } = useParams();
   const nav = useNavigate();
 
   useEffect(() => {
     api
-      .publicCfp(slug!)
+      .publicCfp(slug!, formId)
       .then(async (r) => {
         setData(r.data);
         const id=search.get("submission"),token=search.get("token");
@@ -333,7 +333,7 @@ export function PublicCfpPage() {
     setFieldErrors({});
     try {
       const payload = { ...answers, additionalSpeakers: answers.additionalSpeakers || [] };
-      const r = result?.editing ? await api.savePublicSubmission(slug!,result.id,{editToken:result.editToken,answers:payload,status:"submitted"}) : await api.submitCfp(slug!,{ name, email, answers: payload });
+      const r = result?.editing ? await api.savePublicSubmission(slug!,result.id,{editToken:result.editToken,answers:payload,status:"submitted"}) : await api.submitCfp(slug!,{ formId: data.form.id, name, email, answers: payload });
       setResult(r.data);
       toast("Proposal submitted");
     } catch (ex: any) {
@@ -353,7 +353,7 @@ export function PublicCfpPage() {
     setDraftBusy(true);
     try {
       const draftAnswers={...answers,additionalSpeakers:answers.additionalSpeakers||[]};
-      const r=result?.editing ? await api.savePublicSubmission(slug!,result.id,{editToken:result.editToken,answers:draftAnswers,status:"draft"}) : await api.submitCfp(slug!,{name,email,answers:draftAnswers,status:"draft"});
+      const r=result?.editing ? await api.savePublicSubmission(slug!,result.id,{editToken:result.editToken,answers:draftAnswers,status:"draft"}) : await api.submitCfp(slug!,{formId:data.form.id,name,email,answers:draftAnswers,status:"draft"});
       setResult({...r.data,editing:true,editable:true});setSaved(`Draft saved · reference ${r.data.id}`);toast("Draft saved — use this page link to resume");
       const resumeUrl=r.data.editUrl||`?submission=${r.data.id}&token=${r.data.editToken}`;
       setDraftState({status:"saved",id:r.data.id,at:new Date().toLocaleTimeString(),resumeUrl});

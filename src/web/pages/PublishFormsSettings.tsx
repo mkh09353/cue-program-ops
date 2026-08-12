@@ -483,9 +483,17 @@ export function FormsPage() {
 
   const snapshotOf = (f: any) => JSON.stringify(f || {});
 
+  // Which form the builder is editing. The primary form-cfp is the default, so
+  // every existing single-form flow is unchanged.
+  const [formId, setFormId] = useState("form-cfp");
+  const [formList, setFormList] = useState<any[]>([]);
+  const [newFormName, setNewFormName] = useState("");
+  const [formBusy, setFormBusy] = useState(false);
+
+  const loadForms = () => api.forms().then((r) => setFormList(r.data || [])).catch(() => {});
   const load = () =>
     api
-      .form()
+      .form(formId)
       .then((r) => {
         setForm(r.data);
         setSavedSnap(snapshotOf(r.data));
@@ -494,8 +502,19 @@ export function FormsPage() {
 
   useEffect(() => {
     load();
-    return subscribeData(load);
-  }, []);
+    void loadForms();
+    return subscribeData(() => { load(); void loadForms(); });
+  }, [formId]);
+
+  /** Move a field within the form's order. visibleWhen bindings are key-based,
+   * so reordering never rebinds a condition. */
+  const moveField = (index: number, delta: number) => {
+    const fields = [...(form?.fields || [])];
+    const next = index + delta;
+    if (next < 0 || next >= fields.length) return;
+    [fields[index], fields[next]] = [fields[next], fields[index]];
+    setForm({ ...form, fields });
+  };
 
   useEffect(()=>{
     if(!form||!savedSnap||snapshotOf(form)===savedSnap||saving)return;
@@ -633,8 +652,77 @@ export function FormsPage() {
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
   };
 
+  const publicFormPath = form?.id === "form-cfp"
+    ? `/e/${getActiveEvent().slug}/cfp`
+    : `/e/${getActiveEvent().slug}/cfp/${form?.id}`;
+
   return (
     <div>
+      <Card className="mb-4 p-4" data-testid="submission-forms">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h2 className="text-sm font-bold uppercase tracking-wide text-mid">Submission forms</h2>
+            <p className="text-xs text-mid">
+              Each form has its own questions, welcome screen, deadline and public link. The primary form serves
+              /cfp.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Input
+              className="max-w-56"
+              aria-label="New form name"
+              data-testid="new-form-name"
+              placeholder="Workshops 2027"
+              value={newFormName}
+              onChange={(e) => setNewFormName(e.target.value)}
+            />
+            <Button
+              size="sm"
+              disabled={formBusy || !newFormName.trim()}
+              data-testid="create-form"
+              onClick={async () => {
+                setFormBusy(true);
+                try {
+                  const made = await api.createForm({ name: newFormName.trim() });
+                  setNewFormName("");
+                  await loadForms();
+                  setFormId(made.data.id);
+                  toast(`Created form “${made.data.title}”`);
+                } catch (e: any) {
+                  setErr(e?.message || "Could not create the form");
+                } finally {
+                  setFormBusy(false);
+                }
+              }}
+            >
+              {formBusy ? "Creating…" : "Create form"}
+            </Button>
+          </div>
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {formList.map((f: any) => (
+            <Button
+              key={f.id}
+              size="sm"
+              variant={f.id === formId ? "dark" : "outline"}
+              aria-pressed={f.id === formId}
+              data-testid={`form-tab-${f.id}`}
+              onClick={() => setFormId(f.id)}
+            >
+              {f.title}
+              {f.id === "form-cfp" ? " · primary" : ""}
+            </Button>
+          ))}
+        </div>
+        {form ? (
+          <p className="mt-3 text-xs text-mid">
+            Public link for <b>{form.title}</b>:{" "}
+            <a className="font-semibold text-ink underline" data-testid="form-public-link" href={publicFormPath} target="_blank" rel="noreferrer">
+              {publicFormPath}
+            </a>
+          </p>
+        ) : null}
+      </Card>
       <PageHeader
         title="CFP form builder"
         description="Edit the public call-for-proposals form. Save (or Save & publish) so field changes reach the public CFP."
@@ -803,12 +891,42 @@ export function FormsPage() {
         </Card>
 
         <Card className="p-5">
-          <h2 className="mb-3 text-sm font-bold uppercase tracking-wide text-mid">Fields & conditional logic</h2>
+          <h2 className="mb-1 text-sm font-bold uppercase tracking-wide text-mid">Fields & conditional logic</h2>
+          <p className="mb-3 text-xs text-mid">
+            Questions appear on the public form in this order — use ↑ / ↓ to reorder, then Save.
+          </p>
           <div className="space-y-3">
             {form.fields.map((f: any, idx: number) => {
               const hasCondition = !!f.visibleWhen;
               return (
-                <div key={f.key} className="rounded-[18px] border border-line p-3">
+                <div key={f.key} className="rounded-[18px] border border-line p-3" data-testid={`field-row-${f.key}`}>
+                  <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-[11px] font-bold uppercase tracking-wide text-mid">
+                      Question {idx + 1} of {form.fields.length}
+                    </span>
+                    <span className="flex gap-1">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        aria-label={`Move ${f.label} up`}
+                        data-testid={`field-up-${f.key}`}
+                        disabled={idx === 0}
+                        onClick={() => moveField(idx, -1)}
+                      >
+                        ↑
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        aria-label={`Move ${f.label} down`}
+                        data-testid={`field-down-${f.key}`}
+                        disabled={idx === form.fields.length - 1}
+                        onClick={() => moveField(idx, 1)}
+                      >
+                        ↓
+                      </Button>
+                    </span>
+                  </div>
                   <div className="grid gap-2 sm:grid-cols-[1fr_150px]">
                     <Field label="Field label">
                       <Input value={f.label} onChange={(e) => updateField(idx, { label: e.target.value })} />
