@@ -100,7 +100,7 @@ test("every requested group is present as a tag", () => {
 test("the document contains no phantom paths", () => {
   const implemented = implementedOperations();
   const documented = documentedOperations(doc());
-  assert.ok(documented.size >= 185, `expected the full surface, found ${documented.size} operations`);
+  assert.ok(documented.size >= 186, `expected the full surface, found ${documented.size} operations`);
   const phantom = [...documented].filter((op) => !implemented.has(op)).sort();
   assert.deepEqual(phantom, [], `documented operations that no route registers: ${phantom.join(", ")}`);
 });
@@ -189,7 +189,7 @@ test("the document describes its own endpoint under meta", () => {
   const yaml = doc();
   const documented = documentedOperations(yaml);
   assert.ok(documented.has(`get ${OPENAPI_PATH}`), "GET /api/openapi.yaml is documented");
-  assert.equal(documented.size, 185, "expected 185 documented operations");
+  assert.equal(documented.size, 186, "expected 186 documented operations");
 
   const block = yaml.slice(yaml.indexOf("  /api/openapi.yaml:"), yaml.indexOf('  "/api/public/events/{slug}/cfp"'));
   assert.match(block, /tags: \[meta\]/, "tagged meta");

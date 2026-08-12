@@ -6207,6 +6207,22 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
+  /docs/api:
+    get:
+      tags: [meta]
+      operationId: get_docs_api
+      summary: "Human readable API documentation page, rendered from the OpenAPI document."
+      description: >-
+        Server rendered HTML listing every operation grouped by tag, with quick start
+        curl examples and a link to the machine readable spec. Registered in
+        publicSite.ts and requires no identity headers.
+      responses:
+        '200':
+          description: Successful response.
+          content:
+            text/html:
+              schema:
+                type: string
   "/e/{slug}/public":
     parameters:
       - name: slug

@@ -17,7 +17,8 @@ export interface Env extends CueEnv {
 const apiPath = (pathname: string) =>
   pathname === "/health" ||
   pathname === "/demo" ||
-  ["/api/", "/public/", "/embed/", "/sync/"].some((prefix) => pathname.startsWith(prefix)) ||
+  // /docs/* is the server-rendered API documentation page, not an SPA route.
+  ["/api/", "/public/", "/embed/", "/sync/", "/docs/"].some((prefix) => pathname.startsWith(prefix)) ||
   // Public widgets live under /e/:slug/public/* (SPA CFP remains /e/:slug/cfp on assets).
   /^\/e\/[^/]+\/public(?:\/|$)/.test(pathname);
 

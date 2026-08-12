@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import type { Repository } from "./domain.js";
 import { isSafeAccent, store } from "./lifecycle.js";
+import { OPENAPI_YAML } from "./openapi.js";
 import {
   agendaByDay,
   agendaDayCounts,
@@ -921,9 +922,132 @@ ${program.speakers.map((sp) => speakerXml(sp)).join("\n")}
 </program>`;
 }
 
+
+/** ---- API docs page ----------------------------------------------------
+ * A dependency-free HTML rendering of the OpenAPI document. The endpoint
+ * summary is derived once at module load from the embedded spec string, so the
+ * page never drifts from docs/openapi.yaml and costs nothing per request.
+ */
+type DocsOperation = { method: string; path: string; summary: string; tag: string };
+
+/** Minimal, tolerant scan of the spec: path lines, method lines, tag and summary. */
+export function parseOpenapiOperations(yaml: string): DocsOperation[] {
+  const ops: DocsOperation[] = [];
+  let currentPath = "";
+  let current: DocsOperation | null = null;
+  for (const line of String(yaml || "").split("\n")) {
+    const pathLine = line.match(/^ {2}("?)(\/[^"?\n]*)\1:$/);
+    if (pathLine) {
+      currentPath = pathLine[2]!;
+      current = null;
+      continue;
+    }
+    const methodLine = line.match(/^ {4}(get|post|put|patch|delete):$/);
+    if (methodLine && currentPath) {
+      current = { method: methodLine[1]!.toUpperCase(), path: currentPath, summary: "", tag: "other" };
+      ops.push(current);
+      continue;
+    }
+    if (!current) continue;
+    const tagLine = line.match(/^ {6}tags: \[([^\]]+)\]$/);
+    if (tagLine) current.tag = tagLine[1]!.trim();
+    const summaryLine = line.match(/^ {6}summary: (.*)$/);
+    if (summaryLine) {
+      const raw = summaryLine[1]!.trim();
+      try {
+        current.summary = raw.startsWith('"') ? (JSON.parse(raw) as string) : raw;
+      } catch {
+        current.summary = raw.replace(/^"|"$/g, "");
+      }
+    }
+  }
+  return ops;
+}
+
+const DOCS_OPERATIONS = parseOpenapiOperations(OPENAPI_YAML);
+
+const DOCS_CURL = [
+  ["List events", "curl -s https://cue-program-ops.headley-max.workers.dev/api/events"],
+  [
+    "List submissions (organizer persona)",
+    'curl -s -H "x-demo-role: organizer" -H "x-demo-persona: org-swyx" \\\n  https://cue-program-ops.headley-max.workers.dev/api/events/evt-ai-summit-2026/submissions',
+  ],
+  [
+    "Public program feed (no identity)",
+    "curl -s https://cue-program-ops.headley-max.workers.dev/e/ai-engineer-summit/public/feed.json",
+  ],
+];
+
+export function renderApiDocsPage() {
+  const groups = new Map<string, DocsOperation[]>();
+  for (const op of DOCS_OPERATIONS) {
+    if (!groups.has(op.tag)) groups.set(op.tag, []);
+    groups.get(op.tag)!.push(op);
+  }
+  const sections = [...groups.entries()]
+    .map(([tag, ops]) => {
+      const rows = ops
+        .slice()
+        .sort((a, b) => a.path.localeCompare(b.path) || a.method.localeCompare(b.method))
+        .map(
+          (op) =>
+            `<tr><td class="m"><code>${esc(op.method)}</code></td><td><code>${esc(op.path)}</code>` +
+            `${op.summary ? `<div class="meta">${esc(op.summary)}</div>` : ""}</td></tr>`,
+        )
+        .join("");
+      return `<section class="card"><h2>${esc(tag)} <small>${ops.length}</small></h2>
+      <table class="ops"><tbody>${rows}</tbody></table></section>`;
+    })
+    .join("");
+
+  const curl = DOCS_CURL.map(
+    ([label, cmd]) => `<div class="snippet"><div class="meta">${esc(label)}</div><pre>${esc(cmd)}</pre></div>`,
+  ).join("");
+
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>CUE API</title>
+<style>${SHARED_CSS}
+.ops{width:100%;border-collapse:collapse;font-size:13px}
+.ops td{border-top:1px solid var(--line);padding:8px 6px;vertical-align:top}
+.ops td.m{width:74px;white-space:nowrap;font-weight:700}
+.snippet{margin-top:10px}
+.snippet pre{overflow-x:auto;background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:10px;font-size:12px;white-space:pre-wrap;word-break:break-all}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+</style>
+</head>
+<body>
+<header class="top"><div class="top-inner">
+  <div class="brand">CUE API<small>Conference program operations</small></div>
+  <nav class="tabs" aria-label="API docs"><a href="/api/openapi.yaml">OpenAPI spec</a><a href="/">Demo home</a></nav>
+</div></header>
+<main>
+  <h1>CUE API</h1>
+  <p class="sub">CUE exposes a JSON API under <code>/api</code> for every workflow: events, CFP forms and submissions,
+  review rounds and assignments, speakers, tasks and deliverables, schedule and agenda, communications, CRM and one-way
+  sync. Public program feeds need no identity. Everything else uses demo identity headers
+  (<code>x-demo-role</code> and <code>x-demo-persona</code>) - persona simulation, not authentication. The full
+  machine-readable description is published as OpenAPI 3.1.</p>
+  <p><a class="btn" href="/api/openapi.yaml">Download OpenAPI 3.1 spec</a></p>
+  <section class="card"><h2>Quick start</h2>${curl}</section>
+  <p class="meta">${DOCS_OPERATIONS.length} operations across ${groups.size} groups, generated from the same document served at /api/openapi.yaml.</p>
+  ${sections}
+</main>
+<footer class="site">Powered by CUE - <a href="/api/openapi.yaml">OpenAPI 3.1</a></footer>
+</body>
+</html>`;
+}
+
 export function createPublicSite(deps: PublicSiteDeps) {
   const app = new Hono();
   const { repo } = deps;
+
+  // Human-readable API documentation: server rendered, dependency free, same
+  // style as the public widgets. The endpoint list comes from the embedded spec.
+  app.get("/docs/api", (c) => c.html(renderApiDocsPage()));
 
   const withProgram = async (key: string) => loadProgram(repo, key);
 

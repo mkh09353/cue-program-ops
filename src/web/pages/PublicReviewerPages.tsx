@@ -47,6 +47,7 @@ export function DemoLandingPage() {
     { to: `/e/${getActiveEvent().slug}/public/gallery`, label: "Speaker gallery", blurb: "Visual directory" },
     { to: `/e/${getActiveEvent().slug}/public/feed.json`, label: "JSON feed", blurb: "Machine-readable program" },
     { to: `/e/${getActiveEvent().slug}/public/ics`, label: "iCal feed", blurb: "Subscribe-friendly calendar" },
+    { to: "/docs/api", label: "API docs", blurb: "Endpoint reference + OpenAPI 3.1 spec" },
   ];
 
   const loop = [
