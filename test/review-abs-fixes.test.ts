@@ -155,7 +155,7 @@ test("ABS-14: Workers AI receives proposal and round criteria and stores provide
   }));
   assert.equal(response.status, 200);
   assert.equal(calls.length, 1);
-  assert.equal(calls[0]!.model, "@cf/meta/llama-3.1-8b-instruct");
+  assert.equal(calls[0]!.model, "@cf/meta/llama-3.1-8b-instruct-fp8");
   const prompt = String(calls[0]!.input.prompt);
   assert.match(prompt, new RegExp(sub.title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   assert.match(prompt, new RegExp(sub.abstract.slice(0, 30).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
