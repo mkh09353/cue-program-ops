@@ -34,13 +34,14 @@ function toOpenAI(body) {
       out.push(msg);
     } else {
       const blocks = Array.isArray(m.content) ? m.content : [{ type: "text", text: flat(m.content) }];
-      let userText = "";
+      const parts = [];
       for (const b of blocks) {
         if (b.type === "tool_result") out.push({ role: "tool", tool_call_id: b.tool_use_id, content: flat(b.content) || (b.is_error ? "error" : "ok") });
-        else if (b.type === "text") userText += b.text;
-        else if (b.type === "image") userText += "\n[image omitted]";
+        else if (b.type === "text") parts.push({ type: "text", text: b.text });
+        else if (b.type === "image" && b.source?.type === "base64")
+          parts.push({ type: "image_url", image_url: { url: `data:${b.source.media_type};base64,${b.source.data}` } });
       }
-      if (userText) out.push({ role: "user", content: userText });
+      if (parts.length) out.push({ role: "user", content: parts.every(p=>p.type==="text") ? parts.map(p=>p.text).join("") : parts });
     }
   }
   const req = { model: body.model, messages: out, max_tokens: body.max_tokens };
@@ -146,7 +147,31 @@ const server = http.createServer(async (req, res) => {
           res.writeHead(r.status, { "content-type": "application/json" }).end(JSON.stringify({ type: "error", error: { type: "invalid_request_error", message: text.slice(0, 800) } }));
           return;
         }
-        res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(toAnthropic(JSON.parse(text), body.model)));
+        const anth = toAnthropic(JSON.parse(text), body.model);
+        if (body.stream) {
+          // Synthesize an Anthropic SSE stream from the complete response.
+          res.writeHead(200, { "content-type": "text/event-stream" });
+          const ev = (name, data) => res.write(`event: ${name}\ndata: ${JSON.stringify(data)}\n\n`);
+          ev("message_start", { type: "message_start", message: { ...anth, content: [], stop_reason: null } });
+          anth.content.forEach((b, i) => {
+            if (b.type === "text") {
+              ev("content_block_start", { type: "content_block_start", index: i, content_block: { type: "text", text: "" } });
+              ev("content_block_delta", { type: "content_block_delta", index: i, delta: { type: "text_delta", text: b.text } });
+            } else if (b.type === "thinking") {
+              ev("content_block_start", { type: "content_block_start", index: i, content_block: { type: "thinking", thinking: "", signature: "" } });
+              ev("content_block_delta", { type: "content_block_delta", index: i, delta: { type: "thinking_delta", thinking: b.thinking } });
+            } else if (b.type === "tool_use") {
+              ev("content_block_start", { type: "content_block_start", index: i, content_block: { type: "tool_use", id: b.id, name: b.name, input: {} } });
+              ev("content_block_delta", { type: "content_block_delta", index: i, delta: { type: "input_json_delta", partial_json: JSON.stringify(b.input ?? {}) } });
+            }
+            ev("content_block_stop", { type: "content_block_stop", index: i });
+          });
+          ev("message_delta", { type: "message_delta", delta: { stop_reason: anth.stop_reason, stop_sequence: null }, usage: anth.usage });
+          ev("message_stop", { type: "message_stop" });
+          res.end();
+          return;
+        }
+        res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(anth));
         return;
       }
       res.writeHead(529, { "content-type": "application/json" }).end(JSON.stringify({ type: "error", error: { type: "overloaded_error", message: lastErr } }));

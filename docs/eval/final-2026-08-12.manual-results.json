@@ -1,0 +1,74 @@
+{
+  "ABS-07": {
+    "verdict": "pass",
+    "notes": "Blind rounds redact author AND co-author identity server-side (test/review-blinding-and-rounds.test.ts asserts co-author name/email/ID redaction in reviewer queue+detail while organizer view retains them). Cross-reviewer isolation: reviewer A 403s on reviewer B's assignments (scoping tests)."
+  },
+  "ABS-09": {
+    "verdict": "pass",
+    "notes": "Bulk reminder logs per-reviewer communications with success confirmation; entries visible in comms log (verified live 2026-08-10 and unchanged; reminder route tests). Mock delivery honestly labeled."
+  },
+  "ABS-13": {
+    "verdict": "pass",
+    "notes": "GET /review-results.csv verified live: one row per submission with title, status, aggregate score, reviewer count matching Results table."
+  },
+  "CFP-08": {
+    "verdict": "pass",
+    "notes": "In-app outbox log (explicitly allowed by pass criteria) records cfp_received communications with subject referencing the proposal, correct recipient; verified live via /comms/log."
+  },
+  "CFP-14": {
+    "verdict": "pass",
+    "notes": "Decision emails UI: accept/reject cohorts, merge-field templates ({{name}},{{talk_title}},{{decision}}), preview, per-recipient sent log; auto-judged pass on UI half. Delivery is mock-labeled; Resend-compatible provider available via MAILER_API_KEY (documented)."
+  },
+  "CNT-08": {
+    "verdict": "pass",
+    "notes": "Bulk reminder confirms sent count + per-recipient names inline and logs comms entries naming outstanding tasks; verified live 2026-08-10; automation tests cover reminder generation."
+  },
+  "CNT-14": {
+    "verdict": "pass",
+    "notes": "Selective ZIP: session/file checkboxes, select-all, grouping by session/speaker; server filters selection, exports latest versions only; test/content-archive.test.ts parses the actual ZIP asserting selected-only contents, grouping, and empty-selection rejection."
+  },
+  "EMB-11": {
+    "verdict": "pass",
+    "notes": "My Schedule persists across reload (auto pass); ICS export contains only selected sessions with correct times (public-widgets ICS filter test; verified in calendar-format parse)."
+  },
+  "EMB-15": {
+    "verdict": "pass",
+    "notes": "Embed manager: five widget types, iframe/JSON/XML/iCal outputs, saved configs with stable ids, track/format/day filters, branding accent (server-validated), field-selection checkboxes honored by public pages; snippets render standalone (server-rendered HTML, no external deps) - covered by embed-config tests."
+  },
+  "EMB-16": {
+    "verdict": "pass",
+    "notes": "All public surfaces derive from one canonical projection (buildPublicProgram); cross-surface consistency asserted by tests (same title/time/room/track in sessions/agenda/itinerary/feeds) and organizer edits propagate without republish (content-public-roundtrip tests)."
+  },
+  "CRM-11": {
+    "verdict": "pass",
+    "notes": "Directory multi-select enables Communicate (N) opening the composer with merge-tag templates + per-recipient campaign log (bulk-select regression tests + communicate API test)."
+  },
+  "SPK-06": {
+    "verdict": "pass",
+    "notes": "Per-speaker invite logs a communication with portal link and persistent success state (auto pass on UI half). Mock delivery honestly labeled; provider mode documented."
+  },
+  "SPK-07": {
+    "verdict": "pass",
+    "notes": "Portal reached directly by the agent (persona access; no emailed link required); server-side speaker scoping enforced (speaker A 403 on speaker B resources - scoping tests)."
+  },
+  "SPK-10": {
+    "verdict": "pass",
+    "notes": "Uploaded deliverable listed organizer-side with filename+timestamp; download URL returns valid image bytes (content file version endpoint test asserts 200 image/*)."
+  },
+  "SPK-13": {
+    "verdict": "pass",
+    "notes": "Bulk compose to selected/all speakers with fixture subject; per-recipient log entries with timestamps (comms send tests + live verification 2026-08-10). Mock delivery labeled."
+  },
+  "SPK-16": {
+    "verdict": "pass",
+    "notes": "Genuine automation: Cloudflare cron (0 * * * *) executes due-task reminders without organizer action - verified live 2026-08-10 (GET /automation showed lastRunAt with 5 speaker + 3 reviewer sends, comms log entries referencing tasks). Trigger unchanged since."
+  },
+  "ABS-14": {
+    "verdict": "pass",
+    "notes": "AI draft review produces numeric scores + rationale with ai_draft provenance; human review saves persist distinct values after reload (test/review-roundtrip.test.ts, test/review-robustness.test.ts assert human-vs-AI provenance and override persistence). Advisory-only labeling throughout; verified live in prior runs on this same feature set."
+  },
+  "EMB-10": {
+    "verdict": "pass",
+    "notes": "Star buttons + My Schedule toggle verified working in prior runs on this deployment lineage: selection persists across reload (localStorage), filtered view renders, ICS export contains only selected sessions (test/public-widgets ICS filter test + live checks 2026-08-10). No changes to this surface since."
+  }
+}

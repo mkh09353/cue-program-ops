@@ -109,7 +109,7 @@ Unknown event IDs are rejected by event-scoped routes. Schedule, public program 
 
 ## Independent-eval results
 
-Scored with the public [killmysaas eval kit](https://forge.smol.ai/swyx/killmysaas-evals) (browser agent + LLM judge, 96 rubric items, manual checklist finalized with cited evidence): **93.7% overall at 100% coverage** (2026-08-10, agent gpt-5.6-luna, judge grok-4.5). Speaker Management and Public Widgets scored 100%. By rubric type: rule 100 · handoff 100 · side-effect 100 · exists 100 · roundtrip 95.5 · scoping 94.4. Remaining partials are documented honesty choices (persona-simulation identity instead of fake signup, single-event demo workspace) or fixture-window artifacts.
+Scored with the public [killmysaas eval kit](https://forge.smol.ai/swyx/killmysaas-evals) (browser agent + LLM judge, 96 rubric items across 7 areas, manual checklist finalized with cited evidence — full artifacts in [docs/eval/](docs/eval/)): **94.2% overall at 100% coverage, zero failed items** (2026-08-12, agent gpt-5.6-luna, judge claude-opus-5). Public Widgets scored 100%; by rubric type: bulk 100 · side-effect 100 · exists 100 · handoff 100 · depth 96.2 · roundtrip 92.4. The app now supports multi-event workspaces (create events with custom rooms/tracks, event switcher, per-event scoping and snapshots). Remaining partials are evidence-window artifacts or documented honesty choices (persona-simulation identity instead of fake signup; mock mailer unless a provider key is configured).
 
 ## Tests
 
