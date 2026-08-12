@@ -199,7 +199,7 @@ export interface Communication {
   subject: string;
   body: string;
   kind: "acceptance" | "reminder" | "rejection" | "cfp_received" | "schedule_locked" | "custom";
-  status: "mock_sent" | "sent" | "failed";
+  status: "mock_sent" | "sent" | "logged_undeliverable" | "failed";
   ics: string;
   createdAt: string;
   submissionId?: string;

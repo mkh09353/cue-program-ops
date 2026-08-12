@@ -77,7 +77,7 @@ export interface CrmSegment {
 export interface CrmCampaignSend {
   contactId: string;
   email: string;
-  status: "mock_sent" | "sent" | "failed";
+  status: "mock_sent" | "sent" | "logged_undeliverable" | "failed";
   error?: string;
 }
 
