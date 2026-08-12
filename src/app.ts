@@ -68,7 +68,7 @@ export interface WorkersAiRunner {
   run(model: string, input: Record<string, unknown>): Promise<unknown>;
 }
 
-const WORKERS_AI_MODEL = "@cf/meta/llama-3.1-8b-instruct";
+const WORKERS_AI_MODEL = "@cf/meta/llama-3.1-8b-instruct-fp8";
 const WORKERS_AI_PROVENANCE = "ai_draft (workers-ai llama-3.1-8b)" as const;
 const HEURISTIC_AI_PROVENANCE = "ai_draft (heuristic)" as const;
 
