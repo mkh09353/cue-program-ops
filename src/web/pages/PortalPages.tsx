@@ -233,6 +233,12 @@ export function PortalTalksPage() {
             <p className="mt-1 text-sm text-mid">
               {s.category} · {s.format} · board {s.reviewBoard}
             </p>
+            {s.decisionFeedback ? (
+              <div className="mt-3 rounded-[18px] border border-line bg-soft p-3 text-sm" data-testid={`decision-feedback-${s.id}`}>
+                <b className="block">Committee feedback:</b>
+                <span className="whitespace-pre-wrap text-ink-soft">{s.decisionFeedback}</span>
+              </div>
+            ) : null}
             {s.editToken ? <Button asChild size="sm" variant="outline" className="mt-3"><a href={`/e/${getActiveEvent().slug}/cfp?submission=${s.id}&token=${s.editToken}`}>{s.status === "draft" ? "Resume draft" : "View or edit submission"}</a></Button> : null}
           </Card>
         ))}

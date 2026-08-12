@@ -19,6 +19,7 @@ import {
   readiness,
   isSafeAccent,
   resolveDemoPersona,
+  appendFeedback,
   formsOf,
   findForm,
   createEventForm,
@@ -776,18 +777,23 @@ export function createApp(deps: AppDeps = {}) {
       nextStatus?: string;
       sendComms?: boolean;
       createTasks?: boolean;
+      feedback?: string;
     };
     if (!["accepted", "rejected", "waitlisted"].includes(b.nextStatus || "")) return fail(c, "invalid decision");
     s.status = b.nextStatus as typeof s.status;
     s.round = "final";
+    // Committee feedback travels with the decision: stored on the submission, merged
+    // into the email, and surfaced on the speaker portal.
+    const feedback = String(b.feedback || "").trim();
+    if (feedback) s.decisionFeedback = feedback;
     let comm = null as ReturnType<typeof sendTemplate> | null;
     if (s.status === "accepted") {
       if (b.createTasks !== false) ensureOnboarding(s);
-      if (b.sendComms !== false) { comm = sendTemplate("accepted", s.speakerId, s.title, "acceptance"); await deliver(comm); }
+      if (b.sendComms !== false) { comm = sendTemplate("accepted", s.speakerId, s.title, "acceptance", store, { feedback: s.decisionFeedback }); await deliver(comm); }
       // Mirror into schedule engine pool so Schedule board shows the new accepted session.
       await mirrorAcceptedToSchedule(repo, s);
     } else if (s.status === "rejected" && b.sendComms !== false) {
-      comm = sendTemplate("rejected", s.speakerId, s.title, "rejection"); await deliver(comm);
+      comm = sendTemplate("rejected", s.speakerId, s.title, "rejection", store, { feedback: s.decisionFeedback }); await deliver(comm);
     }
     await persist();
     return c.json({
@@ -1003,13 +1009,13 @@ export function createApp(deps: AppDeps = {}) {
   app.post("/api/events/:eventId/comms/decisions/preview", async (c) => {
     if (actor(c) !== "organizer") return fail(c, "organizer role required", 403);
     const b=await c.req.json();const sub=store.submissions.find(s=>s.id===b.submissionId&&["accepted","rejected"].includes(s.status));if(!sub)return fail(c,"decided submission not found",404);
-    const merge=(text:string)=>text.replaceAll("{{name}}",sub.name).replaceAll("{{talk_title}}",sub.title).replaceAll("{{decision}}",sub.status);
+    const merge=(text:string)=>appendFeedback(text.replaceAll("{{name}}",sub.name).replaceAll("{{talk_title}}",sub.title).replaceAll("{{decision}}",sub.status),sub.decisionFeedback);
     return c.json({data:{submissionId:sub.id,to:sub.email,subject:merge(String(b.subject||"Decision for {{talk_title}}")),body:merge(String(b.body||"Hi {{name}}, your proposal {{talk_title}} was {{decision}}."))}});
   });
   app.post("/api/events/:eventId/comms/decisions/send", async (c) => {
     if (actor(c) !== "organizer") return fail(c, "organizer role required", 403);
     const life=store,eventId=life.event.id,b=await c.req.json(),cohorts=Array.isArray(b.cohorts)?b.cohorts:["accepted","rejected"],targets=life.submissions.filter(s=>cohorts.includes(s.status));const rows=[];
-    for(const sub of targets){const merge=(text:string)=>text.replaceAll("{{name}}",sub.name).replaceAll("{{talk_title}}",sub.title).replaceAll("{{decision}}",sub.status);const subject=merge(String(b.subject||"Decision for {{talk_title}}")),body=merge(String(b.body||"Hi {{name}}, your proposal {{talk_title}} was {{decision}}."));const result=await mailer.send({to:sub.email,subject,text:body}).catch(()=>({status:"failed" as const}));const row={id:`comm-${crypto.randomUUID()}`,speakerId:sub.speakerId,submissionId:sub.id,subject,body,kind:(sub.status==="accepted"?"acceptance":"rejection") as "acceptance"|"rejection",status:result.status,providerId:"providerId" in result?result.providerId:undefined,ics:"",createdAt:new Date().toISOString()};life.communications.unshift(row);rows.push(row)}await persist(eventId,life);return c.json({data:rows},201);
+    for(const sub of targets){const merge=(text:string)=>appendFeedback(text.replaceAll("{{name}}",sub.name).replaceAll("{{talk_title}}",sub.title).replaceAll("{{decision}}",sub.status),sub.decisionFeedback);const subject=merge(String(b.subject||"Decision for {{talk_title}}")),body=merge(String(b.body||"Hi {{name}}, your proposal {{talk_title}} was {{decision}}."));const result=await mailer.send({to:sub.email,subject,text:body}).catch(()=>({status:"failed" as const}));const row={id:`comm-${crypto.randomUUID()}`,speakerId:sub.speakerId,submissionId:sub.id,subject,body,feedback:sub.decisionFeedback||undefined,kind:(sub.status==="accepted"?"acceptance":"rejection") as "acceptance"|"rejection",status:result.status,providerId:"providerId" in result?result.providerId:undefined,ics:"",createdAt:new Date().toISOString()};life.communications.unshift(row);rows.push(row)}await persist(eventId,life);return c.json({data:rows},201);
   });
   app.post("/api/events/:eventId/comms/reminders/plan", (c) => {
     if (actor(c) !== "organizer") return fail(c, "organizer role required", 403);

@@ -81,7 +81,7 @@ Useful seeded personas include organizer **Swyx**, reviewer **Ada Reviewer**, an
 
 | Concern | Credential-free default | Optional/configured path |
 |---|---|---|
-| Runtime state | Lifecycle singleton + `MemoryRepository`; may reset on restart and differ across Worker isolates | Airtable stores one JSON event snapshot when both `AIRTABLE_TOKEN` and `AIRTABLE_BASE_ID` exist. Useful for demo recovery, not normalized, transactional, or safe multi-writer persistence |
+| Runtime state | Lifecycle singleton + `MemoryRepository`; may reset on restart and differ across Worker isolates | Airtable stores one authoritative-for-restore JSON event snapshot plus normalized `Speakers` (accepted/confirmed people) and `Sessions` automation mirrors when both `AIRTABLE_TOKEN` and `AIRTABLE_BASE_ID` exist. New rows can trigger Airtable automations; later changes upsert by `External ID`. This is not transactional or safe multi-writer persistence |
 | Mail | `MockMailer`, no external delivery; logs `mock_sent` | Resend-compatible HTTP mail when `MAILER_API_KEY` + `MAILER_FROM` exist. Provider acceptance is recorded separately from failure |
 | Reminders | Organizer-triggered planning/runs | No scheduled/background reminder automation |
 | Calendar | Downloadable ICS and optional mail attachment | This does not prove an invitation landed in a recipient calendar |
@@ -127,7 +127,7 @@ Current verified run in this working tree: **230 tests passing**. Coverage inclu
 - **Deployed:** [Cloudflare Worker live demo](https://cue-program-ops.headley-max.workers.dev), with the SPA and Hono API on one origin.
 - **Fast:** credential-free seed, no network in default mode, one-command local setup, and a six-minute mutation-based walkthrough.
 - **API:** documented public and role-scoped HTTP surface in [docs/API.md](docs/API.md).
-- **Persistence option:** Airtable snapshot adapter for demo continuity, clearly distinguished from a production database.
+- **Persistence option:** Airtable snapshot adapter for demo continuity plus automation-friendly speaker/session mirrors, clearly distinguished from a production database.
 - **Open source:** MIT license, reproducible build, tests, deployment guide and safe defaults.
 
 ## Deploy and contribute

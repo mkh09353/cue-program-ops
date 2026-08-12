@@ -68,6 +68,8 @@ export interface SpeakerInvite {
 export interface Submission {
   /** Which submission form produced this proposal (defaults to the primary form). */
   formId?: string;
+  /** Committee feedback sent to the speaker with the accept/reject decision. */
+  decisionFeedback?: string;
   id: string;
   eventId: string;
   speakerId: string;
@@ -210,6 +212,8 @@ export interface CommTemplate {
 }
 
 export interface Communication {
+  /** Committee feedback merged into this message, when the send included any. */
+  feedback?: string;
   id: string;
   speakerId: string;
   templateKey?: string;
@@ -1085,10 +1089,28 @@ export function boardForCategory(category: string) {
   return route ?? { category, boardId: category.toLowerCase(), boardLabel: `${category} board` };
 }
 
+/** Merge committee feedback into a message body.
+ *
+ * A template that declares {{feedback}} controls its own placement; otherwise the
+ * feedback is appended under a clear label so the speaker always sees who wrote it.
+ * With no feedback the placeholder is removed and the body is unchanged.
+ */
+export function appendFeedback(body: string, feedback?: string) {
+  const text = String(feedback || "").trim();
+  if (body.includes("{{feedback}}")) {
+    return body.replaceAll("{{feedback}}", text ? `${FEEDBACK_LABEL} ${text}` : "").replace(/\n{3,}/g, "\n\n").trim();
+  }
+  return text ? `${body}\n\n${FEEDBACK_LABEL} ${text}` : body;
+}
+
+/** One label for committee feedback across email, comms log and the speaker portal. */
+export const FEEDBACK_LABEL = "Feedback from the committee:";
+
 export function renderTemplate(
   tpl: CommTemplate,
-  vars: { first_name: string; talk_title: string; portal_link: string; calendar_links?: string },
+  vars: { first_name: string; talk_title: string; portal_link: string; calendar_links?: string; feedback?: string },
 ) {
+  const feedback = String(vars.feedback || "").trim();
   const calendar = tpl.includeCalendarLinks
     ? vars.calendar_links ||
       "Add to calendar: Google · Outlook · download ICS from your portal."
@@ -1097,11 +1119,14 @@ export function renderTemplate(
     subject: tpl.subject
       .replaceAll("{{first_name}}", vars.first_name)
       .replaceAll("{{talk_title}}", vars.talk_title),
-    body: tpl.body
-      .replaceAll("{{first_name}}", vars.first_name)
-      .replaceAll("{{talk_title}}", vars.talk_title)
-      .replaceAll("{{portal_link}}", vars.portal_link)
-      .replaceAll("{{calendar_links}}", calendar),
+    body: appendFeedback(
+      tpl.body
+        .replaceAll("{{first_name}}", vars.first_name)
+        .replaceAll("{{talk_title}}", vars.talk_title)
+        .replaceAll("{{portal_link}}", vars.portal_link)
+        .replaceAll("{{calendar_links}}", calendar),
+      feedback,
+    ),
   };
 }
 
@@ -1206,6 +1231,7 @@ export function sendTemplate(
   talkTitle: string,
   kind: Communication["kind"] = "custom",
   life: LifecycleStore = store,
+  options: { feedback?: string } = {},
 ) {
   const tpl = life.templates.find((t) => t.key === templateKey);
   const profile = life.profiles.find((p) => p.speakerId === speakerId);
@@ -1218,8 +1244,12 @@ export function sendTemplate(
         first_name: first,
         talk_title: talkTitle,
         portal_link: portal,
+        feedback: options.feedback,
       })
-    : { subject: "Message from CUE", body: `Hi ${first}, regarding ${talkTitle}` };
+    : {
+        subject: "Message from CUE",
+        body: appendFeedback(`Hi ${first}, regarding ${talkTitle}`, options.feedback),
+      };
   const session = life.sessions.find((s) => s.speakerId === speakerId && s.title === talkTitle);
   const icsBody = session ? icsForSession(session) || "" : "";
   const row: Communication = {
@@ -1237,6 +1267,7 @@ export function sendTemplate(
           : kind) as Communication["kind"],
     status: "mock_sent",
     ics: icsBody,
+    feedback: String(options.feedback || "").trim() || undefined,
     createdAt: now(),
   };
   life.communications.unshift(row);

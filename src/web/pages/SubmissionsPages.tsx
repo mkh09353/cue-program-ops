@@ -291,6 +291,8 @@ export function ReviewStudioPage() {
   const [err, setErr] = useState("");
   /** Set when the submission exists, but in a different event. */
   const [owner, setOwner] = useState<{ id: string; name: string } | null>(null);
+  /** Committee feedback sent with the decision (stored on the submission). */
+  const [decisionFeedback, setDecisionFeedback] = useState("");
   const [busy, setBusy] = useState(false);
   // Assignments let the studio request an AI draft before any Review row exists.
   const [assignments, setAssignments] = useState<any[]>([]);
@@ -310,6 +312,7 @@ export function ReviewStudioPage() {
       .then(([r, rr, ra]) => {
         setData(r.data);
         setAssignments(ra.data || []);
+        setDecisionFeedback((prev) => prev || r.data.decisionFeedback || "");
         const list = rr.data || [];
         setRounds(list);
         const preferred =
@@ -517,6 +520,17 @@ export function ReviewStudioPage() {
             ) : null}
           </div>
 
+          <div className="mt-3" data-testid="decision-feedback-field">
+            <Field label="Feedback to the speaker (optional)" hint="Included in the acceptance or rejection email and shown on the speaker's portal.">
+              <Textarea
+                rows={3}
+                aria-label="Feedback to the speaker"
+                placeholder="What the committee liked, and what would strengthen a future submission."
+                value={decisionFeedback}
+                onChange={(e) => setDecisionFeedback(e.target.value)}
+              />
+            </Field>
+          </div>
           {aiDraft ? (
             <div
               className="mt-3 rounded-[18px] border border-line bg-soft p-3 text-sm"
@@ -630,11 +644,12 @@ export function ReviewStudioPage() {
                     nextStatus: "accepted",
                     sendComms: true,
                     createTasks: true,
+                    feedback: decisionFeedback,
                   });
                   toast(
                     `Accepted · ${r.data.tasks?.length || 0} tasks + mock email${
                       r.data.communication ? " + ICS" : ""
-                    }`,
+                    }${decisionFeedback.trim() ? " + committee feedback" : ""}`,
                   );
                   load();
                 } catch (e: any) {
@@ -652,8 +667,8 @@ export function ReviewStudioPage() {
               onClick={async () => {
                 setBusy(true);
                 try {
-                  await api.decide(data.id, { nextStatus: "rejected", sendComms: true });
-                  toast("Rejected and mock email logged");
+                  await api.decide(data.id, { nextStatus: "rejected", sendComms: true, feedback: decisionFeedback });
+                  toast(decisionFeedback.trim() ? "Rejected · feedback included in the email" : "Rejected and mock email logged");
                   load();
                 } catch (e: any) {
                   toast(e.message, "danger");

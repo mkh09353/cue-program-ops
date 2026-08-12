@@ -791,9 +791,17 @@ test("assign-task modal exposes quick-add template chips with prefilled fields",
   const { TASK_TEMPLATES, TASK_TEMPLATE_DUE_DAYS, taskTemplateDueDate } = await import("../src/web/pages/SpeakersCommsPages.js");
   assert.deepEqual(
     TASK_TEMPLATES.map((t: any) => t.title),
-    ["Confirm participation", "Sign speaker release form", "Complete bio and profile", "Speaker details form"],
+    [
+      "Confirm participation",
+      "Sign speaker release form",
+      "Complete bio and profile",
+      "Speaker details form",
+      // Fixture logistics templates from swyx's own examples.
+      "Hotel stay requirement form",
+      "Flight reimbursement form",
+    ],
   );
-  assert.deepEqual(TASK_TEMPLATES.map((t: any) => t.type), ["confirm", "confirm", "profile", "form"]);
+  assert.deepEqual(TASK_TEMPLATES.map((t: any) => t.type), ["confirm", "confirm", "profile", "form", "form", "form"]);
   assert.ok(TASK_TEMPLATES.every((t: any) => t.description && t.description.length > 10), "descriptions are prefilled");
 
   // Deterministic relative due date in the date-input format the modal uses.
@@ -805,7 +813,7 @@ test("assign-task modal exposes quick-add template chips with prefilled fields",
 
   const page = await readFile(new URL("../src/web/pages/SpeakersCommsPages.tsx", import.meta.url), "utf8");
   assert.match(page, /setTaskForm\(\(prev\) => \(\{ \.\.\.prev, \.\.\.template, dueAt: taskTemplateDueDate\(\) \}\)\)/, "functional update avoids stale taskForm");
-  assert.match(page, /data-testid={`task-template-\$\{template\.type\}`}/);
+  assert.match(page, /data-testid={`task-template-\$\{taskTemplateId\(template\.title\)\}`}/);
 });
 
 test("speaker detail distinguishes the roster filter and explicitly persists workflow status", async () => {

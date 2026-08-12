@@ -1,4 +1,5 @@
 import { AirtableTransport } from "./airtable.js";
+import { syncNormalizedAirtableRows } from "./airtableRows.js";
 import type { ScheduleProjection, SyncLink, SyncRun, SyncRunItem } from "./domain.js";
 import type { LifecycleStore } from "./lifecycle.js";
 
@@ -86,6 +87,12 @@ export class AirtableSnapshotPersistence implements SnapshotPersistence {
   constructor(private readonly transport: AirtableTransport, private readonly table = AIRTABLE_SNAPSHOT_SCHEMA.table) {}
   async save(snapshot: CompetitionSnapshot) {
     await this.transport.upsert(this.table, [{ fields: { [AIRTABLE_SNAPSHOT_SCHEMA.fields.externalId]: snapshot.eventId, [AIRTABLE_SNAPSHOT_SCHEMA.fields.eventId]: snapshot.eventId, [AIRTABLE_SNAPSHOT_SCHEMA.fields.snapshot]: JSON.stringify(snapshot), [AIRTABLE_SNAPSHOT_SCHEMA.fields.updatedAt]: snapshot.savedAt } }]);
+    // The blob remains authoritative. Normalized mirrors are deliberately best-effort.
+    try {
+      await syncNormalizedAirtableRows(snapshot, this.transport);
+    } catch (error) {
+      console.warn("CUE Airtable normalized row sync failed", error instanceof Error ? error.message : "unknown error");
+    }
   }
   async load(eventId: string) {
     const records = await this.transport.listAll(this.table) as { fields?: Record<string, unknown> }[];

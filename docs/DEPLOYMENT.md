@@ -90,7 +90,9 @@ Selected only when `AIRTABLE_TOKEN` and `AIRTABLE_BASE_ID` are both set.
 | Startup | `restoreSnapshot()` imports the latest matching snapshot |
 | Mutation behavior | Best-effort save; error is logged and does not roll back valid in-memory mutation |
 
-This remains a secondary recovery copy—not normalized storage, transactions, or tenant isolation. D1 is the Worker's primary snapshot store.
+`CUE Snapshots` remains the only Airtable restore source. After that blob upsert succeeds, CUE also writes normalized `Speakers` and `Sessions` tables as automation-friendly mirrors. `Speakers` contains `Name`, `Email`, `Title`, `Company`, `Bio`, `Workflow Status`, `Event`, and the speaker ID in `External ID`. `Sessions` contains `Title`, `Abstract`, `Status`, `Track`, `Room`, `Starts At`, `Ends At`, comma-separated `Speakers`, `Event`, and the session ID in `External ID`. A newly accepted/confirmed speaker or new canonical session creates a row, so Airtable automations can trigger; later saves update the same row by its stable `External ID`. The normalized tables auto-create through Airtable's Metadata API when the token has `schema.bases:write`. Existing tables need only normal record access.
+
+Normalized writes are best-effort and independent per table: metadata or row failures are logged and do not invalidate a successful snapshot save, and they are not transactional with the blob or D1. CUE does not currently delete or reconcile stale mirror rows when an entity stops qualifying or disappears. D1 remains the Worker's primary snapshot store; Airtable remains a secondary recovery copy and operational mirror, not tenant-isolated production storage.
 
 ## D1 snapshot persistence
 

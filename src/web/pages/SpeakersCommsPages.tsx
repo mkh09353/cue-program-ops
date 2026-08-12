@@ -31,7 +31,24 @@ export const TASK_TEMPLATES = [
     { key: "av_needs", label: "AV needs", type: "textarea", required: false },
     { key: "arrival_date", label: "Arrival date", type: "text", required: true },
   ] },
+  // swyx's literal examples of speaker logistics tasks.
+  { title: "Hotel stay requirement form", type: "form", description: "Tell us your hotel dates and room preferences so we can book your stay.", formSchema: [
+    { key: "check_in", label: "Check-in date", type: "text", required: true },
+    { key: "check_out", label: "Check-out date", type: "text", required: true },
+    { key: "room_preference", label: "Room preference", type: "select", required: true, options: ["King", "Twin", "Accessible", "No preference"] },
+    { key: "special_requests", label: "Special requests", type: "textarea", required: false },
+  ] },
+  { title: "Flight reimbursement form", type: "form", description: "Submit your flight details so we can reimburse your travel.", formSchema: [
+    { key: "airline", label: "Airline", type: "text", required: true },
+    { key: "amount", label: "Amount to reimburse", type: "text", required: true },
+    { key: "receipt_reference", label: "Receipt reference", type: "text", required: true },
+    { key: "notes", label: "Notes", type: "textarea", required: false },
+  ] },
 ] as const;
+
+/** Stable, unique test id per template (several templates share the form type). */
+export const taskTemplateId = (title: string) =>
+  String(title).toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 
 /** Deterministic relative due date (YYYY-MM-DD), matching the date input convention. */
 export const taskTemplateDueDate = (from: Date = new Date()) =>
@@ -504,7 +521,7 @@ export function SpeakersPage() {
                   size="sm"
                   variant="outline"
                   aria-label={`Use template ${template.title}`}
-                  data-testid={`task-template-${template.type}`}
+                  data-testid={`task-template-${taskTemplateId(template.title)}`}
                   // Functional update: never capture a stale taskForm from render.
                   onClick={() => setTaskForm((prev) => ({ ...prev, ...template, dueAt: taskTemplateDueDate() }))}
                 >
@@ -1188,7 +1205,7 @@ export function CommsPage() {
           <Button size="sm" variant="outline" className="mt-2" onClick={() => comms.reload()}>Retry loading</Button>
         </Notice>
       ) : null}
-      <Card className="mb-4 p-4" id="decisions" data-testid="send-decisions-composer"><h2 className="text-lg font-bold">Send decisions — accept / reject notifications</h2><p className="text-sm text-mid">Notify accepted/rejected cohorts. Merge fields: {"{{name}}"}, {"{{talk_title}}"}, {"{{decision}}"}.</p><div className="mt-3 flex gap-4"><label><input type="checkbox" checked={decision.accepted} onChange={e=>setDecision({...decision,accepted:e.target.checked})}/> Accepted</label><label><input type="checkbox" checked={decision.rejected} onChange={e=>setDecision({...decision,rejected:e.target.checked})}/> Rejected</label></div><div className="mt-3 grid gap-3"><Field label="Decision subject"><Input value={decision.subject} onChange={e=>setDecision({...decision,subject:e.target.value})}/></Field><Field label="Decision body"><Textarea rows={5} value={decision.body} onChange={e=>setDecision({...decision,body:e.target.value})}/></Field></div><div className="flex gap-2"><Button variant="secondary" onClick={async()=>{const sub=(await api.submissions()).data.find((x:any)=>(decision.accepted&&x.status==="accepted")||(decision.rejected&&x.status==="rejected"));if(sub)setDecisionPreview((await api.previewDecision({submissionId:sub.id,subject:decision.subject,body:decision.body})).data)}}>Preview decision email</Button><Button disabled={Boolean(sendBusy)} data-testid="send-decisions" onClick={()=>void runSend("decisions","Decision emails",()=>api.sendDecisions({cohorts:[decision.accepted&&"accepted",decision.rejected&&"rejected"].filter(Boolean),subject:decision.subject,body:decision.body}))}>{sendBusy==="decisions"?"Sending…":"Send decision notifications"}</Button></div>{decisionPreview?<Notice tone="info"><b>{decisionPreview.subject}</b><pre className="mt-2 whitespace-pre-wrap text-xs">{decisionPreview.body}</pre></Notice>:null}</Card>
+      <Card className="mb-4 p-4" id="decisions" data-testid="send-decisions-composer"><h2 className="text-lg font-bold">Send decisions — accept / reject notifications</h2><p className="text-sm text-mid">Notify accepted/rejected cohorts. Merge fields: {"{{name}}"}, {"{{talk_title}}"}, {"{{decision}}"}, {"{{feedback}}"}. Per-submission committee feedback entered in Review Studio is merged automatically; add {"{{feedback}}"} to place it yourself.</p><div className="mt-3 flex gap-4"><label><input type="checkbox" checked={decision.accepted} onChange={e=>setDecision({...decision,accepted:e.target.checked})}/> Accepted</label><label><input type="checkbox" checked={decision.rejected} onChange={e=>setDecision({...decision,rejected:e.target.checked})}/> Rejected</label></div><div className="mt-3 grid gap-3"><Field label="Decision subject"><Input value={decision.subject} onChange={e=>setDecision({...decision,subject:e.target.value})}/></Field><Field label="Decision body"><Textarea rows={5} value={decision.body} onChange={e=>setDecision({...decision,body:e.target.value})}/></Field></div><div className="flex gap-2"><Button variant="secondary" onClick={async()=>{const sub=(await api.submissions()).data.find((x:any)=>(decision.accepted&&x.status==="accepted")||(decision.rejected&&x.status==="rejected"));if(sub)setDecisionPreview((await api.previewDecision({submissionId:sub.id,subject:decision.subject,body:decision.body})).data)}}>Preview decision email</Button><Button disabled={Boolean(sendBusy)} data-testid="send-decisions" onClick={()=>void runSend("decisions","Decision emails",()=>api.sendDecisions({cohorts:[decision.accepted&&"accepted",decision.rejected&&"rejected"].filter(Boolean),subject:decision.subject,body:decision.body}))}>{sendBusy==="decisions"?"Sending…":"Send decision notifications"}</Button></div>{decisionPreview?<Notice tone="info"><b>{decisionPreview.subject}</b><pre className="mt-2 whitespace-pre-wrap text-xs">{decisionPreview.body}</pre></Notice>:null}</Card>
 
       <div className="grid gap-4 lg:grid-cols-[200px_1fr_1fr]">
         <Card className="p-3">
@@ -1354,6 +1371,11 @@ export function CommsPage() {
                 </p>
                 <p className="mt-1 text-[11px] text-mid">{c.deliveryNote || (c.status === "mock_sent" ? "Mock delivery" : "")}</p>
                 {c.status === "sent" && c.providerId ? <p className="mt-1 text-[11px] font-semibold text-mid">provider id {c.providerId}</p> : null}
+                {c.feedback ? (
+                  <p className="mt-2 rounded-[10px] bg-soft p-2 text-xs" data-testid={`comm-feedback-${c.id}`}>
+                    <b>Committee feedback included:</b> <span className="whitespace-pre-wrap text-ink-soft">{c.feedback}</span>
+                  </p>
+                ) : null}
                 <p className="mt-2 line-clamp-3 whitespace-pre-wrap text-xs text-mid">{c.body}</p>
                 <a className="mt-2 inline-block text-xs font-semibold text-ink" href={`/api/communications/${c.id}/calendar.ics`}>
                   Download ICS (not calendar-push)
