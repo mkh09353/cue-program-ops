@@ -223,6 +223,7 @@ export function createBlankStore(record: EventRecord): LifecycleStore {
     // resolving; speaker personas appear as speakers are created.
     personas: structuredClone(seededStore.personas.filter((p) => p.role !== "speaker")).map((p) => ({ ...p, boardIds: p.boardIds ? ["program"] : undefined })),
     reviewerInvites: [],
+    speakerInvites: [],
     embedConfigs: [],
     automation: { enabled: true, schedule: "0 * * * *", speakerSent: 0, reviewerSent: 0, status: "never" },
   };

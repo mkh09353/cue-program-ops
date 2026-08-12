@@ -312,6 +312,7 @@ export const api = {
   updateReviewRound: (id:string,body:any) => mut(`/api/events/${EVENT_ID}/review-rounds/${id}`,{method:"PUT",body:JSON.stringify(body)}),
   inviteReviewer: (id:string,body:any) => mut(`/api/events/${EVENT_ID}/review-rounds/${id}/reviewers`,{method:"POST",body:JSON.stringify(body)}),
   issueReviewerInviteLink: (reviewerId:string,roundId:string) => mut<{data:{invitePath:string;inviteUrl:string;mode:"demo_persona_link";reviewer:Persona;roundId:string}}>(`/api/events/${EVENT_ID}/reviewers/${reviewerId}/invite-link`,{method:"POST",body:JSON.stringify({roundId})}),
+  resolveSpeakerInvite: (token:string) => req<{data:{speaker:Persona;speakerId:string;eventId:string;expiresAt?:string;mode:"speaker_access_token"}}>(`/api/public/speaker-invites/${encodeURIComponent(token)}`),
   resolveReviewerInvite: (token:string) => req<{data:{reviewer:Persona;eventId:string;roundId:string;mode:"demo_persona_link"}}>(`/api/public/reviewer-invites/${encodeURIComponent(token)}`),
   assignReviews: (body: any) => mut<{data:any[]}>(`/api/events/${EVENT_ID}/review-assignments`, { method: "POST", body: JSON.stringify(body) }),
   reviewerQueue: () => req<{data:any[]}>(`/api/events/${EVENT_ID}/reviewer-queue`),

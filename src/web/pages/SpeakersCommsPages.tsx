@@ -668,6 +668,7 @@ export function SpeakerDetailPage() {
   const [err, setErr] = useState("");
   const [edit, setEdit] = useState<any>(null);
   const [inviteMsg, setInviteMsg] = useState("");
+  const [inviteLink, setInviteLink] = useState("");
   const [headshotBusy, setHeadshotBusy] = useState(false);
   const [statusBusy, setStatusBusy] = useState(false);
   const [statusConfirmation, setStatusConfirmation] = useState("");
@@ -726,8 +727,9 @@ export function SpeakerDetailPage() {
                 try {
                   const r = await api.inviteSpeaker(row.speakerId);
                   const at = new Date().toLocaleString();
-                  const msg = `Invited · logged at ${at}`;
-                  setInviteMsg(msg);
+                  const link = (r as any)?.data?.portalUrl || (r as any)?.data?.portalPath || "";
+                  setInviteMsg(`Invited · logged at ${at}`);
+                  setInviteLink(link);
                   toast(`Portal invite logged for ${row.name}`);
                   load();
                   void r;
@@ -745,8 +747,26 @@ export function SpeakerDetailPage() {
         }
       />
       {inviteMsg ? (
-        <Notice tone="ok" onClose={() => setInviteMsg("")}>
-          {inviteMsg}
+        <Notice tone="ok" onClose={() => { setInviteMsg(""); setInviteLink(""); }}>
+          <span className="block font-semibold">{inviteMsg}</span>
+          {inviteLink ? (
+            <span className="mt-1 block" data-testid="speaker-portal-link">
+              <span className="block text-xs">Magic link emailed to the speaker:</span>
+              <Input className="mt-1" readOnly aria-label="Speaker portal access link" value={inviteLink} />
+              <Button
+                size="sm"
+                variant="secondary"
+                className="mt-2"
+                onClick={async () => { await navigator.clipboard.writeText(inviteLink); toast("Speaker portal link copied"); }}
+              >
+                Copy portal access link
+              </Button>
+              <span className="mt-2 block text-xs text-mid">
+                Per-speaker access token, not a password account. The credential-free demo persona picker also remains
+                available at /p.
+              </span>
+            </span>
+          ) : null}
         </Notice>
       ) : null}
 

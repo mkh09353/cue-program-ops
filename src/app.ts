@@ -19,6 +19,9 @@ import {
   readiness,
   isSafeAccent,
   resolveDemoPersona,
+  resolveSpeakerInvite,
+  issueSpeakerInvite,
+  speakerInvitePath,
   reviewForRound,
   reviewHistory,
   markReviewSubmitted,
@@ -268,6 +271,26 @@ export function createApp(deps: AppDeps = {}) {
     return c.json({ data: { invitePath, inviteUrl: `${new URL(c.req.url).origin}${invitePath}`, mode: "demo_persona_link", reviewer, roundId: round.id } }, 201);
   });
 
+  app.get("/api/public/speaker-invites/:token", (c) => {
+    // Same contract as the reviewer link: resolve ownership through the registry,
+    // never through whichever event happens to be active, and fail explicitly.
+    const token = c.req.param("token");
+    const owner = listEvents()
+      .map((event) => getEventStore(event.id))
+      .find((life) => life && resolveSpeakerInvite(token, life));
+    const resolved = owner && resolveSpeakerInvite(token, owner);
+    if (!owner || !resolved) return fail(c, "Speaker portal link is invalid or expired", 404);
+    return c.json({
+      data: {
+        speaker: resolved.persona,
+        speakerId: resolved.invite.speakerId,
+        eventId: resolved.invite.eventId,
+        expiresAt: resolved.invite.expiresAt,
+        mode: "speaker_access_token",
+      },
+    });
+  });
+
   app.get("/api/public/reviewer-invites/:token", (c) => {
     // Invite URLs are intentionally event-agnostic for compatibility. Resolve
     // ownership through the registry rather than whichever event was last active.
@@ -443,10 +466,28 @@ export function createApp(deps: AppDeps = {}) {
       notes: "",
       status: "assigned",
     });
-    if (requestedStatus === "submitted") { const comm=sendTemplate("cfp_received", speakerId, submission.title, "cfp_received"); await deliver(comm); }
+    // The submitter gets their own portal access token, in the response AND the
+    // confirmation email — the same per-speaker credential organizers send later.
+    const portalInvite = issueSpeakerInvite(speakerId);
+    const portalPath = portalInvite ? speakerInvitePath(portalInvite.token) : "/p";
+    const portalUrl = `${new URL(c.req.url).origin}${portalPath}`;
+    if (requestedStatus === "submitted") {
+      const comm = sendTemplate("cfp_received", speakerId, submission.title, "cfp_received");
+      if (portalInvite) {
+        comm.body = `${comm.body}\n\nAccess your speaker portal:\n${portalUrl}\n\nThis is a personal access link — do not forward it.`;
+      }
+      await deliver(comm);
+    }
     await persist();
     return c.json(
-      { data: { id, status: requestedStatus, reviewBoard: route.boardId, boardLabel: route.boardLabel, speakerId, editToken: submission.editToken, editUrl: `/e/${EVENT_SLUG}/cfp?submission=${id}&token=${submission.editToken}` } },
+      {
+        data: {
+          id, status: requestedStatus, reviewBoard: route.boardId, boardLabel: route.boardLabel, speakerId,
+          editToken: submission.editToken,
+          editUrl: `/e/${store.event.slug || EVENT_SLUG}/cfp?submission=${id}&token=${submission.editToken}`,
+          portalPath, portalUrl, portalToken: portalInvite?.token,
+        },
+      },
       201,
     );
   });

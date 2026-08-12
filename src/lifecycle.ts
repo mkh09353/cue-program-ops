@@ -53,6 +53,18 @@ export interface ReviewerInvite {
   revokedAt?: string;
 }
 
+/** Per-speaker portal access token (magic link). Mirrors ReviewerInvite: it is a
+ * real credential scoped to one speaker in one event, not a password account. */
+export interface SpeakerInvite {
+  token: string;
+  eventId: string;
+  speakerId: string;
+  email: string;
+  createdAt: string;
+  expiresAt?: string;
+  revokedAt?: string;
+}
+
 export interface Submission {
   id: string;
   eventId: string;
@@ -295,6 +307,7 @@ export interface LifecycleStore {
   boards: { id: string; label: string }[];
   personas: { id: string; role: Role; name: string; email: string; speakerId?: string; boardIds?: string[] }[];
   reviewerInvites: ReviewerInvite[];
+  speakerInvites: SpeakerInvite[];
   embedConfigs: EmbedConfig[];
   automation: AutomationState;
 }
@@ -316,6 +329,7 @@ export const RUBRIC_CRITERIA = ["relevance", "novelty", "clarity", "depth"] as c
  */
 export let store: LifecycleStore = {
   reviewerInvites: [],
+  speakerInvites: [],
   embedConfigs: [],
   automation: {enabled:true,schedule:"0 * * * *",speakerSent:0,reviewerSent:0,status:"never"},
   event: {
@@ -1321,3 +1335,59 @@ export const seededStore: LifecycleStore = store;
 
 /** Rebind the active event's lifecycle state. See the note on `store`. */
 export function setActiveStore(next: LifecycleStore) { store = next; }
+
+
+/** Days a speaker magic link stays valid. */
+export const SPEAKER_INVITE_TTL_DAYS = 30;
+
+/** The portal path a speaker magic link points at. */
+export const speakerInvitePath = (token: string) => `/p?invite=${encodeURIComponent(token)}`;
+
+/**
+ * Issue (or reuse) a speaker's portal access token.
+ *
+ * Reuses the newest live token for that speaker so a re-sent invite keeps working
+ * links valid; expired/revoked tokens are never reused.
+ */
+export function issueSpeakerInvite(speakerId: string, life: LifecycleStore = store): SpeakerInvite | undefined {
+  const profile = life.profiles.find((p) => p.speakerId === speakerId);
+  if (!profile) return undefined;
+  // A portal invite must always land somewhere: guarantee the speaker persona the
+  // link resolves to (some seeded/imported profiles have no persona row yet).
+  const persona = life.personas.find((p) => p.speakerId === speakerId && p.role === "speaker");
+  if (persona) Object.assign(persona, { name: profile.name, email: profile.email });
+  else life.personas.push({ id: speakerId, role: "speaker", name: profile.name, email: profile.email, speakerId });
+  life.speakerInvites ||= [];
+  const live = life.speakerInvites.find(
+    (x) =>
+      x.speakerId === speakerId &&
+      x.eventId === life.event.id &&
+      !x.revokedAt &&
+      (!x.expiresAt || Date.parse(x.expiresAt) > Date.now()),
+  );
+  if (live) {
+    live.email = profile.email;
+    return live;
+  }
+  const invite: SpeakerInvite = {
+    token: crypto.randomUUID(),
+    eventId: life.event.id,
+    speakerId,
+    email: profile.email,
+    createdAt: new Date().toISOString(),
+    expiresAt: new Date(Date.now() + SPEAKER_INVITE_TTL_DAYS * 86_400_000).toISOString(),
+  };
+  life.speakerInvites.push(invite);
+  return invite;
+}
+
+/** Resolve a speaker magic link within one event's store. */
+export function resolveSpeakerInvite(token: string, life: LifecycleStore) {
+  const invite = (life.speakerInvites || []).find((x) => x.token === token);
+  if (!invite || invite.eventId !== life.event.id || invite.revokedAt) return undefined;
+  if (invite.expiresAt && Date.parse(invite.expiresAt) <= Date.now()) return undefined;
+  const persona = life.personas.find((p) => p.speakerId === invite.speakerId && p.role === "speaker");
+  const profile = life.profiles.find((p) => p.speakerId === invite.speakerId);
+  if (!persona || !profile) return undefined;
+  return { invite, persona, profile };
+}

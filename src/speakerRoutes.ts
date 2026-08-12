@@ -4,6 +4,8 @@ import {
   reminderPlans,
   sendTemplate,
   type LifecycleStore,
+  issueSpeakerInvite,
+  speakerInvitePath,
 } from "./lifecycle.js";
 import type { Mailer } from "./mailer.js";
 import type { Repository } from "./domain.js";
@@ -170,6 +172,13 @@ export function createSpeakerRoutes(deps: {
     const sub = deps.store.submissions.find((s) => s.speakerId === speakerId && s.status === "accepted");
     const title = sub?.title || "your session";
     const comm = sendTemplate("accepted", speakerId, title, "acceptance", deps.store);
+    // Real per-speaker access token (same pattern as reviewer invite links).
+    const invite = issueSpeakerInvite(speakerId, deps.store);
+    const portalPath = invite ? speakerInvitePath(invite.token) : "/p";
+    const portalUrl = `${new URL(c.req.url).origin}${portalPath}`;
+    if (invite) {
+      comm.body = `${comm.body}\n\nAccess your speaker portal:\n${portalUrl}\n\nThis is a personal access link for ${profile.name} — do not forward it. It expires on ${new Date(invite.expiresAt!).toDateString()}.`;
+    }
     try {
       const result = await deps.mailer.send({ to: profile.email, subject: comm.subject, text: comm.body });
       comm.status = result.status;
@@ -177,7 +186,7 @@ export function createSpeakerRoutes(deps: {
       comm.status = "failed";
     }
     await deps.persist(deps.store.event.id, deps.store);
-    return c.json({ data: { communication: comm, portalPath: "/p" } });
+    return c.json({ data: { communication: comm, portalPath, portalUrl, mode: "speaker_access_token", expiresAt: invite?.expiresAt } });
   });
 
   app.post("/api/events/:eventId/speakers/import", async (c) => {

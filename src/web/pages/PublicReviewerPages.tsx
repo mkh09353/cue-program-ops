@@ -253,6 +253,18 @@ export function PublicCfpPage() {
         </p>
         <p className="mt-3 text-sm"><b>Reference:</b> {result.id}</p>
         <a className="mt-2 block text-sm font-semibold text-ink underline" href={result.editUrl}>View or edit this submission</a>
+        {result.portalUrl || result.portalPath ? (
+          <div className="mt-4 rounded-[18px] border border-line bg-soft p-3 text-sm" data-testid="portal-magic-link">
+            <b className="block">Access your speaker portal</b>
+            <a className="mt-1 block break-all font-semibold text-ink underline" href={result.portalPath || result.portalUrl}>
+              {result.portalUrl || result.portalPath}
+            </a>
+            <span className="mt-1 block text-xs text-mid">
+              Personal access link for {email} — we emailed it to you too. It is a per-speaker access token, not a
+              password account; the credential-free demo persona picker also remains available.
+            </span>
+          </div>
+        ) : null}
         <div className="mt-4 flex flex-wrap gap-2">
           <Button
             onClick={() => {

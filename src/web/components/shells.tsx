@@ -617,6 +617,29 @@ export function ReviewerShell() {
 }
 
 export function PortalShell() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const inviteToken = new URLSearchParams(location.search).get("invite");
+  // A speaker magic link resolves server-side to that speaker + their event BEFORE
+  // any persona fallback — identical contract to the reviewer invite link.
+  const [inviteState, setInviteState] = useState<{ done: boolean; error?: string }>({ done: !inviteToken });
+  useEffect(() => {
+    if (!inviteToken) { setInviteState({ done: true }); return; }
+    let live = true;
+    setInviteState({ done: false });
+    api
+      .resolveSpeakerInvite(inviteToken)
+      .then((r) => {
+        if (!live) return;
+        if (r.data.eventId) setActiveEventId(r.data.eventId);
+        setPersona(r.data.speaker, { explicit: true });
+        setInviteState({ done: true });
+        navigate("/p", { replace: true });
+      })
+      .catch((e) => { if (live) setInviteState({ done: true, error: e?.message || "Speaker portal link is invalid or expired" }); });
+    return () => { live = false; };
+  }, [inviteToken]);
+
   const { ready, personaKey, missing } = useRoleSync("speaker");
   const links = [
     { to: "/p", label: "Home", icon: Home, end: true },
@@ -626,7 +649,21 @@ export function PortalShell() {
     { to: "/p/resources", label: "Resources" },
     { to: "/p/profile", label: "Profile" },
   ];
-  if (!ready) {
+  if (inviteState.error) {
+    return (
+      <div className="grid min-h-screen place-items-center bg-canvas p-6">
+        <div className="max-w-md rounded-[24px] border border-line bg-paper p-6 text-center" data-testid="speaker-invite-error">
+          <h1 className="text-lg font-bold text-ink">Speaker portal link is invalid or expired</h1>
+          <p className="mt-2 text-sm text-mid">
+            Ask the organizer to resend your portal invite. Access links are personal, per-speaker tokens — we never
+            sign you in as a different speaker.
+          </p>
+          <Button asChild className="mt-4" variant="secondary"><a href="/p">Continue with the demo persona picker</a></Button>
+        </div>
+      </div>
+    );
+  }
+  if (!inviteState.done || !ready) {
     return (
       <div className="grid min-h-screen place-items-center bg-canvas text-sm text-mid">
         Restoring speaker session…
