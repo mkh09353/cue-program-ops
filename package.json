@@ -2,14 +2,15 @@
   "name": "cue-program-ops",
   "version": "0.1.0",
   "private": true,
-  "description": "CUE — open-source conference program ops: CFP → review → onboard → schedule → publish → one-way Accelevents sync",
+  "description": "CUE \u2014 open-source conference program ops: CFP \u2192 review \u2192 onboard \u2192 schedule \u2192 publish \u2192 one-way Accelevents sync",
   "license": "MIT",
   "type": "module",
   "scripts": {
     "dev": "concurrently -k \"tsx watch src/dev.ts\" \"vite\"",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.web.json",
     "build": "tsc && vite build",
-    "test": "tsx --test test/**/*.test.ts"
+    "test": "tsx --test test/**/*.test.ts",
+    "cue": "tsx cli/cue.ts"
   },
   "dependencies": {
     "@hono/node-server": "^1.19.11",
@@ -37,5 +38,8 @@
     "typescript": "^5.9.3",
     "vite": "^6.0.5",
     "wrangler": "^4.64.0"
+  },
+  "bin": {
+    "cue": "cli/cue.ts"
   }
 }

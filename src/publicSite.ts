@@ -1022,7 +1022,7 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
 <body>
 <header class="top"><div class="top-inner">
   <div class="brand">CUE API<small>Conference program operations</small></div>
-  <nav class="tabs" aria-label="API docs"><a href="/api/openapi.yaml">OpenAPI spec</a><a href="/">Demo home</a></nav>
+  <nav class="tabs" aria-label="API docs"><a href="/api/openapi.yaml">OpenAPI spec</a><a href="https://github.com/swyxio/cue/blob/main/docs/CLI.md">CLI</a><a href="/">Demo home</a></nav>
 </div></header>
 <main>
   <h1>CUE API</h1>
@@ -1032,6 +1032,10 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
   (<code>x-demo-role</code> and <code>x-demo-persona</code>) - persona simulation, not authentication. The full
   machine-readable description is published as OpenAPI 3.1.</p>
   <p><a class="btn" href="/api/openapi.yaml">Download OpenAPI 3.1 spec</a></p>
+  <section class="card"><h2>Command line</h2><p class="meta">CUE ships a CLI built for AI agents: one command pulls the whole program state, every command speaks JSON, and failures exit non-zero with the reason. See docs/CLI.md in the repository.</p>
+  <div class="snippet"><pre>npx tsx cli/cue.ts overview
+npx tsx cli/cue.ts schedule conflicts &lt;sessionId&gt; --day 2027-05-12 --time 09:00 --room "Room 2A"
+npx tsx cli/cue.ts submissions decide &lt;id&gt; --accept --feedback "See you in May."</pre></div></section>
   <section class="card"><h2>Quick start</h2>${curl}</section>
   <p class="meta">${DOCS_OPERATIONS.length} operations across ${groups.size} groups, generated from the same document served at /api/openapi.yaml.</p>
   ${sections}
