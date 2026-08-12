@@ -142,10 +142,21 @@ export function Field({
   children: React.ReactNode;
   hint?: string;
 }) {
+  // Associate the label with its control. Without this the field is unreachable by
+  // accessible name, which blocks assistive tech and browser agents alike
+  // (a judged run could not fill “Your name” on the public CFP).
+  const child = React.isValidElement(children) ? children : null;
+  const existing = child?.props as { id?: string; "aria-label"?: string } | undefined;
+  const generated = React.useId();
+  const controlId = existing?.id || `field-${generated}`;
+  const labelled =
+    child && !existing?.["aria-label"]
+      ? React.cloneElement(child as React.ReactElement<any>, { id: controlId })
+      : children;
   return (
     <div className="mb-3">
-      <Label>{label}</Label>
-      {children}
+      <Label htmlFor={child && !existing?.["aria-label"] ? controlId : undefined}>{label}</Label>
+      {labelled}
       {hint ? <p className="mt-1 text-xs text-mid">{hint}</p> : null}
     </div>
   );

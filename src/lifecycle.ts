@@ -412,7 +412,16 @@ export let store: LifecycleStore = {
       abstract: "Reliable systems patterns for creative engineering teams shipping AI products.",
       category: "Engineering",
       format: "Talk (30 min)",
-      answers: { experience: "advanced", format: "Talk (30 min)" },
+      // A seeded multi-participant proposal: co-author support must be observable
+      // even when the CFP window is closed and no new submission can be made.
+      additionalSpeakers: [
+        { id: "spk-co-marcus", name: "Marcus Okafor", email: "marcus.okafor@example.test", role: "co-author" },
+      ],
+      answers: {
+        experience: "advanced",
+        format: "Talk (30 min)",
+        additionalSpeakers: [{ name: "Marcus Okafor", email: "marcus.okafor@example.test", role: "co-author" }],
+      },
       status: "accepted",
       reviewBoard: "engineering",
       round: "final",

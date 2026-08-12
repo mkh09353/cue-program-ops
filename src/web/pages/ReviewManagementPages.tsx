@@ -132,7 +132,9 @@ function RoundEditor({ round, personas, saved }: { round: any; personas: any[]; 
   const reviewers=[...new Map(personas.filter(p=>p.role==="reviewer").map(p=>[String(p.email||p.id).trim().toLowerCase(),p])).values()];
 
   return (
-    <Card className="p-5">
+    // scroll-mt clears the sticky organizer header: without it a programmatic
+    // scrollIntoView can park the Save button underneath the header and swallow clicks.
+    <Card className="scroll-mt-24 p-5">
       <div className="grid gap-3 md:grid-cols-2">
         <Field label="Round name">
           <Input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />

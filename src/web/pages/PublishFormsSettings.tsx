@@ -519,9 +519,16 @@ export function FormsPage() {
 
   const dirty = snapshotOf(form) !== savedSnap;
 
-  const updateField = (idx: number, patch: any) => {
-    const fields = form.fields.map((f: any, i: number) => (i === idx ? { ...f, ...patch } : f));
+  /** Patch a field BY KEY. Index-based updates re-bound the wrong field's
+   * conditional visibility whenever the list shifted (a new field appended). */
+  const updateFieldByKey = (key: string, patch: any) => {
+    const fields = form.fields.map((f: any) => (f.key === key ? { ...f, ...patch } : f));
     setForm({ ...form, fields });
+  };
+  const updateField = (idx: number, patch: any) => {
+    const target = form.fields[idx];
+    if (!target) return;
+    updateFieldByKey(target.key, patch);
   };
 
   const fieldKeys = form.fields.map((f: any) => f.key);
@@ -853,17 +860,29 @@ export function FormsPage() {
                       checked={hasCondition}
                       onChange={(e) => {
                         if (e.target.checked) {
-                          const trigger = selectFields.find((x: any) => x.key !== f.key) || form.fields[0];
+                          // Prefer the Format field: binding to Track by default made a
+                          // brand-new field silently conditional on "AI Engineering".
+                          const trigger =
+                            selectFields.find((x: any) => x.key === "format" && x.key !== f.key) ||
+                            selectFields.find((x: any) => x.key !== f.key && x.key !== "category") ||
+                            selectFields.find((x: any) => x.key !== f.key);
                           const equals = (trigger?.options || ["Workshop (120 min)"])[0] || "Workshop (120 min)";
-                          updateField(idx, {
+                          updateFieldByKey(f.key, {
                             visibleWhen: { key: trigger?.key || "format", equals },
                           });
                         } else {
-                          updateField(idx, { visibleWhen: undefined });
+                          updateFieldByKey(f.key, { visibleWhen: undefined });
                         }
                       }}
                     />
                     Conditional visibility
+                    {hasCondition ? (
+                      <Badge tone="muted" data-testid={`field-condition-${f.key}`}>
+                        shown when {f.visibleWhen.key} = {f.visibleWhen.equals}
+                      </Badge>
+                    ) : (
+                      <Badge tone="ok" data-testid={`field-always-${f.key}`}>Always visible</Badge>
+                    )}
                   </label>
 
                   {hasCondition ? (
@@ -929,8 +948,10 @@ export function FormsPage() {
                   <label className="mt-2 flex items-center gap-2 text-xs">
                     <input
                       type="checkbox"
+                      data-testid={`field-required-${f.key}`}
+                      aria-label={`Required: ${f.label}`}
                       checked={!!f.required}
-                      onChange={(e) => updateField(idx, { required: e.target.checked })}
+                      onChange={(e) => updateFieldByKey(f.key, { required: e.target.checked })}
                     />
                     Required when visible
                   </label>

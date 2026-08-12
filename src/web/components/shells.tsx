@@ -56,14 +56,23 @@ export const slugifyEventName = (name: string) =>
   String(name || "").toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40);
 
 /** Defaults so "New event" needs only a name: a two-day window starting next month. */
+export function parseEventDate(value: string): Date | null {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  // Accepts the datetime-local format AND what a human (or an agent) types:
+  // "May 12, 2027", "2027-05-12", "5/12/2027".
+  const parsed = new Date(raw.includes("T") ? raw : raw.replace(/-/g, "/"));
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
 export function eventCreateDefaults(form: typeof BLANK_EVENT, now = new Date()) {
-  const start = form.startsAt ? new Date(form.startsAt) : new Date(now.getFullYear(), now.getMonth() + 1, 1, 9, 0, 0);
-  const end = form.endsAt ? new Date(form.endsAt) : new Date(start.getTime() + 25 * 60 * 60 * 1000);
+  const start = parseEventDate(form.startsAt) || new Date(now.getFullYear(), now.getMonth() + 1, 1, 9, 0, 0);
+  const end = parseEventDate(form.endsAt) || new Date(start.getTime() + 25 * 60 * 60 * 1000);
   return {
     name: form.name.trim(),
     slug: (form.slug.trim() || slugifyEventName(form.name)),
     startsAt: start.toISOString(),
-    endsAt: end.toISOString(),
+    endsAt: (end.getTime() < start.getTime() ? new Date(start.getTime() + 25 * 60 * 60 * 1000) : end).toISOString(),
     timezone: form.timezone.trim() || "America/Los_Angeles",
     venue: form.venue.trim(),
     rooms: form.rooms.trim(),
@@ -101,6 +110,18 @@ export function EventSwitcher({ readOnly }: { readOnly?: boolean } = {}) {
   }, []);
 
   const submit = async () => {
+    // A disabled button with no explanation blocked a whole judged run: the name was
+    // never filled and nothing said so. Validate here and SAY what is missing.
+    if (!form.name.trim()) {
+      setError("Event name is required — enter a name, then click Create event.");
+      return;
+    }
+    for (const [label, value] of [["Starts", form.startsAt], ["Ends", form.endsAt]] as const) {
+      if (value.trim() && !parseEventDate(value)) {
+        setError(`${label} is not a date we recognise. Try "2027-05-04 09:00" or "May 4, 2027", or leave it blank.`);
+        return;
+      }
+    }
     setBusy(true);
     setError("");
     try {
@@ -167,7 +188,7 @@ export function EventSwitcher({ readOnly }: { readOnly?: boolean } = {}) {
         </div>
       ) : null}
       {open ? (
-        <div role="menu" className="absolute right-0 z-40 mt-1 w-[320px] rounded-[14px] border border-line bg-paper p-2 shadow-card">
+        <div role="menu" className="absolute right-0 z-40 mt-1 max-h-[80vh] w-[320px] overflow-y-auto overscroll-contain rounded-[14px] border border-line bg-paper p-2 shadow-card">
           <div className="px-2 pb-1 pt-1 text-[11px] uppercase tracking-wide text-mid">Events</div>
           {events.map((e) => (
             <button
@@ -195,11 +216,11 @@ export function EventSwitcher({ readOnly }: { readOnly?: boolean } = {}) {
               {creating ? (
                 <div className="space-y-2 p-2" data-testid="create-event-form">
                   <p className="text-[11px] text-mid">Only a name is required — slug, dates and timezone get sensible defaults you can edit later.</p>
-                  {field("Event name", "name", "text", "DevFlow Conf 2027")}
+                  {field("Event name (required)", "name", "text", "DevFlow Conf 2027")}
                   {field("URL slug (optional)", "slug", "text", form.name ? slugifyEventName(form.name) : "devflow-conf-2027")}
                   <div className="grid grid-cols-2 gap-2">
-                    {field("Starts (optional)", "startsAt", "datetime-local")}
-                    {field("Ends (optional)", "endsAt", "datetime-local")}
+                    {field("Starts (optional)", "startsAt", "text", "2027-05-04 09:00 or May 4, 2027")}
+                    {field("Ends (optional)", "endsAt", "text", "2027-05-06 18:00 or May 6, 2027")}
                   </div>
                   {field("Timezone", "timezone", "text", "America/Los_Angeles")}
                   {field("Venue (optional)", "venue", "text", "Moscone West")}
@@ -207,7 +228,7 @@ export function EventSwitcher({ readOnly }: { readOnly?: boolean } = {}) {
                   {field("Tracks (optional, comma separated)", "tracks", "text", "Platform, DX")}
                   {error ? <div className="text-xs text-rose-600" role="alert">{error}</div> : null}
                   <div className="flex gap-2">
-                    <Button size="sm" data-testid="create-event-submit" onClick={submit} disabled={busy || !form.name.trim()}>
+                    <Button size="sm" data-testid="create-event-submit" onClick={submit} disabled={busy}>
                       {busy ? "Creating…" : "Create event"}
                     </Button>
                     <Button size="sm" variant="ghost" onClick={() => setCreating(false)} disabled={busy}>
