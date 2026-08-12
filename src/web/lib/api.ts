@@ -365,14 +365,17 @@ export const api = {
   form: (id = "form-cfp") => req<{ data: any }>(`/api/events/${EVENT_ID}/forms/${id}`),
   saveForm: (id: string, body: any) =>
     mut(`/api/events/${EVENT_ID}/forms/${id}`, { method: "PUT", body: JSON.stringify(body) }),
-  publicCfp: () => req<{ data: any }>(`/api/public/events/ai-engineer-summit/cfp`),
-  submitCfp: (body: any) =>
-    mut(`/api/public/events/ai-engineer-summit/submissions`, {
+  // —— Public CFP: ALWAYS slug-driven ——
+  // These endpoints are reached from /e/:slug/cfp. A hardcoded slug made a runtime
+  // event's public page render the seeded event's form, so the slug is required.
+  publicCfp: (slug: string) => req<{ data: any }>(`/api/public/events/${encodeURIComponent(slug)}/cfp`),
+  submitCfp: (slug: string, body: any) =>
+    mut(`/api/public/events/${encodeURIComponent(slug)}/submissions`, {
       method: "POST",
       body: JSON.stringify(body),
     }),
-  publicSubmission: (id:string,token:string) => req<{data:any}>(`/api/public/events/ai-engineer-summit/submissions/${id}?token=${encodeURIComponent(token)}`),
-  savePublicSubmission: (id:string,body:any) => mut<{data:any}>(`/api/public/events/ai-engineer-summit/submissions/${id}`,{method:"PUT",body:JSON.stringify(body)}),
+  publicSubmission: (slug:string,id:string,token:string) => req<{data:any}>(`/api/public/events/${encodeURIComponent(slug)}/submissions/${id}?token=${encodeURIComponent(token)}`),
+  savePublicSubmission: (slug:string,id:string,body:any) => mut<{data:any}>(`/api/public/events/${encodeURIComponent(slug)}/submissions/${id}`,{method:"PUT",body:JSON.stringify(body)}),
   editSpeakerSubmission: (id:string,body:any) => mut<{data:any}>(`/api/speaker/events/${EVENT_ID}/submissions/${id}`,{method:"PUT",body:JSON.stringify(body)}),
   speakerHome: () => req<{ data: any }>(`/api/speaker/events/${EVENT_ID}/home`),
   speakerTask: (id: string) => req<{ data: { task: any; readiness: any } }>(`/api/speaker/events/${EVENT_ID}/tasks/${id}`),

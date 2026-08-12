@@ -1,6 +1,6 @@
 import { useEffect,useMemo,useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { api, subscribeEvent } from "../lib/api";
+import { getActiveEvent, api, subscribeEvent } from "../lib/api";
 import { Badge,Button,Card,Field,Input,Notice,PageHeader,Select,Textarea,toast } from "../components/ui";
 
 /** Precise, distinct stamp for history rows: two saves in the same minute must differ. */
@@ -103,15 +103,15 @@ return <div><PageHeader title="Content" description="Deliverables, approvals, se
   <div className="mb-3 flex flex-wrap items-center gap-2 rounded-[18px] border border-line bg-soft p-3 text-sm">
     <b className="text-ink" data-testid="editor-current-title">{editing.title}</b>
     <Badge tone={editing.contentStatus==="approved"?"ok":"muted"}>{editing.contentStatus||"draft"}</Badge>
-    <a className="ml-auto font-semibold text-ink underline" href={`/e/ai-engineer-summit/public/sessions/${editing.id}`} target="_blank" rel="noreferrer">View public page ↗</a>
-    <a className="font-semibold text-ink underline" href="/e/ai-engineer-summit/public/sessions" target="_blank" rel="noreferrer">Public catalog ↗</a>
+    <a className="ml-auto font-semibold text-ink underline" href={`/e/${getActiveEvent().slug}/public/sessions/${editing.id}`} target="_blank" rel="noreferrer">View public page ↗</a>
+    <a className="font-semibold text-ink underline" href={`/e/${getActiveEvent().slug}/public/sessions`} target="_blank" rel="noreferrer">Public catalog ↗</a>
   </div>
   {savedSession&&savedSession.id===editing.id?<Notice tone="ok" onClose={()=>setSavedSession(null)}>
     <span className="block font-semibold" data-testid="session-saved-banner">{savedSession.restored?"Restored and displayed in editor":"Saved"} · title is now “{savedSession.title}”</span>
     <span className="text-xs">Approval {savedSession.contentStatus||"draft"} · saved {savedSession.at}. Approved sessions appear on the public page immediately.</span>
-    <a className="mt-1 block text-xs font-semibold text-ink underline" data-testid="saved-public-link" href={`/e/ai-engineer-summit/public/sessions/${encodeURIComponent(savedSession.id)}?t=${savedSession.stamp}`} target="_blank" rel="noreferrer">View public page (fresh) ↗</a>
-    <a className="block text-xs font-semibold text-ink underline" href={`/e/ai-engineer-summit/public/sessions?t=${savedSession.stamp}`} target="_blank" rel="noreferrer">View public catalog (fresh) ↗</a>
-    {savedSession.dayKey ? <a className="block text-xs font-semibold text-ink underline" data-testid="saved-agenda-link" href={`/e/ai-engineer-summit/public/agenda?day=${encodeURIComponent(savedSession.dayKey)}&t=${savedSession.stamp}`} target="_blank" rel="noreferrer">View public agenda for its day ↗</a> : null}
+    <a className="mt-1 block text-xs font-semibold text-ink underline" data-testid="saved-public-link" href={`/e/${getActiveEvent().slug}/public/sessions/${encodeURIComponent(savedSession.id)}?t=${savedSession.stamp}`} target="_blank" rel="noreferrer">View public page (fresh) ↗</a>
+    <a className="block text-xs font-semibold text-ink underline" href={`/e/${getActiveEvent().slug}/public/sessions?t=${savedSession.stamp}`} target="_blank" rel="noreferrer">View public catalog (fresh) ↗</a>
+    {savedSession.dayKey ? <a className="block text-xs font-semibold text-ink underline" data-testid="saved-agenda-link" href={`/e/${getActiveEvent().slug}/public/agenda?day=${encodeURIComponent(savedSession.dayKey)}&t=${savedSession.stamp}`} target="_blank" rel="noreferrer">View public agenda for its day ↗</a> : null}
   </Notice>:null}
   <div className="mb-4 rounded-[18px] border-2 border-ink bg-white p-3" data-testid="session-history-always-visible">
     <b>Change history · always visible</b><p className="text-xs text-mid">{editing.history?.length||0} timestamped save{editing.history?.length===1?"":"s"} · newest first</p>
@@ -133,7 +133,7 @@ return <div><PageHeader title="Content" description="Deliverables, approvals, se
   {savedSpeaker&&savedSpeaker.speakerId===speaker.speakerId?<Notice tone="ok" onClose={()=>setSavedSpeaker(null)}>
     <span className="block font-semibold" data-testid="speaker-saved-banner">Saved {savedSpeaker.name} at {savedSpeaker.at}</span>
     <span className="text-xs">Bio {savedSpeaker.bioLength} characters{savedSpeaker.headshot?" · headshot stored":""} · pushed to the roster and public projection.</span>
-    <a className="mt-1 block text-xs font-semibold text-ink underline" href={`/e/ai-engineer-summit/public/speakers/${encodeURIComponent(savedSpeaker.speakerId)}?t=${savedSpeaker.stamp}`} target="_blank" rel="noreferrer">View public speaker page (fresh) ↗</a>
+    <a className="mt-1 block text-xs font-semibold text-ink underline" href={`/e/${getActiveEvent().slug}/public/speakers/${encodeURIComponent(savedSpeaker.speakerId)}?t=${savedSpeaker.stamp}`} target="_blank" rel="noreferrer">View public speaker page (fresh) ↗</a>
   </Notice>:null}<Field label="Title"><Input value={speaker.title||""} onChange={e=>setSpeaker({...speaker,title:e.target.value})}/></Field><Field label="Company"><Input value={speaker.company||""} onChange={e=>setSpeaker({...speaker,company:e.target.value})}/></Field><Field label="Bio"><Textarea value={speaker.bio||""} onChange={e=>setSpeaker({...speaker,bio:e.target.value})}/></Field><Field label="Headshot"><div className="space-y-2">
   {speaker.headshotUrl?<div className="rounded-[18px] border border-line bg-soft p-3">
     {/* Large square preview: a 56px circle made any image look like a solid blob. */}

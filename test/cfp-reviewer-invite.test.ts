@@ -60,7 +60,14 @@ test("invalid demo invite fails explicitly and reviewer shell does not run fallb
   assert.match(reviewer, /resolveReviewerInvite\(inviteToken\)/);
   assert.match(reviewer, /setActiveEventId\(r\.data\.eventId\)/, "invite selects its owning event before queue redirect");
   assert.match(reviewer, /No reviewer persona was selected/);
-  assert.ok(reviewer.indexOf("resolveReviewerInvite(inviteToken)") < reviewer.indexOf('resolvePortalPersona("reviewer")') || reviewer.includes('if(!inviteToken){resolvePortalPersona("reviewer")'), "fallback is restricted to requests without an invite token");
+  // The persona fallback must stay INSIDE the no-invite branch: an invite link must
+  // never be raced by a generic reviewer fallback.
+  const guardAt = reviewer.indexOf("if(!inviteToken){");
+  const fallbackAt = reviewer.indexOf('resolvePortalPersona("reviewer")');
+  const inviteAt = reviewer.indexOf("resolveReviewerInvite(inviteToken)");
+  assert.ok(guardAt >= 0, "the no-invite branch still guards the fallback");
+  assert.ok(fallbackAt > guardAt, "fallback is restricted to requests without an invite token");
+  assert.ok(fallbackAt < inviteAt, "the fallback branch returns before the invite path runs");
 
   const settings = readFileSync(new URL("../src/web/pages/PublishFormsSettings.tsx", import.meta.url), "utf8");
   assert.match(settings, /Copy reviewer access link/);

@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { api, setPersona, setPersonaCatalog } from "../lib/api";
+import { getActiveEvent, api, setPersona, setPersonaCatalog } from "../lib/api";
 import { formatStatus } from "../lib/utils";
 import {
   Badge,
@@ -39,14 +39,14 @@ export function DemoLandingPage() {
   };
 
   const publicLinks = [
-    { to: "/e/ai-engineer-summit/cfp", label: "Public CFP", blurb: "Conditional fields, draft save, edit link" },
-    { to: "/e/ai-engineer-summit/public/sessions", label: "Sessions widget", blurb: "Published catalog + search" },
-    { to: "/e/ai-engineer-summit/public/speakers", label: "Speakers widget", blurb: "Bios + session pairing" },
-    { to: "/e/ai-engineer-summit/public/agenda", label: "Agenda grid", blurb: "Room × time by day" },
-    { to: "/e/ai-engineer-summit/public/itinerary", label: "Itinerary", blurb: "Chronological + My Schedule" },
-    { to: "/e/ai-engineer-summit/public/gallery", label: "Speaker gallery", blurb: "Visual directory" },
-    { to: "/e/ai-engineer-summit/public/feed.json", label: "JSON feed", blurb: "Machine-readable program" },
-    { to: "/e/ai-engineer-summit/public/ics", label: "iCal feed", blurb: "Subscribe-friendly calendar" },
+    { to: `/e/${getActiveEvent().slug}/cfp`, label: "Public CFP", blurb: "Conditional fields, draft save, edit link" },
+    { to: `/e/${getActiveEvent().slug}/public/sessions`, label: "Sessions widget", blurb: "Published catalog + search" },
+    { to: `/e/${getActiveEvent().slug}/public/speakers`, label: "Speakers widget", blurb: "Bios + session pairing" },
+    { to: `/e/${getActiveEvent().slug}/public/agenda`, label: "Agenda grid", blurb: "Room × time by day" },
+    { to: `/e/${getActiveEvent().slug}/public/itinerary`, label: "Itinerary", blurb: "Chronological + My Schedule" },
+    { to: `/e/${getActiveEvent().slug}/public/gallery`, label: "Speaker gallery", blurb: "Visual directory" },
+    { to: `/e/${getActiveEvent().slug}/public/feed.json`, label: "JSON feed", blurb: "Machine-readable program" },
+    { to: `/e/${getActiveEvent().slug}/public/ics`, label: "iCal feed", blurb: "Subscribe-friendly calendar" },
   ];
 
   const loop = [
@@ -204,15 +204,16 @@ export function PublicCfpPage() {
   >(null);
   const [draftBusy, setDraftBusy] = useState(false);
   const [search] = useSearchParams();
+  const { slug } = useParams();
   const nav = useNavigate();
 
   useEffect(() => {
     api
-      .publicCfp()
+      .publicCfp(slug!)
       .then(async (r) => {
         setData(r.data);
         const id=search.get("submission"),token=search.get("token");
-        if(id&&token){const saved=await api.publicSubmission(id,token);setName(saved.data.name);setEmail(saved.data.email);
+        if(id&&token){const saved=await api.publicSubmission(slug!,id,token);setName(saved.data.name);setEmail(saved.data.email);
           // Co-authors live on the submission record AND inside answers; merge both so a
           // resumed draft/edit never loses them (and always re-sends them on save).
           const storedCoAuthors=(saved.data.additionalSpeakers||[]).map((p:any)=>({name:p.name,email:p.email,role:p.role||"co-presenter"}));
@@ -320,7 +321,7 @@ export function PublicCfpPage() {
     setFieldErrors({});
     try {
       const payload = { ...answers, additionalSpeakers: answers.additionalSpeakers || [] };
-      const r = result?.editing ? await api.savePublicSubmission(result.id,{editToken:result.editToken,answers:payload,status:"submitted"}) : await api.submitCfp({ name, email, answers: payload });
+      const r = result?.editing ? await api.savePublicSubmission(slug!,result.id,{editToken:result.editToken,answers:payload,status:"submitted"}) : await api.submitCfp(slug!,{ name, email, answers: payload });
       setResult(r.data);
       toast("Proposal submitted");
     } catch (ex: any) {
@@ -340,7 +341,7 @@ export function PublicCfpPage() {
     setDraftBusy(true);
     try {
       const draftAnswers={...answers,additionalSpeakers:answers.additionalSpeakers||[]};
-      const r=result?.editing ? await api.savePublicSubmission(result.id,{editToken:result.editToken,answers:draftAnswers,status:"draft"}) : await api.submitCfp({name,email,answers:draftAnswers,status:"draft"});
+      const r=result?.editing ? await api.savePublicSubmission(slug!,result.id,{editToken:result.editToken,answers:draftAnswers,status:"draft"}) : await api.submitCfp(slug!,{name,email,answers:draftAnswers,status:"draft"});
       setResult({...r.data,editing:true,editable:true});setSaved(`Draft saved · reference ${r.data.id}`);toast("Draft saved — use this page link to resume");
       const resumeUrl=r.data.editUrl||`?submission=${r.data.id}&token=${r.data.editToken}`;
       setDraftState({status:"saved",id:r.data.id,at:new Date().toLocaleTimeString(),resumeUrl});

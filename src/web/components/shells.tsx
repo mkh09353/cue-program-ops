@@ -1,4 +1,4 @@
-import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { NavLink, Outlet, useLocation, useNavigate, useParams } from "react-router-dom";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import {
   CalendarDays,
@@ -489,9 +489,29 @@ export function ReviewerShell() {
   const persona = usePersona();
   const inviteToken = new URLSearchParams(location.search).get("invite");
   const [inviteState,setInviteState]=useState<{ready:boolean;error?:string}>({ready:!inviteToken});
+  const [noReviewers,setNoReviewers]=useState(false);
+  const activeEvent=useActiveEvent();
   useEffect(()=>{
     let active=true;
-    if(!inviteToken){resolvePortalPersona("reviewer");restorePersonaFromSession();ensurePersonaForRole("reviewer");setInviteState({ready:true});return()=>{active=false};}
+    if(!inviteToken){
+      // Resolve reviewer personas against the ACTIVE event's catalog. Without this
+      // the shell kept a persona from another event and every queue call 403'd
+      // ("reviewer role required") while demoing as a reviewer of this event.
+      setInviteState({ready:false});
+      setNoReviewers(false);
+      api.bootstrap()
+        .then((r)=>{const personas=(r.data?.personas||[]) as Persona[];if(active&&personas.length)setPersonaCatalog(personas)})
+        .catch(()=>{})
+        .finally(()=>{
+          if(!active)return;
+          restorePersonaFromSession();
+          const resolved=resolvePortalPersona("reviewer");
+          if(resolved)ensurePersonaForRole("reviewer");
+          setNoReviewers(!resolved&&!hasPersonaForRole("reviewer"));
+          setInviteState({ready:true});
+        });
+      return()=>{active=false};
+    }
     setInviteState({ready:false});
     api.resolveReviewerInvite(inviteToken).then((r)=>{
       if(!active)return;
@@ -503,13 +523,30 @@ export function ReviewerShell() {
       navigate("/r",{replace:true});
     }).catch((e)=>{if(active)setInviteState({ready:false,error:e?.message||"Reviewer demo access link is invalid"})});
     return()=>{active=false};
-  },[inviteToken]);
+  },[inviteToken,activeEvent.id]);
   const ready=inviteState.ready, personaKey=persona.id;
   if(inviteState.error){return <div className="grid min-h-screen place-items-center bg-canvas p-6"><div className="max-w-md rounded-[24px] border border-line bg-paper p-6 text-center"><h1 className="text-xl font-semibold">Reviewer demo access link unavailable</h1><p className="mt-2 text-sm text-mid">{inviteState.error}</p><p className="mt-2 text-xs text-mid">No reviewer persona was selected. Ask the organizer for a new demo access link.</p></div></div>}
   if (!ready) {
     return (
       <div className="grid min-h-screen place-items-center bg-canvas text-sm text-mid">
         Restoring reviewer session…
+      </div>
+    );
+  }
+  if (noReviewers) {
+    return (
+      <div className="grid min-h-screen place-items-center bg-canvas p-6">
+        <div className="max-w-md rounded-[24px] border border-line bg-paper p-6 text-center" data-testid="reviewer-none">
+          <h1 className="text-lg font-bold text-ink">No reviewers in this event</h1>
+          <p className="mt-2 text-sm text-mid">
+            <b>{getActiveEvent().name}</b> has no reviewer personas yet. Invite a reviewer to a review round in the
+            organizer workspace, then reload this page.
+          </p>
+          <div className="mt-4 flex flex-wrap justify-center gap-2">
+            <Button asChild variant="secondary"><a href="/app/evaluation-plan">Open Evaluation Plan</a></Button>
+            <Button asChild variant="ghost"><a href="/app">Organizer workspace</a></Button>
+          </div>
+        </div>
       </div>
     );
   }
@@ -641,6 +678,20 @@ export function PortalShell() {
 }
 
 export function PublicShell() {
+  // Public pages are SLUG-driven: the header must name the event in the URL, never
+  // the seeded constant (a runtime event rendered "AI Engineer Summit" here).
+  const { slug } = useParams();
+  const [eventName, setEventName] = useState("");
+  useEffect(() => {
+    let live = true;
+    setEventName("");
+    if (!slug) return;
+    api
+      .publicCfp(slug)
+      .then((r) => { if (live) setEventName(r.data?.event?.name || ""); })
+      .catch(() => { /* the page below renders its own error state */ });
+    return () => { live = false; };
+  }, [slug]);
   return (
     <div className="min-h-screen bg-canvas">
       <SkipLink />
@@ -648,7 +699,7 @@ export function PublicShell() {
         <div className="mx-auto flex max-w-2xl items-center justify-between px-4 py-4">
           <div>
             <div className="text-xs font-medium uppercase tracking-wider text-mid">Call for speakers</div>
-            <div className="text-base font-semibold tracking-tight text-ink">{EVENT_NAME}</div>
+            <div className="text-base font-semibold tracking-tight text-ink" data-testid="public-event-name">{eventName || slug || EVENT_NAME}</div>
           </div>
           <a className="text-sm font-medium text-ink underline-offset-2 hover:underline" href="/p">
             Speaker portal

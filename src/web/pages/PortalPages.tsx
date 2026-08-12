@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { api, getPersona, subscribeData } from "../lib/api";
+import { getActiveEvent, api, getPersona, subscribeData } from "../lib/api";
 import { calendarLinks, fmtTime, fmtTzLabel, isProfessionalEmbed, taskTypeLabel } from "../lib/utils";
 import {
   Badge,
@@ -202,7 +202,7 @@ export function PortalTalksPage() {
             </Button>
           ) : (
             <Button asChild>
-              <a href="/e/ai-engineer-summit/cfp">Start another proposal</a>
+              <a href={`/e/${getActiveEvent().slug}/cfp`}>Start another proposal</a>
             </Button>
           )
         }
@@ -232,7 +232,7 @@ export function PortalTalksPage() {
             <p className="mt-1 text-sm text-mid">
               {s.category} · {s.format} · board {s.reviewBoard}
             </p>
-            {s.editToken ? <Button asChild size="sm" variant="outline" className="mt-3"><a href={`/e/ai-engineer-summit/cfp?submission=${s.id}&token=${s.editToken}`}>{s.status === "draft" ? "Resume draft" : "View or edit submission"}</a></Button> : null}
+            {s.editToken ? <Button asChild size="sm" variant="outline" className="mt-3"><a href={`/e/${getActiveEvent().slug}/cfp?submission=${s.id}&token=${s.editToken}`}>{s.status === "draft" ? "Resume draft" : "View or edit submission"}</a></Button> : null}
           </Card>
         ))}
         {!data.submissions.length && !data.sessions?.length ? (
