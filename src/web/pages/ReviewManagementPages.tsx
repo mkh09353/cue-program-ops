@@ -838,6 +838,7 @@ export function ResultsPage() {
               <tr className="border-t" key={r.id}>
                 <td className="p-3">
                   <button type="button" className="text-left font-bold underline-offset-2 hover:underline" aria-expanded={expanded.includes(r.id)} onClick={()=>setExpanded(x=>x.includes(r.id)?x.filter(id=>id!==r.id):[...x,r.id])}>{r.title}</button>
+                  <div className="mt-1 text-xs text-mid">{(r.participants||[{name:r.name,role:"lead"},...(r.additionalSpeakers||[])]).map((p:any)=>`${p.name} (${p.role==="co-author"?"co-author":p.role==="lead"?"lead":"co-presenter"})`).join(" · ")}</div>
                 </td>
                 <td>{r.aggregateScore?.toFixed(2) || "—"} <span className="text-xs text-mid">{r.aggregateScore!=null?"/ 5 normalized":""}</span></td>
                 <td>{r.reviewerCount}</td>

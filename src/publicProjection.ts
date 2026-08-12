@@ -69,7 +69,16 @@ export type PublicProgram = {
   /** Optional per-embed card field selection (set by a saved embed config). */
   cardFields?: { speakers?: boolean; room?: boolean; track?: boolean; description?: boolean };
   /** Human-auditable publication gate shown on public pages. */
-  publicationGate: { included: { id: string; title: string }[]; excluded: { id: string; title: string }[] };
+  publicationGate: { included: PublicationGateSession[]; excluded: PublicationGateSession[] };
+};
+
+export type PublicationGateSession = {
+  id: string;
+  title: string;
+  dayKey?: string;
+  trackNames?: string[];
+  format?: string;
+  room?: string;
 };
 
 /** Generational/qualification suffixes never act as a surname. */
@@ -338,9 +347,21 @@ export function buildPublicProgram(
   const formats = [...new Set(sessions.map((s) => s.format).filter(Boolean))].sort();
   const trackNames = [...new Set(sessions.flatMap((s) => s.trackNames))].sort();
   const roomNames = [...new Set(sessions.map((s) => s.room))].sort();
+  const gateView = (session: ScheduleSession): PublicationGateSession => {
+    const slot = (schedule.slots || []).find((candidate) => candidate.sessionId === session.id);
+    const room = slot ? rooms.get(slot.roomId) : undefined;
+    return {
+      id: session.id,
+      title: session.title,
+      dayKey: slot ? dayKeyOf(slot.startsAt, timezone) : undefined,
+      trackNames: (session.trackIds || []).map((id) => tracks.get(id)?.name).filter((name): name is string => !!name),
+      format: (session as ScheduleSession & { format?: string }).format || (session.durationMinutes && session.durationMinutes >= 60 ? "Workshop" : "Talk"),
+      room: room?.name,
+    };
+  };
   const publicationGate = {
-    included: (schedule.sessions || []).filter(isPublishedSession).map((s) => ({ id: s.id, title: s.title })),
-    excluded: (schedule.sessions || []).filter((s) => !isPublishedSession(s)).map((s) => ({ id: s.id, title: s.title })),
+    included: (schedule.sessions || []).filter(isPublishedSession).map(gateView),
+    excluded: (schedule.sessions || []).filter((s) => !isPublishedSession(s)).map(gateView),
   };
 
   return {

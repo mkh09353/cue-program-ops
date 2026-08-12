@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, subscribeData } from "../lib/api";
 import { cn, formatStatus, humanizeMissing, taskTypeLabel } from "../lib/utils";
@@ -16,6 +16,7 @@ import {
   StatusBadge,
   Textarea,
   toast,
+  Select,
 } from "../components/ui";
 import { useAsyncData } from "../lib/useAsyncData";
 
@@ -71,6 +72,7 @@ const duplicateSuggestions = (rows: any[]) => {
 export function SpeakersPage() {
   const [rows, setRows] = useState<any[]>([]);
   const [progress, setProgress] = useState<any>(null);
+  const [progressFilter, setProgressFilter] = useState("all");
   const [err, setErr] = useState("");
   const [loaded, setLoaded] = useState(false);
   const [q, setQ] = useState("");
@@ -169,6 +171,10 @@ export function SpeakersPage() {
     }
   };
 
+  const progressRows = ((progress?.rows || []) as any[]).filter((r) =>
+    progressFilter === "complete" ? r.complete : progressFilter === "incomplete" ? !r.complete : true,
+  );
+
   return (
     <div>
       <PageHeader
@@ -202,9 +208,23 @@ export function SpeakersPage() {
         <Card className="mb-4 overflow-x-auto p-4">
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
             <h3 className="text-sm font-bold uppercase tracking-wide text-mid">Onboarding progress</h3>
-            <p className="text-xs text-mid">
-              {progress.summary?.ready || 0}/{progress.summary?.speakers || 0} ready · derived from live task state
-            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-xs text-mid" data-testid="progress-summary">
+                {progress.summary?.complete ?? 0} complete · {progress.summary?.incomplete ?? 0} incomplete ·{" "}
+                {progress.summary?.ready || 0}/{progress.summary?.speakers || 0} ready · every task type, live
+              </p>
+              <Select
+                className="max-w-44"
+                aria-label="Task completion filter"
+                data-testid="progress-filter"
+                value={progressFilter}
+                onChange={(e: any) => setProgressFilter(e.target.value)}
+              >
+                <option value="all">All speakers</option>
+                <option value="complete">Complete only</option>
+                <option value="incomplete">Incomplete only</option>
+              </Select>
+            </div>
           </div>
           <table className="min-w-full text-left text-xs">
             <thead>
@@ -220,7 +240,7 @@ export function SpeakersPage() {
               </tr>
             </thead>
             <tbody>
-              {(progress.rows || []).map((r: any) => (
+              {progressRows.map((r: any) => (
                 <tr key={r.speakerId} className="border-b border-line">
                   <td className="py-2 pr-3 font-semibold">
                     <Link className="text-ink hover:underline" to={`/app/speakers/${r.speakerId}`}>
@@ -230,7 +250,7 @@ export function SpeakersPage() {
                   <td className="py-2 pr-3">
                     <Badge>{r.workflowStatus}</Badge>
                   </td>
-                  <td className="py-2 pr-3">{r.readiness?.pct ?? 0}%</td>
+                  <td className="py-2 pr-3" data-testid={`progress-pct-${r.speakerId}`}>{r.percent ?? r.readiness?.pct ?? 0}%</td>
                   {(progress.columns || []).map((c: string) => {
                     const cell = r.cells?.[c];
                     return (
@@ -675,11 +695,20 @@ export function SpeakerDetailPage() {
 
   const detail = useAsyncData(async () => (await api.speakerDetail(id!)).data, [id]);
   const load = () => detail.reload();
+  /** True once the organizer has typed into THIS speaker since the last save.
+   * Any mutation anywhere calls bumpData() → refetch; without this guard the
+   * refetch overwrote in-progress edits (typed Travel preference / Dietary were
+   * discarded and the pre-edit values were saved back). */
+  const [dirty, setDirty] = useState(false);
+  const editedIdRef = useRef(id);
+  const patchEdit = (patch: any) => { setDirty(true); setEdit((prev: any) => ({ ...prev, ...patch })); };
 
   useEffect(() => {
     const r = { data: detail.data };
     if (r.data) {
         setRow(r.data);
+        if (editedIdRef.current !== id) { editedIdRef.current = id; setDirty(false); }
+        else if (dirty) { setErr(""); return; }
         setEdit({
           name: r.data.name,
           email: r.data.email,
@@ -694,7 +723,7 @@ export function SpeakerDetailPage() {
         });
       setErr("");
     }
-  }, [detail.data]);
+  }, [detail.data, id, dirty]);
 
   useEffect(() => subscribeData(() => detail.reload()), [detail.reload]);
 
@@ -785,14 +814,14 @@ export function SpeakerDetailPage() {
                         type={f.type || "text"}
                         placeholder={f.placeholder}
                         value={(edit as any)[f.key] || ""}
-                        onChange={(e) => setEdit({ ...edit, [f.key]: e.target.value })}
+                        onChange={(e) => patchEdit({ [f.key]: e.target.value })}
                       />
                     </Field>
                   ))}
                 </div>
               ))}
               <Field label="Bio">
-                <Textarea rows={4} value={edit.bio} onChange={(e) => setEdit({ ...edit, bio: e.target.value })} />
+                <Textarea rows={4} value={edit.bio} onChange={(e) => patchEdit({ bio: e.target.value })} />
               </Field>
               <Field label="Workflow status">
                 <div className="flex flex-wrap items-center gap-2">
@@ -894,8 +923,11 @@ export function SpeakerDetailPage() {
               <Button
                 onClick={async () => {
                   const { workflowStatus: _workflowStatus, ...profileFields } = edit;
-                  await api.updateSpeaker(row.speakerId, profileFields);
-                  toast("Speaker saved");
+                  const savedRow: any = await api.updateSpeaker(row.speakerId, profileFields);
+                  // Adopt the server's echo, then allow refetches to re-seed again.
+                  setDirty(false);
+                  if (savedRow?.data) setEdit((prev: any) => ({ ...prev, ...savedRow.data, workflowStatus: prev.workflowStatus }));
+                  toast(`Saved ${profileFields.name || "speaker"} · travel and dietary details stored`);
                   load();
                 }}
               >

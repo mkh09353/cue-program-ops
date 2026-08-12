@@ -29,6 +29,21 @@ test("public agenda names included and excluded session sets",async()=>{
   assert.match(html,/Included approved\/published:/);
   assert.match(html,/Excluded unapproved:/);
   assert.match(html,/data-publication-gate/);
+  const dayOne=await (await app.request("/e/ai-engineer-summit/public/agenda?day=2026-10-12")).text();
+  const gate=dayOne.match(/data-agenda-publication-gate[\s\S]*?<\/div>/)?.[0] || "";
+  assert.match(gate,/Analytical Engines in Practice/);
+  assert.match(gate,/Shipping AI Products/);
+  assert.doesNotMatch(gate,/Advanced Agents Workshop/,"another day's title is not named in the current gate");
+  assert.match(gate,/0 private sessions withheld/,"unscheduled drafts are outside this day-scoped agenda candidate set");
+
+  const made=await app.request(`/api/events/${EVENT_ID}/embed-configs`,{method:"POST",headers:org,body:JSON.stringify({name:"Product agenda",widget:"agenda",filters:{track:"Product",day:"2026-10-12"}})});
+  assert.equal(made.status,201);
+  const config=((await made.json()) as any).data;
+  const embedded=await (await app.request(`/e/ai-engineer-summit/public/agenda?config=${config.id}`)).text();
+  const embeddedGate=embedded.match(/data-agenda-publication-gate[\s\S]*?<\/div>/)?.[0] || "";
+  assert.match(embeddedGate,/Shipping AI Products/);
+  assert.doesNotMatch(embeddedGate,/Analytical Engines in Practice/);
+  assert.match(embeddedGate,/0 private sessions withheld/,"excluded count uses the same embed filter basis");
 });
 
 test("portal tasks reconcile organizer deliverables and canonical completion",()=>{

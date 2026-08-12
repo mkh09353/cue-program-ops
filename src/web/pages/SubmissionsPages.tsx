@@ -214,10 +214,7 @@ export function SubmissionsListPage() {
                       <div className="text-xs text-mid">{s.format}</div>
                     </td>
                     <td className="px-4 py-3">
-                      {s.name}
-                      {s.additionalSpeakers?.length
-                        ? s.additionalSpeakers.map((p: any) => ` + ${p.name}`).join("")
-                        : ""}
+                      {(s.participants || [{ name: s.name, role: "lead" }, ...(s.additionalSpeakers || [])]).map((p:any)=><div key={p.id||`${p.name}-${p.role}`}><span className="font-medium">{p.name}</span> <span className="text-xs text-mid">({p.role === "co-author" ? "co-author" : p.role === "lead" ? "lead" : "co-presenter"})</span></div>)}
                     </td>
                     <td className="px-4 py-3">{s.category}</td>
                     <td className="px-4 py-3">{s.reviewBoard}</td>
@@ -372,7 +369,7 @@ export function ReviewStudioPage() {
             <Badge tone="info">Board · {data.reviewBoard}</Badge>
           </div>
           <h2 className="text-2xl font-bold tracking-tight">{data.title}</h2>
-          <div className="mt-2 rounded-[18px] border border-line p-3 text-sm"><b>Speakers</b><ul className="mt-1 space-y-1"><li>{data.name} · {data.email} <Badge tone="muted">lead</Badge></li>{(data.additionalSpeakers||[]).map((p:any)=><li key={p.id}>{p.name} · {p.email} <Badge tone="muted">{p.role==="co-author"?"co-author":"co-presenter"}</Badge></li>)}</ul></div>
+          <div className="mt-2 rounded-[18px] border border-line p-3 text-sm"><b>Speakers</b><ul className="mt-1 space-y-1">{(data.participants||[{id:data.speakerId,name:data.name,email:data.email,role:"lead"},...(data.additionalSpeakers||[])]).map((p:any)=><li key={p.id}>{p.name} · {p.email} <Badge tone="muted">{p.role==="co-author"?"co-author":p.role==="lead"?"lead":"co-presenter"}</Badge></li>)}</ul></div>
           <p className="mt-4 whitespace-pre-wrap text-sm leading-relaxed text-ink-soft">{data.abstract}</p>
           {data.answers?.workshopPlan ? (
             <div className="mt-4 rounded-[18px] bg-canvas p-3 text-sm">

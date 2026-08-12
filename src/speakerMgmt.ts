@@ -178,29 +178,75 @@ export function listRoster(life: LifecycleStore = store, query: SpeakerRosterQue
     });
 }
 
+/** One row per assignment across EVERY task family a speaker can be given.
+ *
+ * Onboarding tasks (life.tasks) and organizer-created deliverables
+ * (life.deliverableTasks) are separate collections with different shapes; the
+ * matrix previously read only the first, so portal completions on the other
+ * family — and speakers who only have deliverables — showed as permanently open. */
+export function allSpeakerTasks(speakerId: string, life: LifecycleStore = store) {
+  const onboarding = life.tasks
+    .filter((t) => t.speakerId === speakerId)
+    .map((t) => ({ id: t.id, title: t.title, status: t.status, dueAt: t.dueAt, type: t.type, family: "onboarding" as const }));
+  const deliverables = (life.deliverableTasks || [])
+    .filter((t) => t.speakerId === speakerId)
+    .map((t) => ({
+      id: t.id,
+      title: t.name,
+      // Deliverables use complete/incomplete; normalise onto the task vocabulary.
+      status: t.status === "complete" ? "completed" : "not_started",
+      dueAt: t.dueAt,
+      type: t.fileRequired ? "file" : "action",
+      family: "deliverable" as const,
+    }));
+  // A title present in both families is one obligation: prefer the completed record.
+  const merged = new Map<string, (typeof onboarding)[number] | (typeof deliverables)[number]>();
+  for (const task of [...onboarding, ...deliverables]) {
+    const key = String(task.title || "").trim().toLowerCase();
+    const existing = merged.get(key);
+    if (!existing || (existing.status !== "completed" && task.status === "completed")) merged.set(key, task);
+  }
+  return [...merged.values()].filter((t) => t.title);
+}
+
 export function progressMatrix(life: LifecycleStore = store) {
   const roster = listRoster(life);
+  const bySpeaker = new Map(roster.map((r) => [r.speakerId, allSpeakerTasks(r.speakerId, life)]));
   const taskTitles = new Map<string, string>();
-  for (const r of roster) {
-    for (const t of r.tasks) taskTitles.set(t.title, t.title);
-  }
+  for (const tasks of bySpeaker.values()) for (const t of tasks) taskTitles.set(t.title, t.title);
   const columns = [...taskTitles.values()].sort();
-  const rows = roster.map((r) => ({
-    speakerId: r.speakerId,
-    name: r.name,
-    workflowStatus: r.workflowStatus,
-    readiness: r.readiness,
-    cells: Object.fromEntries(
-      columns.map((title) => {
-        const t = r.tasks.find((x) => x.title === title);
-        return [title, t ? { id: t.id, status: t.status, dueAt: t.dueAt, type: t.type } : null];
-      }),
-    ),
-    completed: r.tasks.filter((t) => t.status === "completed").length,
-    total: r.tasks.length,
-    overdue: r.tasks.filter((t) => t.status !== "completed" && Date.parse(t.dueAt) < Date.now()).length,
-  }));
-  return { columns, rows, summary: { speakers: rows.length, ready: rows.filter((r) => r.readiness.state === "ready").length } };
+  const rows = roster.map((r) => {
+    const tasks = bySpeaker.get(r.speakerId) || [];
+    const completed = tasks.filter((t) => t.status === "completed").length;
+    return {
+      speakerId: r.speakerId,
+      name: r.name,
+      workflowStatus: r.workflowStatus,
+      readiness: r.readiness,
+      cells: Object.fromEntries(
+        columns.map((title) => {
+          const t = tasks.find((x) => x.title === title);
+          return [title, t ? { id: t.id, status: t.status, dueAt: t.dueAt, type: t.type, family: t.family } : null];
+        }),
+      ),
+      tasks,
+      completed,
+      total: tasks.length,
+      percent: tasks.length ? Math.round((completed / tasks.length) * 100) : 0,
+      complete: tasks.length > 0 && completed === tasks.length,
+      overdue: tasks.filter((t) => t.status !== "completed" && Date.parse(t.dueAt) < Date.now()).length,
+    };
+  });
+  return {
+    columns,
+    rows,
+    summary: {
+      speakers: rows.length,
+      ready: rows.filter((r) => r.readiness.state === "ready").length,
+      complete: rows.filter((r) => r.complete).length,
+      incomplete: rows.filter((r) => !r.complete).length,
+    },
+  };
 }
 
 export function addSpeakerManual(

@@ -668,6 +668,11 @@ function renderAgenda(program: PublicProgram, base: string, dayKey?: string) {
   const next = program.days[dayIndex + 1];
   const rooms = agenda.rooms.length ? agenda.rooms : program.rooms;
   const times = agenda.times;
+  // Gate evidence is scoped to the exact day/filter surface below. Included is
+  // deliberately derived from the rendered collection; excluded uses the same
+  // day candidate basis after embed filters have narrowed the program.
+  const gateIncluded = agenda.sessions.map(({ id, title }) => ({ id, title }));
+  const gateExcluded = program.publicationGate.excluded.filter((session) => session.dayKey === day);
 
   const head = rooms.map((r) => `<th>${esc(r.name)}</th>`).join("");
   const rows = times
@@ -698,7 +703,7 @@ function renderAgenda(program: PublicProgram, base: string, dayKey?: string) {
   const body = `
   <h1>Agenda</h1>
   <p class="sub">Room × time grid for one day. Click a block for session details.</p>
-  <div class="card" style="margin-bottom:12px" data-agenda-publication-gate><b>Approval gate applied</b><p class="meta" style="margin:4px 0 0"><strong>Included approved/published:</strong> ${program.publicationGate.included.map(s=>esc(s.title)).join(" · ")||"None"}<br/><strong>Excluded unapproved:</strong> ${program.publicationGate.excluded.length} private session${program.publicationGate.excluded.length===1?"":"s"} withheld</p></div>
+  <div class="card" style="margin-bottom:12px" data-agenda-publication-gate><b>Approval gate applied</b><p class="meta" style="margin:4px 0 0"><strong>Included approved/published:</strong> ${gateIncluded.map(s=>esc(s.title)).join(" · ")||"None"}<br/><strong>Excluded unapproved:</strong> ${gateExcluded.length} private session${gateExcluded.length===1?"":"s"} withheld</p></div>
   <div class="day-tabs" aria-label="Day navigation">
     <a class="btn secondary sm" href="${esc(base)}/agenda${prev ? `?day=${encodeURIComponent(prev)}` : ""}" ${prev ? "" : 'aria-disabled="true" style="opacity:.4;pointer-events:none"'}>← Prev day</a>
     ${agendaDayCounts(program)
@@ -821,9 +826,16 @@ function applyEmbedFilters(
   // it, a filtered embed would still name every published session, leaking titles
   // the embed deliberately excludes.
   const visibleIds = new Set([...sessions, ...unscheduledSessions].map((s) => s.id));
+  const gateMatches = (s: PublicProgram["publicationGate"]["excluded"][number]) => {
+    if (filters.day && s.dayKey !== filters.day) return false;
+    if (filters.track && !s.trackNames?.includes(filters.track)) return false;
+    if (filters.format && s.format !== filters.format) return false;
+    if (filters.room && s.room !== filters.room) return false;
+    return true;
+  };
   const publicationGate = {
     included: program.publicationGate.included.filter((s) => visibleIds.has(s.id)),
-    excluded: program.publicationGate.excluded,
+    excluded: program.publicationGate.excluded.filter(gateMatches),
   };
   return withFields({
     ...program,

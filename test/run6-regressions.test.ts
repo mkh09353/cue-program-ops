@@ -61,6 +61,11 @@ test("ABS-11: co-authors survive the public submit and reach organizer detail", 
   const co = (detail.additionalSpeakers || []).find((p: any) => p.name === "Marcus Okafor");
   assert.ok(co, "organizer detail carries the co-author");
   assert.equal(co.role, "co-author");
+  assert.ok(detail.participants.some((p: any) => p.name === "Marcus Okafor" && p.role === "co-author"), "detail participant projection labels the role");
+  const list = (await json(await app.request(`/api/events/${EVENT_ID}/submissions`, { headers: ORG }))).data;
+  assert.ok(list.find((s: any) => s.id === sub.id).participants.some((p: any) => p.name === "Marcus Okafor" && p.role === "co-author"), "list participant projection labels the role");
+  const results = (await json(await app.request(`/api/events/${EVENT_ID}/review-results`, { headers: ORG }))).data;
+  assert.ok(results.find((s: any) => s.id === sub.id).participants.some((p: any) => p.name === "Marcus Okafor" && p.role === "co-author"), "results participant projection labels the role");
   resetEventRegistry();
 });
 
@@ -71,7 +76,10 @@ test("ABS-11: the seeded fixture proposal ships with a co-author so the case is 
   assert.ok((detail.additionalSpeakers || []).some((p: any) => p.name === "Marcus Okafor"),
     "a seeded submission demonstrates multi-participant support even with the CFP closed");
   const studio = readFileSync("src/web/pages/SubmissionsPages.tsx", "utf8");
-  assert.match(studio, /data\.additionalSpeakers\|\|\[\]/, "Review Studio renders them");
+  assert.match(studio, /data\.participants/, "Review Studio renders the canonical participant projection");
+  assert.match(studio, /co-author/, "organizer contexts visibly label co-authors");
+  const resultsPage = readFileSync("src/web/pages/ReviewManagementPages.tsx", "utf8");
+  assert.match(resultsPage, /r\.participants/, "Results rows render participant context");
   resetEventRegistry();
 });
 

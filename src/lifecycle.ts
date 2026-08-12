@@ -151,6 +151,8 @@ export interface SpeakerProfile {
   x?: string;
   website?: string;
   headshotName?: string;
+  /** Inline image (data URL) or served file URL for the speaker's headshot. */
+  headshotUrl?: string;
 }
 
 export interface SpeakerTask {

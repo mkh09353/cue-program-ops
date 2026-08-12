@@ -540,6 +540,7 @@ export function createApp(deps: AppDeps = {}) {
         avgScore: avgScore(s.id),
         reviews: reviewHistory(s.id),
         decisionEmailAt: store.communications.find(x=>x.submissionId===s.id&&(x.kind==="acceptance"||x.kind==="rejection"))?.createdAt,
+        participants: persona.role === "reviewer" ? undefined : submissionParticipants(s),
       })),
     });
   });
@@ -555,6 +556,7 @@ export function createApp(deps: AppDeps = {}) {
     return c.json({
       data: {
         ...projected,
+        participants: persona.role === "reviewer" ? undefined : submissionParticipants(s),
         reviews: reviewHistory(s.id).filter((r) => persona.role !== "reviewer" || r.reviewerId === persona.id),
         profile: persona.role === "reviewer" ? undefined : store.profiles.find((p) => p.speakerId === s.speakerId),
         avgScore: avgScore(s.id),
@@ -806,6 +808,9 @@ export function createApp(deps: AppDeps = {}) {
       speakerId?: string;
       kind?: "headshot" | "slides" | "supporting_document";
       name?: string;
+      dataUrl?: string;
+      dataBase64?: string;
+      mime?: string;
     } | null;
     if (!b?.kind || !b.name) return fail(c, "kind and name required");
     const speakerId = speakerIdOf(c);
@@ -821,7 +826,13 @@ export function createApp(deps: AppDeps = {}) {
     };
     store.files.push(f);
     const profile = store.profiles.find((p) => p.speakerId === speakerId);
-    if (b.kind === "headshot" && profile) profile.headshotName = b.name;
+    if (b.kind === "headshot" && profile) {
+      profile.headshotName = b.name;
+      // Store the actual image so the ORGANIZER roster/detail can render it. Without
+      // this the upload recorded metadata only and organizer views showed no headshot.
+      const inline = b.dataUrl || (b.dataBase64 ? `data:${b.mime || "image/png"};base64,${b.dataBase64}` : "");
+      if (inline.startsWith("data:image/")) profile.headshotUrl = inline;
+    }
     const typeMap = { headshot: "headshot", slides: "slides", supporting_document: "supporting_doc" } as const;
     const task = store.tasks.find((t) => t.speakerId === speakerId && t.type === typeMap[b.kind!]);
     if (task) task.status = "completed";
@@ -1183,6 +1194,13 @@ async function mirrorAcceptedToSchedule(repo: Repository, s: Submission) {
 
 function normalizeAdditionalSpeakers(value:unknown,previous:Submission["additionalSpeakers"]=[]) {
   return (Array.isArray(value)?value:[]).map((x:any,i)=>({id:previous[i]?.id||`spk-co-${crypto.randomUUID().slice(0,8)}`,name:String(x?.name||"").trim(),email:String(x?.email||"").trim().toLowerCase(),role:x?.role==="co-author"?"co-author" as const:"co-presenter" as const})).filter(x=>x.name&&/^\S+@\S+\.\S+$/.test(x.email));
+}
+
+function submissionParticipants(submission: Submission) {
+  return [
+    { id: submission.speakerId, name: submission.name, email: submission.email, role: "lead" as const },
+    ...(submission.additionalSpeakers || []).map((person) => ({ ...person, role: person.role || "co-presenter" as const })),
+  ];
 }
 
 export function configuredClient(env: Record<string, string | undefined>): AcceleventsClient {
