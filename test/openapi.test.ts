@@ -77,7 +77,7 @@ test("the document declares OpenAPI 3.1 with the expected envelope", () => {
   assert.match(yaml, /^ {2}title: Ruckus Conference Program Operations API$/m);
   assert.match(yaml, /^ {2}version: \d+\.\d+\.\d+$/m);
   assert.match(yaml, /^servers:$/m);
-  assert.match(yaml, /cue-program-ops\.headley-max\.workers\.dev/);
+  assert.match(yaml, /ruckus\.to/);
   assert.match(yaml, /^paths:$/m);
   assert.match(yaml, /^components:$/m);
   for (const schema of ["JsonObject", "DataEnvelope", "ErrorEnvelope"]) {

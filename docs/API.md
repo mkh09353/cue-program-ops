@@ -1,6 +1,6 @@
 # Ruckus HTTP API
 
-Base URLs: live `https://cue-program-ops.headley-max.workers.dev`; local `http://localhost:8787`.
+Base URLs: live `https://ruckus.to`; local `http://localhost:8787`.
 
 The API is implemented with Hono in `src/app.ts` and `src/*Routes.ts`. JSON bodies use `Content-Type: application/json` unless noted. Event-scoped APIs support the seeded event `evt-ai-summit-2026`; unknown event IDs return 404 where enforced.
 

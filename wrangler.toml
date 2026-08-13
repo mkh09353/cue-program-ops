@@ -1,6 +1,13 @@
 name = "cue-program-ops"
 main = "src/index.ts"
 compatibility_date = "2026-08-09"
+workers_dev = true
+
+# ruckus.to is a zone on this account; custom domains attach on deploy.
+routes = [
+  { pattern = "ruckus.to", custom_domain = true },
+  { pattern = "www.ruckus.to", custom_domain = true },
+]
 
 [triggers]
 crons = ["0 9 * * *"]

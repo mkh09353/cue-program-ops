@@ -28,7 +28,7 @@ machine-readable output**. The CLI provides all three:
 
 | Flag | Env | Default | Meaning |
 |---|---|---|---|
-| `--url` | `RUCKUS_URL` | `https://cue-program-ops.headley-max.workers.dev` | API base URL |
+| `--url` | `RUCKUS_URL` | `https://ruckus.to` | API base URL |
 | `--event` | `RUCKUS_EVENT` | `evt-ai-summit-2026` | event to operate on |
 | `--role` | `RUCKUS_ROLE` | `organizer` | demo identity role |
 | `--persona` | `RUCKUS_PERSONA` | `org-swyx` | demo persona id |

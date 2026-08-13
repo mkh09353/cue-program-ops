@@ -1004,14 +1004,14 @@ export function parseOpenapiOperations(yaml: string): DocsOperation[] {
 const DOCS_OPERATIONS = parseOpenapiOperations(OPENAPI_YAML);
 
 const DOCS_CURL = [
-  ["List events", "curl -s https://cue-program-ops.headley-max.workers.dev/api/events"],
+  ["List events", "curl -s https://ruckus.to/api/events"],
   [
     "List submissions (organizer persona)",
-    'curl -s -H "x-demo-role: organizer" -H "x-demo-persona: org-swyx" \\\n  https://cue-program-ops.headley-max.workers.dev/api/events/evt-ai-summit-2026/submissions',
+    'curl -s -H "x-demo-role: organizer" -H "x-demo-persona: org-swyx" \\\n  https://ruckus.to/api/events/evt-ai-summit-2026/submissions',
   ],
   [
     "Public program feed (no identity)",
-    "curl -s https://cue-program-ops.headley-max.workers.dev/e/ai-engineer-summit/public/feed.json",
+    "curl -s https://ruckus.to/e/ai-engineer-summit/public/feed.json",
   ],
 ];
 

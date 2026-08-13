@@ -5,7 +5,7 @@
  * the CLI must run from a clean checkout with `npx tsx cli/cue.ts`.
  */
 
-export const DEFAULT_URL = "https://cue-program-ops.headley-max.workers.dev";
+export const DEFAULT_URL = "https://ruckus.to";
 export const DEFAULT_EVENT = "evt-ai-summit-2026";
 
 export type Flags = Record<string, string | boolean | string[]>;

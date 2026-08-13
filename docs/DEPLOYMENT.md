@@ -1,6 +1,6 @@
 # Ruckus deployment and runtime configuration
 
-**Live competition deployment:** https://cue-program-ops.headley-max.workers.dev
+**Live competition deployment:** https://ruckus.to
 
 ## Local
 
@@ -154,8 +154,8 @@ npx wrangler d1 migrations apply cue-program-ops --remote
 Full endpoint/role documentation is in **[API.md](API.md)**.
 
 ```sh
-curl -s https://cue-program-ops.headley-max.workers.dev/health
-curl -s https://cue-program-ops.headley-max.workers.dev/e/ai-engineer-summit/public/feed.json | head
+curl -s https://ruckus.to/health
+curl -s https://ruckus.to/e/ai-engineer-summit/public/feed.json | head
 ```
 
 Before submission/deployment:

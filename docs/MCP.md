@@ -2,7 +2,7 @@
 
 Ruckus exposes conference program operations to AI agents using MCP Streamable HTTP over JSON-RPC 2.0, implemented at:
 
-- Hosted endpoint: `https://cue-program-ops.headley-max.workers.dev/api/mcp`
+- Hosted endpoint: `https://ruckus.to/api/mcp`
 - Local endpoint: `http://localhost:8787/api/mcp`
 - Transport: `streamable-http`
 - Discovery: `GET /.well-known/mcp.json`
@@ -15,15 +15,15 @@ The endpoint accepts plain JSON `POST` requests. It supports `initialize`, `noti
 Create a named API token from an authenticated organizer session. The plaintext is returned once; Ruckus stores only its SHA-256 hash.
 
 ```sh
-curl -X POST https://cue-program-ops.headley-max.workers.dev/api/auth/tokens \
+curl -X POST https://ruckus.to/api/auth/tokens \
   -H 'Content-Type: application/json' \
   -H 'Cookie: cue_session=YOUR_SESSION_COOKIE' \
   -d '{"name":"Claude Code"}'
 
-curl https://cue-program-ops.headley-max.workers.dev/api/auth/tokens \
+curl https://ruckus.to/api/auth/tokens \
   -H 'Cookie: cue_session=YOUR_SESSION_COOKIE'
 
-curl -X DELETE https://cue-program-ops.headley-max.workers.dev/api/auth/tokens/TOKEN_ID \
+curl -X DELETE https://ruckus.to/api/auth/tokens/TOKEN_ID \
   -H 'Cookie: cue_session=YOUR_SESSION_COOKIE'
 ```
 
@@ -36,7 +36,7 @@ For an explicitly configured demo, set `DEMO_MCP_TOKEN=cue-demo` on the server a
 Claude Code versions with remote HTTP MCP support can register the URL and bearer header directly:
 
 ```sh
-claude mcp add --transport http cue https://cue-program-ops.headley-max.workers.dev/api/mcp \
+claude mcp add --transport http cue https://ruckus.to/api/mcp \
   --header "Authorization: Bearer YOUR_TOKEN"
 ```
 
@@ -51,7 +51,7 @@ Use a Claude Desktop release that supports remote Streamable HTTP servers. Add a
   "mcpServers": {
     "cue": {
       "type": "http",
-      "url": "https://cue-program-ops.headley-max.workers.dev/api/mcp",
+      "url": "https://ruckus.to/api/mcp",
       "headers": {
         "Authorization": "Bearer YOUR_TOKEN"
       }
@@ -65,7 +65,7 @@ Configuration keys can differ between Desktop releases; the required connection 
 ### Generic MCP / JSON-RPC client
 
 ```sh
-curl -X POST https://cue-program-ops.headley-max.workers.dev/api/mcp \
+curl -X POST https://ruckus.to/api/mcp \
   -H 'Authorization: Bearer YOUR_TOKEN' \
   -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"example","version":"1"}}}'

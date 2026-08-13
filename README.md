@@ -4,7 +4,7 @@
 
 **CFP → review → speakers → content → agenda → public program → CRM → one-way Accelevents sync**
 
-[**Open the live demo**](https://cue-program-ops.headley-max.workers.dev) · [6-minute walkthrough](docs/WALKTHROUGH.md) · [API reference](docs/API.md) · [deployment guide](docs/DEPLOYMENT.md)
+[**Open the live demo**](https://ruckus.to) · [6-minute walkthrough](docs/WALKTHROUGH.md) · [API reference](docs/API.md) · [deployment guide](docs/DEPLOYMENT.md)
 
 | | |
 |---|---|
@@ -130,7 +130,7 @@ Current verified run in this working tree: **462 tests passing**. Coverage inclu
 
 ## Bonus points, deliberately visible
 
-- **Deployed:** [Cloudflare Worker live demo](https://cue-program-ops.headley-max.workers.dev), with the SPA and Hono API on one origin.
+- **Deployed:** [Cloudflare Worker live demo](https://ruckus.to), with the SPA and Hono API on one origin.
 - **Fast:** credential-free seed, no network in default mode, one-command local setup, and a six-minute mutation-based walkthrough.
 - **API:** documented public and role-scoped HTTP surface in [docs/API.md](docs/API.md).
 - **Persistence option:** Airtable snapshot adapter for demo continuity plus automation-friendly speaker/session mirrors, clearly distinguished from a production database.

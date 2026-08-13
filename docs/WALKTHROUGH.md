@@ -1,6 +1,6 @@
 # Ruckus — 6-minute competition walkthrough
 
-**Live:** https://cue-program-ops.headley-max.workers.dev
+**Live:** https://ruckus.to
 **Local:** `npm run dev`, then use the Vite URL (normally `http://localhost:5173`).
 
 The demo is credential-free and seeded. Choose **Swyx · organizer** on `/`. State is process memory by default, so use a fresh process for the most predictable path.
