@@ -57,6 +57,7 @@ import { blindSubmission } from "./review.js";
 import { createAgendaRoutes } from "./agendaRoutes.js";
 import { OPENAPI_CONTENT_TYPE, OPENAPI_PATH, OPENAPI_YAML } from "./openapi.js";
 import { authStore, createAuthRoutes, ensureSeededAuth, hydrateAuthState, renewalCookie, resolveSession, type AuthPrincipal } from "./auth.js";
+import { createMcpRoutes } from "./mcp.js";
 
 export interface AppDeps {
   repo?: Repository;
@@ -65,6 +66,7 @@ export interface AppDeps {
   mailer?: Mailer;
   ai?: WorkersAiRunner;
   demoPersonaHeaders?: boolean;
+  demoMcpToken?: string;
 }
 
 /** Narrow structural seam implemented by Cloudflare's AI binding and simple test stubs. */
@@ -280,6 +282,7 @@ export function createApp(deps: AppDeps = {}) {
   // One deps object whose `store` getter resolves the ACTIVE event per request.
   const routeDeps = { get store() { return store; }, persist, persona: personaOf, mailer, repo };
   app.route("/", createAuthRoutes({ mailer, persist: () => persist(EVENT_ID, getEventStore(EVENT_ID)!) }));
+  app.route("/", createMcpRoutes({ repo, mailer, persist: () => persist(EVENT_ID, getEventStore(EVENT_ID)!), demoToken: deps.demoMcpToken }));
   app.route("/", createSpeakerRoutes(routeDeps));
   app.route("/api/events", createReviewRoutes(routeDeps));
   app.route("/", createContentRoutes(routeDeps));

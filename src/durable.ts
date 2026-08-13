@@ -14,6 +14,7 @@ export interface CueEnv {
   MAILER_API_KEY?: string;
   MAILER_FROM?: string;
   DEMO_PERSONA_HEADERS?: string;
+  DEMO_MCP_TOKEN?: string;
   DB?: D1Database;
   AI?: { run(model: string, input: Record<string, unknown>): Promise<unknown> };
 }
@@ -35,6 +36,7 @@ export class CueState extends DurableObject<CueEnv> {
         MAILER_API_KEY: env.MAILER_API_KEY,
         MAILER_FROM: env.MAILER_FROM,
         DEMO_PERSONA_HEADERS: env.DEMO_PERSONA_HEADERS,
+        DEMO_MCP_TOKEN: env.DEMO_MCP_TOKEN,
       };
       const repo = new MemoryRepository();
       const secondary = configuredPersistence(variables);
@@ -47,6 +49,7 @@ export class CueState extends DurableObject<CueEnv> {
         mailer: configuredMailer(variables),
         ai: env.AI,
         demoPersonaHeaders: env.DEMO_PERSONA_HEADERS !== "false",
+        demoMcpToken: env.DEMO_MCP_TOKEN,
       });
       await restoreSnapshot({ repo, persistence }).catch((error) =>
         console.error("CUE Durable Object snapshot restore failed", error instanceof Error ? error.message : "unknown error"),

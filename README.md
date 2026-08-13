@@ -103,6 +103,7 @@ Restart the API for a clean built-in seed unless Airtable restoration is enabled
 CUE exposes a Hono JSON/HTML API for every major workflow, including public program feeds, organizer review/speaker/content/CRM/agenda operations, scoped speaker/reviewer operations and one-way sync history.
 
 - **Reference:** [docs/API.md](docs/API.md)
+- **MCP for AI agents:** [docs/MCP.md](docs/MCP.md) — Streamable HTTP tools for conference data, review progress, schedule warnings, task reminders, and task completion with bearer-token authentication.
 - **CLI (agentic interface):** [docs/CLI.md](docs/CLI.md) - `npx tsx cli/cue.ts overview` dumps the whole program state; every command supports `--json` and exits non-zero with the server message. Built for AI agents as first-class users: an agent can build a full agenda with `schedule view` / `conflicts` / `place`.
 - **OpenAPI 3.1:** [docs/openapi.yaml](docs/openapi.yaml) - every registered path and method, grouped by tag (generated from the route registrations). The same document is served at `GET /api/openapi.yaml`.
 - **Lifecycle source:** `src/lifecycle.ts`
@@ -125,7 +126,7 @@ npm run typecheck  # API + React TypeScript projects
 npm run build      # API compile + Vite production bundle
 ```
 
-Current verified run in this working tree: **455 tests passing**. Coverage includes authentication/session persistence, CFP drafts/deadlines/conditional routing, review scoping and rounds, speaker management, versioned content, CRM, AI agenda persistence and canonical acceptance, schedule conflicts, public widgets, providers, sync, and end-to-end round trips. Run `npm test` for the authoritative current count.
+Current verified run in this working tree: **462 tests passing**. Coverage includes authentication/session persistence, MCP protocol/tools/token revocation, CFP drafts/deadlines/conditional routing, review scoping and rounds, speaker management, versioned content, CRM, AI agenda persistence and canonical acceptance, schedule conflicts, public widgets, providers, sync, and end-to-end round trips. Run `npm test` for the authoritative current count.
 
 ## Bonus points, deliberately visible
 

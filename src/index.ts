@@ -12,12 +12,14 @@ export interface Env extends CueEnv {
   MAILER_API_KEY?: string;
   MAILER_FROM?: string;
   DEMO_PERSONA_HEADERS?: string;
+  DEMO_MCP_TOKEN?: string;
   ASSETS: { fetch(request: Request): Promise<Response> };
   CUE_STATE: DurableObjectNamespace;
 }
 const apiPath = (pathname: string) =>
   pathname === "/health" ||
   pathname === "/demo" ||
+  pathname === "/.well-known/mcp.json" ||
   // /docs/* is the server-rendered API documentation page, not an SPA route.
   ["/api/", "/public/", "/embed/", "/sync/", "/docs/"].some((prefix) => pathname.startsWith(prefix)) ||
   // Public widgets live under /e/:slug/public/* (SPA CFP remains /e/:slug/cfp on assets).
