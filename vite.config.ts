@@ -5,6 +5,7 @@ export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
+      "^/e/.*/public(/.*)?$": "http://localhost:8787",
       "/api": "http://localhost:8787",
       "/public": "http://localhost:8787",
       "/embed": "http://localhost:8787",
