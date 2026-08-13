@@ -463,7 +463,7 @@ export function OrganizerShell() {
   return (
     <div className="min-h-screen bg-canvas text-ink">
       <SkipLink />
-      <div className="mx-auto flex min-h-screen max-w-[1500px]">
+      <div className="flex min-h-screen">
         <aside className="sticky top-0 hidden h-screen w-60 shrink-0 border-r border-line bg-soft md:block">
           <div className="flex h-16 items-center border-b border-line px-4">
             <Brand />
@@ -493,9 +493,9 @@ export function OrganizerShell() {
             </div>
             <PersonaSwitcher />
           </header>
-          <main id="main" className="flex-1 p-4 sm:p-6">
+          <main id="main" className="flex-1 p-4 sm:p-6"><div className="mx-auto w-full max-w-[1400px]">
             <Outlet />
-          </main>
+          </div></main>
         </div>
       </div>
       {open ? (

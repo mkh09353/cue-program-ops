@@ -123,6 +123,29 @@ const IconSparkle = (p: IconProps) => (
   />
 );
 
+const IconMail = (p: IconProps) => (
+  <Icon
+    {...p}
+    path={
+      <>
+        <rect x="3" y="5" width="18" height="14" rx="2" />
+        <path d="M3.5 7l8.5 6 8.5-6" />
+      </>
+    }
+  />
+);
+const IconCalendar = (p: IconProps) => (
+  <Icon
+    {...p}
+    path={
+      <>
+        <rect x="3" y="5" width="18" height="16" rx="2" />
+        <path d="M3 10h18M8 3v4M16 3v4" />
+      </>
+    }
+  />
+);
+
 function Wordmark() {
   return (
     <span className="inline-flex items-center gap-2">
