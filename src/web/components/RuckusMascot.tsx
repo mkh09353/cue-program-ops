@@ -94,37 +94,14 @@ export function RuckusMascot({
 
 export function RuckusDuckMark({ className = "h-9 w-9", title = "Ruckus" }: { className?: string; title?: string }) {
   return (
-    <svg
-      viewBox="0 0 48 48"
-      className={className}
-      {...(title ? { role: "img", "aria-label": title } : { "aria-hidden": true })}
-      fill="none"
-      stroke={INK}
-      strokeWidth={1.7}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <circle cx="24" cy="24" r="24" fill={VIOLET_BADGE} stroke="none" />
-      {/* headset band, drawn behind the head so only the crown arc shows */}
-      <path d="M12.8 24C13.2 13.4 19.4 7 27 7.6 34.2 8.2 38.6 14 38.8 21.6" strokeWidth={6.6} />
-      <path d="M12.8 24C13.2 13.4 19.4 7 27 7.6 34.2 8.2 38.6 14 38.8 21.6" stroke={VIOLET} strokeWidth={4} />
-      {/* head */}
-      <circle cx="24.8" cy="23" r="12.6" fill="#FFFFFF" />
-      {/* earcup on the near side */}
-      <ellipse cx="37.4" cy="23.4" rx="4.1" ry="5.4" fill={VIOLET} />
-      {/* mic arm curving toward the bill */}
-      <path d="M36 28.6C34.2 33.4 29.4 35.8 24.6 35" strokeWidth={2.6} />
-      <path d="M36 28.6C34.2 33.4 29.4 35.8 24.6 35" stroke={VIOLET} strokeWidth={1.2} />
-      <circle cx="24" cy="34.8" r="1.6" fill={VIOLET} strokeWidth={1.5} />
-      {/* open bill: mouth cavity between two purple mandibles */}
-      <path d="M20 28 8.4 31 10.8 34.4 20 32.2Z" fill={INK} />
-      <path d="M19.6 21.6C14.4 23.4 9.4 26.2 6.6 28.4c-1.1 0.9-0.5 2.6 0.9 2.8l12.4-2.4z" fill={VIOLET} />
-      <path d="M20.2 31 9.6 34.8c-1.2 0.5-0.8 2.4 0.6 2.6 4.2 0.4 8-1 11.2-3.4z" fill={VIOLET} />
-      {/* raised brow + big eye */}
-      <path d="M25.2 17.4c1.7-1.3 4.4-1.4 6-0.2" strokeWidth={2} />
-      <ellipse cx="28" cy="23.2" rx="3.5" ry="4.1" fill={INK} stroke="none" />
-      <circle cx="29.2" cy="21.6" r="1.4" fill="#FFFFFF" stroke="none" />
-    </svg>
+    <img
+      src="/ruckus-head.webp"
+      className={`${className} select-none object-contain`}
+      draggable={false}
+      {...(title ? { alt: title } : { alt: "", "aria-hidden": true })}
+      width={256}
+      height={256}
+    />
   );
 }
 
