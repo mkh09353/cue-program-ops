@@ -67,13 +67,16 @@ export function DemoLandingPage() {
         </h1>
         <p className="mt-4 max-w-2xl text-lg text-mid">
           Open-source path for <b>{eventName}</b>: CFP → review → onboard → schedule → publish → Accelevents.
-          Credential-free demo with persona simulation (not production auth). State lives in process memory unless
-          optional Airtable snapshot restore is configured.
+          Jump straight in with the persona picker, or use an emailed magic link — no passwords by design. State is
+          durable: Durable Object + Cloudflare D1, mirrored to Airtable.
         </p>
 
         <div className="mt-6 flex flex-wrap gap-2">
-          <Badge tone="primary">Demo · no login</Badge>
-          <Badge tone="muted">Mock mailer default</Badge>
+          <Badge tone="primary">No passwords · magic links</Badge>
+          <Badge tone="muted">Real email via Resend</Badge>
+          <Badge tone="muted">D1 + Airtable persistence</Badge>
+          <Badge tone="muted">Workers AI review drafts</Badge>
+          <Badge tone="muted">Agent CLI + OpenAPI</Badge>
           <Badge tone="muted">Accelevents one-way mock</Badge>
         </div>
 
@@ -173,12 +176,13 @@ export function DemoLandingPage() {
             </ol>
           </Card>
           <Card className="p-5">
-            <h2 className="text-xs font-medium uppercase tracking-wide text-mid">Honest defaults</h2>
+            <h2 className="text-xs font-medium uppercase tracking-wide text-mid">How this demo runs</h2>
             <ul className="mt-3 space-y-2 text-sm text-ink-soft">
-              <li>Identity is header/persona simulation — not multi-tenant auth.</li>
-              <li>Mailer is mock unless a Resend-compatible endpoint is configured.</li>
-              <li>Accelevents sync is one-way mock; live HTTP is placeholder.</li>
-              <li>Memory resets on Worker restart; optional Airtable snapshot for demo recovery only.</li>
+              <li>Identity: credential-free persona picker plus real per-person magic links (emailed access tokens for speakers and reviewers) — no password accounts by design.</li>
+              <li>Email: LIVE provider delivery via Resend — invites, magic links, decision notices, and reminders really send; per-recipient provider IDs are logged. (Mock mailer is the safe default when no key is configured.)</li>
+              <li>Persistence: durable — Durable Object + Cloudflare D1 write-through, mirrored to Airtable (snapshot blob for restore plus normalized Speakers/Sessions rows for automations).</li>
+              <li>AI review drafts: real Workers AI (llama-3.1-8b) with provenance labels; deterministic heuristic fallback. Always advisory.</li>
+              <li>Accelevents sync remains a one-way mock by default; live HTTP mappings are placeholders until validated against the real contract.</li>
             </ul>
           </Card>
         </section>
