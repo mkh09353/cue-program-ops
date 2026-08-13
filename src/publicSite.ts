@@ -66,73 +66,99 @@ function fmtDayLabel(dayKey: string, timeZone: string) {
 }
 
 const SHARED_CSS = `
-:root{color-scheme:light;--ink:#0a0a0a;--ink-soft:#171717;--mid:#737373;--line:#e5e5e5;--bg:#f5f5f5;--soft:#fafafa;--card:#ffffff;--danger:#e7000b;--radius:24px;--radius-pill:18px;--shadow:0 0 0 1px rgba(23,23,23,0.05),0 1px 3px rgba(0,0,0,0.1),0 1px 2px -1px rgba(0,0,0,0.1)}
-*{box-sizing:border-box}html,body{margin:0;padding:0;font-family:Geist,ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--ink);line-height:1.43;font-size:14px;font-weight:400;-webkit-font-smoothing:antialiased}
+/* Ruckus Brand Paper for embeds — see docs/DESIGN.md.
+   Every brand surface derives from --accent, so an organizer's embed accent
+   (injected by withAccent() as a :root override) repaints the whole widget with
+   no per-selector rules. Defaults are the Ruckus violet; --accent-strong is used
+   for text/links so contrast on white stays AA (#6d28d9 ≈ 6.8:1). */
+:root{color-scheme:light;--ink:#0a0a0a;--ink-soft:#171717;--mid:#737373;--muted:#737373;--line:#e5e5e5;--bg:#f5f5f5;--soft:#fafafa;--card:#ffffff;--danger:#e7000b;--accent:#7c3aed;--accent-strong:#6d28d9;--accent-soft:#f5f3ff;--accent-line:#ddd6fe;--accent-contrast:#ffffff;--ok:#047857;--ok-soft:#ecfdf5;--ok-line:#a7f3d0;--warn:#92400e;--warn-soft:#fffbeb;--warn-line:#fde68a;--radius:24px;--radius-pill:999px;--radius-block:14px;--shadow:0 1px 2px rgba(10,10,10,.06);--shadow-card:0 0 0 1px rgba(23,23,23,0.05),0 1px 3px rgba(0,0,0,0.1),0 1px 2px -1px rgba(0,0,0,0.1)}
+*{box-sizing:border-box}html{scrollbar-gutter:stable}html,body{margin:0;padding:0;font-family:Geist,ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--ink);line-height:1.43;font-size:14px;font-weight:400;-webkit-font-smoothing:antialiased}
+/* Body links stay ink so card titles and gallery tiles are not repainted; the
+   navigational links below opt into the accent explicitly. */
 a{color:var(--ink);text-decoration:none}a:hover{text-decoration:underline}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
 header.top{position:sticky;top:0;z-index:20;background:rgba(255,255,255,.92);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
 .top-inner{max-width:1100px;margin:0 auto;padding:12px 16px;display:flex;gap:12px;flex-wrap:wrap;align-items:center;justify-content:space-between}
-.brand{font-weight:600;letter-spacing:-.03em}.brand small{display:block;font-weight:500;color:var(--mid);font-size:11px;letter-spacing:.04em;text-transform:uppercase}
+.brand{font-weight:700;letter-spacing:-.03em}.brand small{display:block;font-weight:500;color:var(--mid);font-size:11px;letter-spacing:.04em;text-transform:uppercase}
 nav.tabs{display:flex;gap:6px;flex-wrap:wrap}
-nav.tabs a{display:inline-flex;align-items:center;padding:8px 12px;border-radius:var(--radius-pill);font-size:14px;font-weight:500;color:var(--mid);background:transparent}
-nav.tabs a.active,nav.tabs a:hover{background:var(--ink);color:#fafafa;text-decoration:none}
+nav.tabs a{display:inline-flex;align-items:center;padding:8px 12px;border-radius:var(--radius-pill);font-size:14px;font-weight:600;color:var(--mid);background:transparent}
+nav.tabs a:hover{background:var(--accent-soft);color:var(--accent-strong);text-decoration:none}
+nav.tabs a.active{background:var(--accent);color:var(--accent-contrast);text-decoration:none}
 main{max-width:1100px;margin:0 auto;padding:16px}
-h1{font-size:clamp(1.4rem,3vw,1.875rem);font-weight:600;letter-spacing:-.03em;margin:0 0 4px;line-height:1.2}
+h1{font-size:clamp(1.4rem,3vw,1.875rem);font-weight:800;letter-spacing:-.03em;margin:0 0 4px;line-height:1.2}
 .sub{color:var(--mid);font-size:14px;margin:0 0 16px}
 .toolbar{display:flex;flex-wrap:wrap;gap:10px;margin:0 0 14px;align-items:center}
 input[type=search],select,button,.btn{font:inherit}
-input[type=search],select{border:1px solid transparent;background:var(--bg);border-radius:var(--radius-pill);padding:8px 10px;min-height:36px;color:var(--ink);outline:none}
-input[type=search]:focus,select:focus{border-color:var(--line)}
-input[type=search]{flex:1 1 220px;min-width:180px}
-.btn,button.btn{border:0;border-radius:var(--radius-pill);padding:8px 16px;min-height:36px;font-weight:500;font-size:14px;cursor:pointer;background:var(--ink);color:#fafafa}
-.btn.secondary{background:var(--bg);color:var(--ink);border:0}
-.btn.ghost{background:transparent;color:var(--ink);border:1px solid transparent}
+input[type=search],select{border:1px solid var(--line);background:var(--card);border-radius:var(--radius-pill);padding:8px 12px;min-height:36px;color:var(--ink);outline:none}
+input[type=search]:focus,select:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+/* The search box no longer flexes: it used to absorb every change in the
+   result counter's text width, so the field resized under the cursor while
+   typing. The counter is the flex item instead, so its box is sized by the
+   row's free space rather than by its own (unbounded) label. */
+input[type=search]{flex:0 1 22rem;min-width:180px}
+.btn,button.btn{border:0;border-radius:var(--radius-pill);padding:8px 16px;min-height:36px;font-weight:600;font-size:14px;cursor:pointer;background:var(--accent);color:var(--accent-contrast);box-shadow:var(--shadow);transition:background-color .15s ease,transform .12s ease}
+.btn:hover,button.btn:hover{background:var(--accent-strong)}
+.btn:active,button.btn:active{transform:translateY(1px)}
+.btn.secondary{background:var(--card);color:var(--ink);border:1px solid var(--accent-line);box-shadow:none}
+.btn.secondary:hover{background:var(--accent-soft);border-color:var(--accent)}
+.btn.ghost{background:transparent;color:var(--ink);border:1px solid transparent;box-shadow:none}
+.btn.ghost:hover{background:var(--accent-soft);color:var(--accent-strong)}
 .btn.sm{padding:6px 10px;font-size:12px;border-radius:var(--radius-pill);min-height:32px}
-.count{font-size:13px;font-weight:500;color:var(--mid)}
-.facets{display:flex;flex-wrap:wrap;gap:8px;width:100%;border:1px solid var(--line);border-radius:14px;padding:10px 12px;margin:0}
+.count{font-size:13px;font-weight:500;color:var(--mid);font-variant-numeric:tabular-nums}
+/* Counters and label-swapping toggles reserve their widest state so the
+   toolbar never reflows while filtering or starring. */
+.count[data-count]{flex:1 1 10rem;min-width:10rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.count[data-my-count]{min-width:5rem}
+.btn[data-toggle-my]{min-width:136px}
+.facets{display:flex;flex-wrap:wrap;gap:8px;width:100%;border:1px solid var(--line);border-radius:var(--radius-block);padding:10px 12px;margin:0;background:var(--card)}
 .facet-legend{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);padding:0 4px}
 .facets label{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:500;text-transform:uppercase;letter-spacing:.04em;color:var(--mid)}
 .grid{display:grid;gap:12px}
 .cards{grid-template-columns:1fr}
 @media(min-width:720px){.cards{grid-template-columns:1fr 1fr}}
 .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:20px;box-shadow:var(--shadow)}
-.card h2,.card h3{margin:0 0 6px;letter-spacing:-.02em;font-size:1.05rem;font-weight:600}
+.card h2,.card h3{margin:0 0 6px;letter-spacing:-.02em;font-size:1.05rem;font-weight:700}
 .meta{color:var(--mid);font-size:13px}
 .pills{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
 .pill{display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:500;letter-spacing:.02em;background:var(--bg);color:var(--ink);padding:2px 8px;border-radius:var(--radius-pill);border:1px solid var(--line)}
-.pill.track{background:var(--ink-soft);color:#fafafa;border-color:transparent}
+.pill.track{background:var(--accent-soft);color:var(--accent-strong);border-color:var(--accent-line)}
 .pill.format{background:var(--bg);color:var(--ink)}
 .pill.room{background:var(--soft);color:var(--ink-soft)}
+.pill.ok{background:var(--ok-soft);color:var(--ok);border-color:var(--ok-line)}
+.pill.warn{background:var(--warn-soft);color:var(--warn);border-color:var(--warn-line)}
 .speakers{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
 .speaker-chip{display:flex;gap:8px;align-items:center;min-width:0}
-.avatar{width:36px;height:36px;border-radius:999px;display:grid;place-items:center;font-weight:600;font-size:12px;color:#fafafa;background:var(--ink);flex:0 0 auto;overflow:hidden}
+.avatar{width:36px;height:36px;border-radius:999px;display:grid;place-items:center;font-weight:600;font-size:12px;color:var(--accent-contrast);background:var(--accent);flex:0 0 auto;overflow:hidden}
 .avatar img{width:100%;height:100%;object-fit:cover}
 .speaker-chip .who{min-width:0}.speaker-chip .who b{display:block;font-size:13px;font-weight:600}.speaker-chip .who span{display:block;font-size:12px;color:var(--mid);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px}
 .desc{color:var(--ink-soft);font-size:14px;margin:8px 0 0}
 .desc.clamp{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
-.toggle{margin-top:6px;background:none;border:0;color:var(--ink);font-weight:500;cursor:pointer;padding:0;font-size:13px;text-decoration:underline;text-underline-offset:2px}
-.empty{padding:28px;text-align:center;color:var(--mid);border:1px dashed var(--line);border-radius:var(--radius);background:#fff}
-.back{display:inline-flex;align-items:center;gap:6px;font-weight:500;margin-bottom:12px}
+.toggle{margin-top:6px;background:none;border:0;color:var(--accent-strong);font-weight:600;cursor:pointer;padding:0;font-size:13px;text-decoration:underline;text-underline-offset:2px}
+.empty{padding:28px;text-align:center;color:var(--mid);border:1px dashed var(--accent-line);border-radius:var(--radius);background:#fff}
+.back{display:inline-flex;align-items:center;gap:6px;font-weight:600;margin-bottom:12px;color:var(--accent-strong)}
 .gallery{grid-template-columns:repeat(auto-fill,minmax(150px,1fr))}
 .gallery .card{text-align:center;padding:16px 12px;cursor:pointer;transition:transform .12s ease,border-color .12s ease}
-.gallery .card:hover{transform:translateY(-2px);border-color:var(--ink);text-decoration:none}
+.gallery .card:hover{transform:translateY(-2px);border-color:var(--accent-line);box-shadow:var(--shadow-card);text-decoration:none}
 .gallery .avatar{width:72px;height:72px;margin:0 auto 10px;font-size:20px}
 .detail-hero{display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap}
 .detail-hero .avatar{width:88px;height:88px;font-size:28px}
 .day-tabs{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 14px}
-.day-tabs a,.day-tabs button{border:1px solid var(--line);background:#fff;border-radius:var(--radius-pill);padding:8px 12px;font-weight:500;font-size:13px;cursor:pointer;color:var(--ink)}
-.day-tabs a.active,.day-tabs button.active{background:var(--ink);color:#fafafa;border-color:var(--ink)}
-.agenda-wrap{overflow:auto;border:1px solid var(--line);border-radius:var(--radius);background:#fff;box-shadow:var(--shadow)}
+.day-tabs a,.day-tabs button{border:1px solid var(--line);background:#fff;border-radius:var(--radius-pill);padding:8px 12px;font-weight:600;font-size:13px;cursor:pointer;color:var(--ink)}
+.day-tabs a:hover,.day-tabs button:hover{border-color:var(--accent-line);background:var(--accent-soft);text-decoration:none}
+.day-tabs a.active,.day-tabs button.active{background:var(--accent);color:var(--accent-contrast);border-color:var(--accent)}
+.agenda-wrap{overflow:auto;border:1px solid var(--line);border-radius:var(--radius);background:#fff;box-shadow:var(--shadow-card)}
 .agenda{border-collapse:separate;border-spacing:0;min-width:640px;width:100%}
 .agenda th,.agenda td{border-bottom:1px solid var(--line);border-right:1px solid var(--line);padding:8px;vertical-align:top;font-size:12px}
 .agenda th{background:var(--soft);position:sticky;top:0;z-index:1;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--mid);font-weight:500}
 .agenda th:first-child,.agenda td:first-child{position:sticky;left:0;background:var(--soft);z-index:2;min-width:72px;font-weight:600}
 .agenda td:first-child{background:#fff}
-.block{display:block;border-radius:var(--radius-pill);padding:8px;background:var(--bg);color:var(--ink);border-left:3px solid var(--ink);margin:0 0 6px}
+.block{display:block;border-radius:var(--radius-block);padding:8px;background:var(--accent-soft);color:var(--ink);border-left:3px solid var(--accent);margin:0 0 6px}
 .block b{display:block;font-size:12px;margin-bottom:2px;font-weight:600}
 .block .meta{font-size:11px}
 .time-group{margin:18px 0 8px;font-size:12px;font-weight:500;text-transform:uppercase;letter-spacing:.06em;color:var(--mid)}
 .star{border:1px solid var(--line);background:#fff;border-radius:var(--radius-pill);width:36px;height:36px;display:inline-grid;place-items:center;cursor:pointer;font-size:16px;color:var(--ink)}
-.star.on{background:var(--ink);border-color:var(--ink);color:#fafafa}
+.star:hover{border-color:var(--accent-line);background:var(--accent-soft)}
+.star.on{background:var(--accent);border-color:var(--accent);color:var(--accent-contrast)}
 .row-actions{display:flex;gap:8px;align-items:center;justify-content:space-between;margin-top:10px}
 footer.site{max-width:1100px;margin:0 auto;padding:8px 16px 28px;color:var(--mid);font-size:11px;text-align:center}
 .hidden{display:none!important}
@@ -171,7 +197,7 @@ ${opts.body}
 <footer class="site" data-publication-gate>
   <b>Approved/published session set (${program.publicationGate.included.length}):</b> ${program.publicationGate.included.map(s=>esc(s.title)).join(" · ")||"None"}<br/>
   <b>Excluded/unapproved session set:</b> ${program.publicationGate.excluded.length} private session${program.publicationGate.excluded.length===1?"":"s"} withheld from this public page<br/>
-  Powered by CUE · published sessions only · timezone ${esc(program.event.timezone)}
+  Powered by Ruckus · published sessions only · timezone ${esc(program.event.timezone)}
 </footer>
 </body>
 </html>`;
@@ -847,16 +873,27 @@ function applyEmbedFilters(
   });
 }
 
-/** Inject the embed accent (the single branding exception) into rendered HTML. */
+/**
+ * Inject the embed accent (the single branding exception) into rendered HTML.
+ *
+ * SHARED_CSS now derives every brand surface from --accent and its tints, so the
+ * override is a pure :root variable block rather than a list of per-selector
+ * rules. Because it is appended just before </head> it comes last in the cascade
+ * and always beats the Ruckus violet defaults.
+ *
+ * Tints reuse the hex+alpha trick (normalizeAccent expands #abc → #aabbcc first,
+ * so the 8-digit forms stay valid); a named colour keeps neutral tints because
+ * `red1f` is not a colour.
+ */
 function withAccent(html: string, accent?: string) {
   const value = normalizeAccent(accent);
   if (!value) return html;
-  const tint = value.startsWith("#") ? `${value}1f` : "transparent";
-  const style = `<style data-embed-accent>:root{--accent:${value}}` +
-    `.pill{background:${tint};color:${value};border:1px solid ${value}}` +
-    `.tabs a.active{background:${value};color:#fff;border-color:${value}}` +
-    `.btn{background:${value};border-color:${value}}` +
-    `a{color:${value}}` +
+  const hex = value.startsWith("#");
+  const soft = hex ? `${value}14` : "var(--bg)";
+  const line = hex ? `${value}59` : "var(--line)";
+  const style =
+    `<style data-embed-accent>:root{--accent:${value};--accent-strong:${value};` +
+    `--accent-soft:${soft};--accent-line:${line};--accent-contrast:#ffffff}` +
     `</style>`;
   return html.replace("</head>", `${style}</head>`);
 }
@@ -898,7 +935,7 @@ ${s.speakers.map((sp) => speakerXml(sp, "        ")).join("\n")}
 
 function programXml(program: PublicProgram, scope: "program" | "sessions" | "speakers" | "agenda" = "program") {
   const head = `<?xml version="1.0" encoding="UTF-8"?>
-<program generator="CUE" scope="${scope}">
+<program generator="Ruckus" scope="${scope}">
   <event id="${xmlEsc(program.event.id)}" slug="${xmlEsc(program.event.slug)}">
     <name>${xmlEsc(program.event.name)}</name>
     <timezone>${xmlEsc(program.event.timezone)}</timezone>
@@ -1009,30 +1046,30 @@ export function renderApiDocsPage() {
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>CUE API</title>
+<title>Ruckus API</title>
 <style>${SHARED_CSS}
 .ops{width:100%;border-collapse:collapse;font-size:13px}
 .ops td{border-top:1px solid var(--line);padding:8px 6px;vertical-align:top}
-.ops td.m{width:74px;white-space:nowrap;font-weight:700}
+.ops td.m{width:74px;white-space:nowrap;font-weight:700;color:var(--accent-strong)}
 .snippet{margin-top:10px}
-.snippet pre{overflow-x:auto;background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:10px;font-size:12px;white-space:pre-wrap;word-break:break-all}
+.snippet pre{overflow-x:auto;background:var(--bg);border:1px solid var(--line);border-radius:var(--radius-block);padding:10px;font-size:12px;white-space:pre-wrap;word-break:break-all}
 code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
 </style>
 </head>
 <body>
 <header class="top"><div class="top-inner">
-  <div class="brand">CUE API<small>Conference program operations</small></div>
+  <div class="brand">Ruckus API<small>Conference program operations</small></div>
   <nav class="tabs" aria-label="API docs"><a href="/api/openapi.yaml">OpenAPI spec</a><a href="https://github.com/swyxio/cue/blob/main/docs/CLI.md">CLI</a><a href="/">Demo home</a></nav>
 </div></header>
 <main>
-  <h1>CUE API</h1>
-  <p class="sub">CUE exposes a JSON API under <code>/api</code> for every workflow: events, CFP forms and submissions,
+  <h1>Ruckus API</h1>
+  <p class="sub">Ruckus exposes a JSON API under <code>/api</code> for every workflow: events, CFP forms and submissions,
   review rounds and assignments, speakers, tasks and deliverables, schedule and agenda, communications, CRM and one-way
   sync. Public program feeds need no identity. Everything else uses demo identity headers
   (<code>x-demo-role</code> and <code>x-demo-persona</code>) - persona simulation, not authentication. The full
   machine-readable description is published as OpenAPI 3.1.</p>
   <p><a class="btn" href="/api/openapi.yaml">Download OpenAPI 3.1 spec</a></p>
-  <section class="card"><h2>Command line</h2><p class="meta">CUE ships a CLI built for AI agents: one command pulls the whole program state, every command speaks JSON, and failures exit non-zero with the reason. See docs/CLI.md in the repository.</p>
+  <section class="card"><h2>Command line</h2><p class="meta">Ruckus ships a CLI built for AI agents: one command pulls the whole program state, every command speaks JSON, and failures exit non-zero with the reason. See docs/CLI.md in the repository.</p>
   <div class="snippet"><pre>npx tsx cli/cue.ts overview
 npx tsx cli/cue.ts schedule conflicts &lt;sessionId&gt; --day 2027-05-12 --time 09:00 --room "Room 2A"
 npx tsx cli/cue.ts submissions decide &lt;id&gt; --accept --feedback "See you in May."</pre></div></section>
@@ -1040,7 +1077,7 @@ npx tsx cli/cue.ts submissions decide &lt;id&gt; --accept --feedback "See you in
   <p class="meta">${DOCS_OPERATIONS.length} operations across ${groups.size} groups, generated from the same document served at /api/openapi.yaml.</p>
   ${sections}
 </main>
-<footer class="site">Powered by CUE - <a href="/api/openapi.yaml">OpenAPI 3.1</a></footer>
+<footer class="site">Powered by Ruckus - <a href="/api/openapi.yaml">OpenAPI 3.1</a></footer>
 </body>
 </html>`;
 }

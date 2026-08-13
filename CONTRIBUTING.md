@@ -1,4 +1,4 @@
-# Contributing to CUE
+# Contributing to Ruckus
 
 Thanks for helping build open conference program ops. This repo is intentionally small and demo-honest: prefer clarity over framework sprawl.
 

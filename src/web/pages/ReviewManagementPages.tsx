@@ -10,7 +10,11 @@ import {
   Notice,
   PageHeader,
   Select,
+  Table,
+  TableWrap,
   Textarea,
+  Th,
+  THead,
   toast,
 } from "../components/ui";
 import { LOAD_TIMEOUT_MS } from "../lib/useAsyncData";
@@ -170,7 +174,7 @@ function RoundEditor({ round, personas, saved }: { round: any; personas: any[]; 
         one option per line.
       </p>
       {criteria.map((c: any, i: number) => (
-        <div key={c.id} className="mt-3 rounded-[18px] border border-line p-3">
+        <div key={c.id} className="mt-3 rounded-2xl border border-line p-3">
           <div className="grid gap-2 md:grid-cols-[1fr_140px_100px_auto]">
             <Input
               aria-label="Criterion label"
@@ -559,16 +563,16 @@ export function AssignmentsPage() {
           />
         </div>
       ) : null}
-      <div className="mt-4 overflow-x-auto rounded-[24px] border bg-paper">
-        <table className="w-full text-left text-sm">
-          <thead>
-            <tr className="border-b">
-              <th className="p-3">Select</th>
-              <th>Submission</th>
-              <th>Track</th>
-              <th>Status</th>
+      <TableWrap className="mt-4">
+        <Table>
+          <THead>
+            <tr>
+              <Th className="p-3">Select</Th>
+              <Th>Submission</Th>
+              <Th>Track</Th>
+              <Th>Status</Th>
             </tr>
-          </thead>
+          </THead>
           <tbody>
             {subs.map((s) => (
               <tr key={s.id} className="border-b">
@@ -601,8 +605,8 @@ export function AssignmentsPage() {
               </tr>
             ))}
           </tbody>
-        </table>
-      </div>
+        </Table>
+      </TableWrap>
 
       <Card className="mt-6 p-5">
         <h2 className="text-sm font-bold uppercase tracking-wide text-mid">Recused assignments</h2>
@@ -611,7 +615,7 @@ export function AssignmentsPage() {
           {recusals.map((a) => (
             <div
               key={a.id}
-              className="flex flex-wrap items-center justify-between gap-2 rounded-[18px] border border-line p-3 text-sm"
+              className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-line p-3 text-sm"
             >
               <div>
                 <b>{a.submission?.title || a.submissionId}</b>
@@ -815,12 +819,12 @@ export function ResultsPage() {
         </Button>
         <span className="text-xs text-mid">Unscored submissions always sort last.</span>
       </div>
-      <div className="overflow-x-auto rounded-[24px] border bg-paper">
-        <table className="w-full text-left text-sm">
-          <thead>
+      <TableWrap>
+        <Table>
+          <THead>
             <tr>
-              <th className="p-3">Submission</th>
-              <th>
+              <Th className="p-3">Submission</Th>
+              <Th>
                 <button
                   type="button"
                   className="font-semibold underline-offset-2 hover:underline"
@@ -828,11 +832,11 @@ export function ResultsPage() {
                 >
                   Score {sort === "score-desc" ? "↓" : sort === "score-asc" ? "↑" : ""}
                 </button>
-              </th>
-              <th>Reviews</th>
-              <th>Status</th>
+              </Th>
+              <Th>Reviews</Th>
+              <Th>Status</Th>
             </tr>
-          </thead>
+          </THead>
           <tbody data-testid="results-rows">
             {sorted.map((r) => (<Fragment key={r.id}>
               <tr className="border-t" key={r.id}>
@@ -846,11 +850,11 @@ export function ResultsPage() {
                   <Badge>{r.status}</Badge>
                 </td>
               </tr>
-              {expanded.includes(r.id)?<tr key={`${r.id}-breakdown`} className="border-t bg-soft"><td colSpan={4} className="p-4"><b className="text-xs uppercase tracking-wide text-mid">Review math</b><div className="mt-2 space-y-2">{r.reviewBreakdown?.map((review:any)=><div key={review.id} className="rounded-[18px] border border-line bg-paper p-3"><div className="flex justify-between gap-2"><b>{review.reviewer}</b><span>{review.computedScore==null?"No numeric ratings":`${review.computedScore.toFixed(2)} / 5 normalized`}</span></div><ul className="mt-2 text-xs text-mid">{review.criteria.map((criterion:any)=><li key={criterion.id}>{criterion.label}: {typeof criterion.response==="number"?`${criterion.response}${criterion.type==="rating"?` on ${criterion.min??1}–${criterion.max??5} scale`:" (non-rating; excluded)"}`:String(criterion.response??"Not answered")} · weight {criterion.weight||0}</li>)}</ul></div>)}</div></td></tr>:null}
+              {expanded.includes(r.id)?<tr key={`${r.id}-breakdown`} className="border-t bg-soft"><td colSpan={4} className="p-4"><b className="text-xs uppercase tracking-wide text-mid">Review math</b><div className="mt-2 space-y-2">{r.reviewBreakdown?.map((review:any)=><div key={review.id} className="rounded-2xl border border-line bg-paper p-3"><div className="flex justify-between gap-2"><b>{review.reviewer}</b><span>{review.computedScore==null?"No numeric ratings":`${review.computedScore.toFixed(2)} / 5 normalized`}</span></div><ul className="mt-2 text-xs text-mid">{review.criteria.map((criterion:any)=><li key={criterion.id}>{criterion.label}: {typeof criterion.response==="number"?`${criterion.response}${criterion.type==="rating"?` on ${criterion.min??1}–${criterion.max??5} scale`:" (non-rating; excluded)"}`:String(criterion.response??"Not answered")} · weight {criterion.weight||0}</li>)}</ul></div>)}</div></td></tr>:null}
             </Fragment>))}
           </tbody>
-        </table>
-      </div>
+        </Table>
+      </TableWrap>
     </div>
   );
 }

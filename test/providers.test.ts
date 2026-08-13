@@ -58,7 +58,7 @@ test("normalized Airtable failure does not reject blob save and the other table 
 
 test("configured mailer uses Resend-compatible request with ICS attachment", async () => {
   let request: any; const fetcher=(async (url:any,init:RequestInit={})=>{request={url:String(url),init};return new Response(JSON.stringify({id:"mail-1"}),{status:200});}) as typeof fetch;
-  const mailer=configuredMailer({MAILER_API_KEY:"resend-secret",MAILER_FROM:"CUE <ops@example.test>"},fetcher);
+  const mailer=configuredMailer({MAILER_API_KEY:"resend-secret",MAILER_FROM:"Ruckus <ops@example.test>"},fetcher);
   assert.ok(mailer instanceof HttpMailer);
   const result=await mailer.send({to:"speaker@example.test",subject:"Schedule",text:"Attached",attachments:[{filename:"invite.ics",content:"BEGIN:VCALENDAR",contentType:"text/calendar"}]});
   const body=JSON.parse(request.init.body);

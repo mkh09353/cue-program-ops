@@ -20,7 +20,7 @@ export interface CueEnv {
   AI?: { run(model: string, input: Record<string, unknown>): Promise<unknown> };
 }
 
-/** Single named instance owns CUE's mutable demo runtime. It never touches DO storage. */
+/** Single named instance owns Ruckus's mutable demo runtime. It never touches DO storage. */
 export class CueState extends DurableObject<CueEnv> {
   private app?: ReturnType<typeof createApp>;
 
@@ -60,7 +60,7 @@ export class CueState extends DurableObject<CueEnv> {
   }
 
   async fetch(request: Request): Promise<Response> {
-    if (!this.app) return new Response("CUE state is initializing", { status: 503 });
+    if (!this.app) return new Response("Ruckus state is initializing", { status: 503 });
     return this.app.fetch(request, this.env);
   }
 }

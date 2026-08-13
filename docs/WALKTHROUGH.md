@@ -1,4 +1,4 @@
-# CUE — 6-minute competition walkthrough
+# Ruckus — 6-minute competition walkthrough
 
 **Live:** https://cue-program-ops.headley-max.workers.dev
 **Local:** `npm run dev`, then use the Vite URL (normally `http://localhost:5173`).

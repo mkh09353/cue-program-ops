@@ -17,7 +17,7 @@ test("GET /docs/api returns an HTML page with the spec link and a known endpoint
   assert.equal(res.status, 200);
   assert.match(String(res.headers.get("content-type")), /text\/html/);
   assert.match(html, /^<!doctype html>/);
-  assert.ok(html.includes("CUE API"), "renders the title");
+  assert.ok(html.includes("Ruckus API"), "renders the title");
   assert.ok(html.includes("/api/openapi.yaml"), "links the machine-readable spec");
   assert.ok(html.includes("Download OpenAPI 3.1 spec"), "offers the download");
   assert.ok(html.includes("/api/events/{eventId}/submissions"), "lists a known endpoint path");

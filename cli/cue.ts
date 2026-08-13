@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * CUE command line interface.
+ * Ruckus command line interface.
  *
  * Designed for AI agents as first-class users: every command supports --json,
  * failures exit non-zero with the server's own message, and `cue help` plus
@@ -12,21 +12,21 @@
 import { COMMANDS, type Command } from "./commands.js";
 import { ApiError, DEFAULT_EVENT, DEFAULT_URL, flagBool, out, parseArgs, resolveConfig } from "./lib.js";
 
-const GLOBAL_HELP = `CUE - conference program operations from the command line.
+const GLOBAL_HELP = `Ruckus - conference program operations from the command line.
 
 USAGE
   cue <command> [action] [args] [--flags]
 
 GLOBAL FLAGS
-  --url <url>        API base URL (env CUE_URL, default ${DEFAULT_URL})
-  --event <id>       event id to operate on (env CUE_EVENT, default ${DEFAULT_EVENT})
-  --role <role>      demo identity role: organizer | reviewer | speaker (env CUE_ROLE, default organizer)
-  --persona <id>     demo persona id (env CUE_PERSONA, default org-swyx)
+  --url <url>        API base URL (env RUCKUS_URL, default ${DEFAULT_URL})
+  --event <id>       event id to operate on (env RUCKUS_EVENT, default ${DEFAULT_EVENT})
+  --role <role>      demo identity role: organizer | reviewer | speaker (env RUCKUS_ROLE, default organizer)
+  --persona <id>     demo persona id (env RUCKUS_PERSONA, default org-swyx)
   --json             machine-readable JSON instead of tables. Available on EVERY command.
   --help             show help for a command
 
 IDENTITY
-  CUE uses demo persona simulation, not authentication: --role and --persona set the
+  Ruckus uses demo persona simulation, not authentication: --role and --persona set the
   x-demo-role and x-demo-persona headers. Public commands (cfp) need no identity.
 
 EXIT CODES

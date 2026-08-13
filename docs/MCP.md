@@ -1,6 +1,6 @@
-# CUE MCP server
+# Ruckus MCP server
 
-CUE exposes conference program operations to AI agents using MCP Streamable HTTP over JSON-RPC 2.0, implemented at:
+Ruckus exposes conference program operations to AI agents using MCP Streamable HTTP over JSON-RPC 2.0, implemented at:
 
 - Hosted endpoint: `https://cue-program-ops.headley-max.workers.dev/api/mcp`
 - Local endpoint: `http://localhost:8787/api/mcp`
@@ -12,7 +12,7 @@ The endpoint accepts plain JSON `POST` requests. It supports `initialize`, `noti
 
 ## Authentication
 
-Create a named API token from an authenticated organizer session. The plaintext is returned once; CUE stores only its SHA-256 hash.
+Create a named API token from an authenticated organizer session. The plaintext is returned once; Ruckus stores only its SHA-256 hash.
 
 ```sh
 curl -X POST https://cue-program-ops.headley-max.workers.dev/api/auth/tokens \
@@ -27,7 +27,7 @@ curl -X DELETE https://cue-program-ops.headley-max.workers.dev/api/auth/tokens/T
   -H 'Cookie: cue_session=YOUR_SESSION_COOKIE'
 ```
 
-For an explicitly configured demo, set `DEMO_MCP_TOKEN=cue-demo` on the server and use `cue-demo` as the bearer token. This value is **not built in** and is rejected unless that environment variable is set. API token state has the same process-memory/whole-snapshot durability limitations documented for CUE auth; it is not a production secrets or tenant-isolation system.
+For an explicitly configured demo, set `DEMO_MCP_TOKEN=cue-demo` on the server and use `cue-demo` as the bearer token. This value is **not built in** and is rejected unless that environment variable is set. API token state has the same process-memory/whole-snapshot durability limitations documented for Ruckus auth; it is not a production secrets or tenant-isolation system.
 
 ## Connect a client
 

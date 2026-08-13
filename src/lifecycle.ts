@@ -6,9 +6,9 @@ export const EVENT_SLUG = "ai-engineer-summit";
 /** Stable authentication-to-lifecycle links for one-click demo sessions. Passwords
  * and tokens are deliberately not seed data; auth.ts creates only hashed secrets. */
 export const SEED_AUTH_IDENTITIES = [
-  { id: "user-demo-dana", email: "dana@demo.cue.dev", name: "Dana", role: "organizer", personaId: "org-swyx" },
-  { id: "user-demo-rey", email: "rey@demo.cue.dev", name: "Rey", role: "reviewer", personaId: "rev-ada" },
-  { id: "user-demo-maya", email: "maya@demo.cue.dev", name: "Maya", role: "speaker", personaId: "spk-sam", speakerId: "spk-sam" },
+  { id: "user-demo-dana", email: "dana@demo.ruckus.to", name: "Dana", role: "organizer", personaId: "org-swyx" },
+  { id: "user-demo-rey", email: "rey@demo.ruckus.to", name: "Rey", role: "reviewer", personaId: "rev-ada" },
+  { id: "user-demo-maya", email: "maya@demo.ruckus.to", name: "Maya", role: "speaker", personaId: "spk-sam", speakerId: "spk-sam" },
 ] as const;
 
 export type Role = "organizer" | "reviewer" | "speaker";
@@ -961,7 +961,7 @@ export function ics(title: string, startsAt = "20261012T170000Z", endsAt = "2026
   const description = options.description || `AI Engineer Summit session. ${store.event.website}`;
   const location = options.location || store.event.location;
   const dtstamp = options.dtstamp || "20261001T000000Z";
-  return `BEGIN:VCALENDAR\r\nVERSION:2.0\r\nCALSCALE:GREGORIAN\r\nMETHOD:PUBLISH\r\nPRODID:-//CUE//EN\r\nBEGIN:VEVENT\r\nUID:${clean(uid)}\r\nDTSTAMP:${dtstamp}\r\nDTSTART:${startsAt}\r\nDTEND:${endsAt}\r\nSUMMARY:${clean(title)}\r\nDESCRIPTION:${clean(description)}\r\nLOCATION:${clean(location)}\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n`;
+  return `BEGIN:VCALENDAR\r\nVERSION:2.0\r\nCALSCALE:GREGORIAN\r\nMETHOD:PUBLISH\r\nPRODID:-//Ruckus//EN\r\nBEGIN:VEVENT\r\nUID:${clean(uid)}\r\nDTSTAMP:${dtstamp}\r\nDTSTART:${startsAt}\r\nDTEND:${endsAt}\r\nSUMMARY:${clean(title)}\r\nDESCRIPTION:${clean(description)}\r\nLOCATION:${clean(location)}\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n`;
 }
 
 export function safeEmbed(url?: string) {
@@ -1299,7 +1299,7 @@ export function sendTemplate(
         feedback: options.feedback,
       })
     : {
-        subject: "Message from CUE",
+        subject: "Message from Ruckus",
         body: appendFeedback(`Hi ${first}, regarding ${talkTitle}`, options.feedback),
       };
   const session = life.sessions.find((s) => s.speakerId === speakerId && s.title === talkTitle);

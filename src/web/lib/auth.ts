@@ -2,7 +2,7 @@ import { useSyncExternalStore } from "react";
 import type { Role } from "./utils";
 
 /**
- * SPA client for CUE's real cookie-backed session auth (`cue_session`).
+ * SPA client for Ruckus's real cookie-backed session auth (`cue_session`).
  *
  * This is deliberately separate from the demo persona headers in `api.ts`:
  * session identity is authoritative when a session exists, while persona

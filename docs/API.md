@@ -1,4 +1,4 @@
-# CUE HTTP API
+# Ruckus HTTP API
 
 Base URLs: live `https://cue-program-ops.headley-max.workers.dev`; local `http://localhost:8787`.
 
@@ -6,7 +6,7 @@ The API is implemented with Hono in `src/app.ts` and `src/*Routes.ts`. JSON bodi
 
 ## Authentication and identity
 
-CUE has cookie-backed API authentication in addition to its legacy demo persona headers. Sessions use the `cue_session` HttpOnly, SameSite=Lax cookie; session identity takes precedence whenever that cookie is present. A bogus or expired cookie does not fall through to persona headers.
+Ruckus has cookie-backed API authentication in addition to its legacy demo persona headers. Sessions use the `cue_session` HttpOnly, SameSite=Lax cookie; session identity takes precedence whenever that cookie is present. A bogus or expired cookie does not fall through to persona headers.
 
 | Method | Path | Description |
 |---|---|---|
@@ -20,7 +20,7 @@ CUE has cookie-backed API authentication in addition to its legacy demo persona 
 | POST | `/api/auth/invitations/accept` | Accept an invitation, creating a user if necessary, membership and session |
 | GET | `/api/auth/demo/:persona` | One-click session for `organizer`, `reviewer` or `speaker`; returns `/app`, `/r` or `/p` target |
 
-Seeded one-click identities are `dana@demo.cue.dev` (organizer), `rey@demo.cue.dev` (reviewer) and `maya@demo.cue.dev` (speaker). They intentionally have no seeded passwords; use the demo endpoints to create their sessions.
+Seeded one-click identities are `dana@demo.ruckus.to` (organizer), `rey@demo.ruckus.to` (reviewer) and `maya@demo.ruckus.to` (speaker). They intentionally have no seeded passwords; use the demo endpoints to create their sessions.
 
 `DEMO_PERSONA_HEADERS` controls the legacy `x-demo-persona` / `x-demo-role` escape hatch. It defaults to enabled so credential-free evaluator and existing test workflows continue to work. Headers are considered only when there is no session cookie. Set `DEMO_PERSONA_HEADERS=false` to ignore them; requests without a cookie retain the application's credential-free default-persona behavior.
 
@@ -42,7 +42,7 @@ Known personas resolve server-side. `Organizer`, `Reviewer` and `Speaker` below 
 | Method | Path | Role | Description |
 |---|---|---|---|
 | GET | `/health` | Public | Health, product and mock/configured Accelevents mode |
-| GET | `/demo` | Public/demo | Current canonical demo data |
+| GET | `/api/demo` | Public/demo | Current canonical demo data |
 | GET | `/api/events/:eventId/bootstrap` | Shared/demo | Event, actor, personas and lifecycle bootstrap |
 | GET | `/api/events/:eventId/command` | Shared/demo | Organizer command projection and canonical schedule KPIs |
 | PUT | `/api/events/:eventId/settings` | Organizer | Update event basics; `speakerConfirmation` defaults true, and false auto-completes confirmation during acceptance handoff |

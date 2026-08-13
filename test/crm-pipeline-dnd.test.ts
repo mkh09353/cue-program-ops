@@ -54,8 +54,8 @@ test("dropping is optimistic with revert and the server message on failure", () 
   assert.match(page, /setColumns\(snapshot\); \/\/ snap back/, "failure reverts the optimistic move");
   assert.match(page, /toast\(e\?\.message \|\| "Could not move the contact", "danger"\)/, "and shows the server message");
   assert.match(page, /setJustMoved\(contactId\)/, "success briefly highlights the moved card");
-  assert.match(page, /justMoved === c\.id && "ring-2 ring-ink"/);
-  assert.match(page, /dropTarget === col\.id && canDrop\(col\.id\) && "border-ink bg-canvas ring-2 ring-ink"/, "hovered column highlights");
+  assert.match(page, /justMoved === c\.id && "ring-2 ring-brand-500"/);
+  assert.match(page, /dropTarget === col\.id && canDrop\(col\.id\) && "border-brand-400 bg-brand-50 ring-2 ring-brand-500"/, "hovered column highlights");
 });
 
 test("the stage buttons are retained as the accessible fallback", () => {

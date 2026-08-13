@@ -49,7 +49,7 @@ test("speaker editor shows a large preview with decode state and file metadata",
   const page = readFileSync(new URL("../src/web/pages/ContentPages.tsx", import.meta.url), "utf8");
   // Large, non-placeholder preview that shows the whole image.
   assert.match(page, /data-testid="headshot-large-preview"/);
-  assert.match(page, /className="h-40 w-40 rounded-\[18px\] border border-line bg-white object-contain"/);
+  assert.match(page, /className="h-40 w-40 rounded-2xl border border-line bg-white object-contain"/);
   // Explicit success / error / loading states driven by real decode events.
   assert.match(page, /onLoad=\{e=>\{const img=e\.currentTarget;setHeadshotState\("ready"\)/);
   assert.match(page, /onError=\{\(\)=>setHeadshotState\("error"\)\}/);

@@ -10,14 +10,14 @@ const versions=["2025-06-18","2025-03-26"] as const;
 const statuses:SubmissionStatus[]=["draft","submitted","under_review","accepted","waitlisted","rejected","withdrawn"];
 const objectSchema=(properties:Record<string,unknown>={},required:string[]=[])=>({type:"object",properties,...(required.length?{required}:{}),additionalProperties:false});
 export const MCP_TOOLS=[
- {name:"list_events",description:"List CUE conference events with identifiers, dates, timezone, and public slug.",inputSchema:objectSchema()},
+ {name:"list_events",description:"List Ruckus conference events with identifiers, dates, timezone, and public slug.",inputSchema:objectSchema()},
  {name:"list_submissions",description:"List submissions for the seeded active event, optionally filtered by lifecycle status.",inputSchema:objectSchema({status:{type:"string",enum:statuses}})},
  {name:"get_submission",description:"Get one submission and its canonical human/AI review history summary.",inputSchema:objectSchema({id:{type:"string",description:"Submission id"}},["id"])},
  {name:"list_speakers",description:"List canonical speaker profiles with onboarding tasks and derived readiness.",inputSchema:objectSchema()},
- {name:"get_schedule",description:"Get canonical sessions, rooms, times, and warnings from CUE's schedule conflict engine.",inputSchema:objectSchema()},
+ {name:"get_schedule",description:"Get canonical sessions, rooms, times, and warnings from Ruckus's schedule conflict engine.",inputSchema:objectSchema()},
  {name:"list_review_progress",description:"List per-submission review assignment and completed-review progress.",inputSchema:objectSchema()},
- {name:"send_task_reminder",description:"Send/log a task reminder through CUE's existing template, communication, and mailer path.",inputSchema:objectSchema({speakerId:{type:"string"},taskId:{type:"string"}},["speakerId","taskId"])},
- {name:"complete_speaker_task",description:"Complete a speaker onboarding task through CUE's canonical task completion rules.",inputSchema:objectSchema({speakerId:{type:"string"},taskId:{type:"string"}},["speakerId","taskId"])},
+ {name:"send_task_reminder",description:"Send/log a task reminder through Ruckus's existing template, communication, and mailer path.",inputSchema:objectSchema({speakerId:{type:"string"},taskId:{type:"string"}},["speakerId","taskId"])},
+ {name:"complete_speaker_task",description:"Complete a speaker onboarding task through Ruckus's canonical task completion rules.",inputSchema:objectSchema({speakerId:{type:"string"},taskId:{type:"string"}},["speakerId","taskId"])},
 ] as const;
 
 const rpc=(id:unknown,result:unknown)=>({jsonrpc:"2.0",id,result});
@@ -33,7 +33,7 @@ async function authorize(request:Request,demoToken?:string){
 
 export function createMcpRoutes(deps:{repo:Repository;mailer:Mailer;persist:()=>Promise<void>;demoToken?:string}){
  const app=new Hono();
- app.get("/.well-known/mcp.json",c=>c.json({name:"CUE MCP",endpoint:"/api/mcp",transport:"streamable-http",auth:{type:"bearer",tokenEndpoint:"/api/auth/tokens",instructions:"Create an API token from an authenticated organizer session. For explicit demos only, configure DEMO_MCP_TOKEN=cue-demo and send that value as bearer token."}}));
+ app.get("/.well-known/mcp.json",c=>c.json({name:"Ruckus MCP",endpoint:"/api/mcp",transport:"streamable-http",auth:{type:"bearer",tokenEndpoint:"/api/auth/tokens",instructions:"Create an API token from an authenticated organizer session. For explicit demos only, configure DEMO_MCP_TOKEN=cue-demo and send that value as bearer token."}}));
  app.post("/api/mcp",async c=>{
   const authorization=await authorize(c.req.raw,deps.demoToken);if(!authorization)return c.json({error:"bearer token required"},401);
   if(!authorization.demo)await deps.persist();

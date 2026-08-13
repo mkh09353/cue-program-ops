@@ -1,4 +1,4 @@
-# CUE — Requirements audit
+# Ruckus — Requirements audit
 
 Evidence map for the nine competition requirements. Paths are repo-relative. Tests are named, not counted (run `npm test` for current totals).
 
@@ -150,7 +150,7 @@ Evidence map for the nine competition requirements. Paths are repo-relative. Tes
 | Concern | Where |
 |---|---|
 | Persona / demo auth | `src/app.ts` `actor()`; `src/web/lib/api.ts`; shells `ensurePersonaForRole` |
-| Product health flag | `GET /health` → `product: "CUE"`, `mode: mock|configured` |
+| Product health flag | `GET /health` → `product: "Ruckus"`, `mode: mock|configured` |
 | Seed data | `src/lifecycle.ts` + `src/repository.ts` |
 | Optional snapshot | `src/persistence.ts` + `configuredPersistence`; restore in `src/dev.ts` / `src/index.ts` |
 | Optional mail | `src/mailer.ts` + `deliver()` in `src/app.ts` |

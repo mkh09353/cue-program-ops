@@ -1,5 +1,5 @@
 /**
- * OpenAPI 3.1 description of the CUE HTTP API, embedded as a plain string.
+ * OpenAPI 3.1 description of the Ruckus HTTP API, embedded as a plain string.
  *
  * Why a TypeScript module rather than reading docs/openapi.yaml at runtime:
  * Cloudflare Workers have no filesystem, so fs is unavailable in production; a
@@ -15,11 +15,11 @@
  */
 export const OPENAPI_YAML = `openapi: 3.1.0
 info:
-  title: CUE Conference Program Operations API
+  title: Ruckus Conference Program Operations API
   version: 1.0.0
   summary: Conference program operations - CFP, review, speakers, schedule, comms, CRM and public program feeds.
   description: >-
-    HTTP API for CUE, an open-source conference program-operations tool. Paths are
+    HTTP API for Ruckus, an open-source conference program-operations tool. Paths are
     generated from the live Hono route registrations in src/app.ts and the src route
     modules, so path and method coverage is exact. Request and response bodies are
     intentionally loose object schemas with descriptions: handlers accept and return
@@ -6192,7 +6192,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
-  /demo:
+  /api/demo:
     get:
       tags: [meta]
       operationId: get_demo

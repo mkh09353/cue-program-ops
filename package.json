@@ -2,7 +2,7 @@
   "name": "cue-program-ops",
   "version": "0.1.0",
   "private": true,
-  "description": "CUE \u2014 open-source conference program ops: CFP \u2192 review \u2192 onboard \u2192 schedule \u2192 publish \u2192 one-way Accelevents sync",
+  "description": "Ruckus \u2014 open-source conference program ops: CFP \u2192 review \u2192 onboard \u2192 schedule \u2192 publish \u2192 one-way Accelevents sync",
   "license": "MIT",
   "type": "module",
   "scripts": {

@@ -132,7 +132,9 @@ export function preferUploadedHeadshot(...candidates: (string | undefined)[]) {
 
 export function initialsAvatarDataUrl(name: string) {
   const initials = initialsOf(name) || "?";
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 192 192"><rect width="192" height="192" fill="#12141A"/><text x="96" y="124" font-family="Helvetica,Arial,sans-serif" font-size="76" font-weight="700" fill="#F7F4EF" text-anchor="middle">${initials}</text></svg>`;
+  // Ruckus brand violet with white initials (5.7:1, AA) so generated placeholders
+  // match the widget `.avatar` treatment instead of the retired ink/cream pair.
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 192 192"><rect width="192" height="192" fill="#7c3aed"/><text x="96" y="124" font-family="Helvetica,Arial,sans-serif" font-size="76" font-weight="700" fill="#ffffff" text-anchor="middle">${initials}</text></svg>`;
   return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 }
 
@@ -513,7 +515,7 @@ export function buildIcs(program: PublicProgram, sessionIds?: string[]): string 
     "VERSION:2.0",
     "CALSCALE:GREGORIAN",
     "METHOD:PUBLISH",
-    `PRODID:-//CUE//${escape(program.event.name)}//EN`,
+    `PRODID:-//Ruckus//${escape(program.event.name)}//EN`,
     `X-WR-CALNAME:${escape(program.event.name)}`,
     events,
     "END:VCALENDAR",

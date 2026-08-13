@@ -388,7 +388,7 @@ export function createSpeakerRoutes(deps: {
           : undefined;
         const preview = renderMergePreview(
           {
-            subject: typeof b.subject === "string" ? b.subject : tpl?.subject || "Message from CUE",
+            subject: typeof b.subject === "string" ? b.subject : tpl?.subject || "Message from Ruckus",
             body: typeof b.body === "string" ? b.body : tpl?.body || "",
             includeCalendarLinks: Boolean((b as any).includeCalendarLinks ?? tpl?.includeCalendarLinks),
           },

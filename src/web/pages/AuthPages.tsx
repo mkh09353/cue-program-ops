@@ -9,7 +9,7 @@ import { switchToRole } from "../lib/api";
 import type { Role } from "../lib/utils";
 
 /**
- * Sign-in / sign-up screens for CUE's real cookie session auth.
+ * Sign-in / sign-up screens for Ruckus's real cookie session auth.
  *
  * The demo buttons are the fast path an evaluator (or a first-time visitor) can
  * take without credentials: one request creates a real server session and hands
@@ -21,21 +21,21 @@ export const DEMO_ROLES = [
   {
     role: "organizer" as const,
     label: "Enter as Organizer",
-    who: "Dana · dana@demo.cue.dev",
+    who: "Dana · dana@demo.ruckus.to",
     blurb: "Command center, submissions, review rounds, speakers, schedule, publish.",
     target: "/app",
   },
   {
     role: "reviewer" as const,
     label: "Enter as Reviewer",
-    who: "Rey · rey@demo.cue.dev",
+    who: "Rey · rey@demo.ruckus.to",
     blurb: "Assigned queue, weighted scorecards, recusal, guidelines.",
     target: "/r",
   },
   {
     role: "speaker" as const,
     label: "Enter as Speaker",
-    who: "Maya · maya@demo.cue.dev",
+    who: "Maya · maya@demo.ruckus.to",
     blurb: "Profile, onboarding tasks, deliverables, talks, calendar.",
     target: "/p",
   },
@@ -62,8 +62,8 @@ function AuthLayout({
     <div className="min-h-screen bg-canvas px-4 py-10 sm:py-16">
       <div className="mx-auto w-full max-w-xl">
         <Link to="/" className="mb-6 flex items-center gap-2 text-sm font-semibold text-ink">
-          <span className="grid h-8 w-8 place-items-center rounded-[12px] bg-ink text-sm font-bold text-soft">C</span>
-          CUE · Conference program ops
+          <span className="grid h-8 w-8 place-items-center rounded-xl bg-brand-600 text-sm font-bold text-white">C</span>
+          Ruckus · Conference program ops
         </Link>
         <Card className="p-6 sm:p-8">
           <h1 className="text-2xl font-semibold tracking-tight text-ink">{title}</h1>
@@ -182,7 +182,7 @@ export function LoginPage() {
 
   return (
     <AuthLayout
-      title="Sign in to CUE"
+      title="Sign in to Ruckus"
       subtitle="Real server sessions (HttpOnly cookie). Start with one click as a demo user, or sign in with your own account."
       footer={
         <>
@@ -274,7 +274,7 @@ export function LoginPage() {
         </div>
       </form>
 
-      <section className="mt-8 rounded-[18px] border border-line bg-soft p-4" aria-labelledby="magic-link">
+      <section className="mt-8 rounded-2xl border border-line bg-soft p-4" aria-labelledby="magic-link">
         <h2 id="magic-link" className="text-sm font-semibold text-ink">
           Prefer no password?
         </h2>
@@ -290,7 +290,7 @@ export function LoginPage() {
                 data-testid="magic-email"
                 value={magicEmail}
                 onChange={(e) => setMagicEmail(e.target.value)}
-                placeholder="dana@demo.cue.dev"
+                placeholder="dana@demo.ruckus.to"
                 required
               />
             </Field>
@@ -345,7 +345,7 @@ export function SignupPage() {
       await authApi.signup({ name: form.name.trim(), email: form.email.trim(), password: form.password });
       const info = await refreshSession();
       switchToRole("organizer");
-      toast("Account created — welcome to CUE");
+      toast("Account created — welcome to Ruckus");
       navigate(sessionHome(info));
     } catch (err: any) {
       setError(err?.message || "Could not create the account");
@@ -356,7 +356,7 @@ export function SignupPage() {
 
   return (
     <AuthLayout
-      title="Create your CUE account"
+      title="Create your Ruckus account"
       subtitle="You get an organization and an organizer session. This open-source demo stores identity in process memory and snapshots — do not reuse a real password."
       footer={
         <>

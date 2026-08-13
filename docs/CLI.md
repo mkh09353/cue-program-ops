@@ -1,4 +1,4 @@
-# CUE CLI — an agentic interface
+# Ruckus CLI — an agentic interface
 
 **Give this file to your agent.** It is a complete operating manual for running a
 conference program from the command line. Every command wraps the same HTTP API the
@@ -28,10 +28,10 @@ machine-readable output**. The CLI provides all three:
 
 | Flag | Env | Default | Meaning |
 |---|---|---|---|
-| `--url` | `CUE_URL` | `https://cue-program-ops.headley-max.workers.dev` | API base URL |
-| `--event` | `CUE_EVENT` | `evt-ai-summit-2026` | event to operate on |
-| `--role` | `CUE_ROLE` | `organizer` | demo identity role |
-| `--persona` | `CUE_PERSONA` | `org-swyx` | demo persona id |
+| `--url` | `RUCKUS_URL` | `https://cue-program-ops.headley-max.workers.dev` | API base URL |
+| `--event` | `RUCKUS_EVENT` | `evt-ai-summit-2026` | event to operate on |
+| `--role` | `RUCKUS_ROLE` | `organizer` | demo identity role |
+| `--persona` | `RUCKUS_PERSONA` | `org-swyx` | demo persona id |
 | `--json` | — | off | machine-readable output |
 
 Identity is **demo persona simulation, not authentication** (`x-demo-role` /
@@ -62,7 +62,7 @@ Run `cue <command> --help` for full usage and options on any group.
 ## Full example session: build an agenda from scratch
 
 ```bash
-export CUE_URL=http://localhost:8787       # or the deployed URL
+export RUCKUS_URL=http://localhost:8787       # or the deployed URL
 
 # 1. See everything. This is always the first move.
 cue overview
@@ -72,7 +72,7 @@ cue events create --name "DevFlow Conf 2027" \
   --start 2027-05-12 --end 2027-05-14 \
   --venue "Moscone West" --rooms "Room 2A,Room 2B,Main Stage" \
   --tracks "Platform,Developer Experience"
-export CUE_EVENT=evt-devflow-conf-2027
+export RUCKUS_EVENT=evt-devflow-conf-2027
 
 # 3. Check the CFP that ships with it, then take proposals.
 cue cfp form
@@ -148,8 +148,8 @@ cue submissions list --filter pending --json \
 **Anything not covered by a command:**
 
 ```bash
-cue api GET  /api/events/$CUE_EVENT/review-recusals
-cue api POST /api/events/$CUE_EVENT/agenda/rooms --data '{"name":"Room 3C"}'
+cue api GET  /api/events/$RUCKUS_EVENT/review-recusals
+cue api POST /api/events/$RUCKUS_EVENT/agenda/rooms --data '{"name":"Room 3C"}'
 cue api GET  /e/ai-engineer-summit/public/feed.json --raw
 ```
 
@@ -167,7 +167,7 @@ cue api GET  /e/ai-engineer-summit/public/feed.json --raw
 
 - The CLI uses only Node built-ins; it adds **zero runtime dependencies** to the
   worker bundle. It runs through `tsx`, which is already a dev dependency.
-- `cue events switch` prints the export line for `CUE_EVENT`; a CLI process cannot
+- `cue events switch` prints the export line for `RUCKUS_EVENT`; a CLI process cannot
   mutate its parent shell's environment.
 - `cue content zip` writes the archive to disk (`--out`, default `cue-content.zip`).
 - Everything the CLI does is available over HTTP: see [API.md](API.md),

@@ -8,7 +8,7 @@ import {
 } from "./utils";
 
 // —— Active event ——
-// CUE now serves several events. Every organizer API path is scoped by event id,
+// Ruckus now serves several events. Every organizer API path is scoped by event id,
 // so the selection lives here and is restored from localStorage on load.
 export interface EventSummary { id: string; name: string; slug: string; timezone: string; startsAt: string; endsAt: string; venue: string; seeded?: boolean }
 

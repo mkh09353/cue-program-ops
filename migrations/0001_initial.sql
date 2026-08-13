@@ -1,4 +1,4 @@
--- Suggested D1 schema. The CUE local default intentionally uses in-memory data and does not require D1.
+-- Suggested D1 schema. The Ruckus local default intentionally uses in-memory data and does not require D1.
 CREATE TABLE IF NOT EXISTS sync_links (
   provider TEXT NOT NULL, entity_type TEXT NOT NULL, local_id TEXT NOT NULL, scope TEXT NOT NULL,
   remote_id TEXT NOT NULL, payload_hash TEXT NOT NULL, updated_at TEXT NOT NULL,

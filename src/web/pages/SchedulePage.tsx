@@ -435,7 +435,7 @@ export function SchedulePage() {
               return (
                 <li
                   key={p.id}
-                  className="flex flex-wrap items-center justify-between gap-2 rounded-[18px] bg-soft px-3 py-2"
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-soft px-3 py-2"
                   data-testid={`recent-placement-${p.sessionId}`}
                 >
                   <span className="min-w-0">
@@ -481,7 +481,7 @@ export function SchedulePage() {
         <label className="ml-auto flex items-center gap-2 text-xs font-semibold text-mid">
           Drop hour (event tz)
           <select
-            className="h-8 rounded-md border border-line px-2"
+            className="h-8 rounded-full bg-white px-2 ring-1 ring-line"
             value={hour}
             aria-label="Drop hour in event timezone"
             onChange={(e) => setHour(Number(e.target.value))}
@@ -619,8 +619,8 @@ export function SchedulePage() {
 
       <Card className="mb-4 border-line p-4" id="ai-agenda">
         <div className="flex flex-wrap items-start justify-between gap-3"><div><Badge tone="primary">AI Agenda · advisory</Badge><h2 className="mt-2 text-xl font-bold">Heuristic schedule assistant</h2><p className="text-sm text-mid">Deterministic demo heuristic only—not a model. It creates a persisted review draft and never changes the live schedule until you accept placements.</p></div><div className="flex gap-2"><Button onClick={async()=>{setBusy(true);try{await api.generateAgenda(constraints);toast("Reviewable agenda draft generated");loadAgenda()}catch(e:any){setErr(e.message)}finally{setBusy(false)}}} disabled={busy}>{agenda.length?"Regenerate draft":"Generate draft"}</Button>{agenda[0]?.status==="review"?<><Button variant="secondary" onClick={async()=>{await api.decideAgenda(agenda[0].id,"accept");toast("Accepted conflict-free placements through canonical schedule mutation");load();loadAgenda()}}>Accept all</Button><Button variant="outline" onClick={async()=>{await api.decideAgenda(agenda[0].id,"reject");toast("Proposal rejected; live schedule unchanged");loadAgenda()}}>Reject all</Button></>:null}</div></div>
-        <div className="mt-3 flex flex-wrap gap-3">{Object.entries(constraints).map(([key,value])=><label key={key} className="text-xs font-semibold text-mid">{key.replace(/([A-Z])/g," $1")}<input className="ml-2 w-16 rounded border px-2 py-1" type="number" value={value} onChange={e=>setConstraints(x=>({...x,[key]:Number(e.target.value)}))}/></label>)}</div>
-        {agenda[0]?<div className="mt-4"><p className="text-xs text-mid">Generation {agenda[0].generation} · {new Date(agenda[0].generatedAt).toLocaleString()} · provenance: {agenda[0].provenance}</p><div className="mt-2 grid gap-2 lg:grid-cols-2">{agenda[0].placements.map((p:any)=>{const s=session(p.sessionId),room=d?.rooms.find((r:any)=>r.id===p.slot.roomId);return <article key={p.id} className="rounded-[18px] border p-3"><div className="flex justify-between gap-2"><b>{s?.title||p.sessionId}</b><Badge tone={p.status==="accepted"?"ok":p.status==="conflict"?"danger":"primary"}>{p.status}</Badge></div><p className="mt-1 text-sm">{fmtDate(p.slot.startsAt)} · {fmtTime(p.slot.startsAt)} · {room?.name}</p><p className="mt-2 text-xs text-mid">Why: {p.rationale}</p>{p.conflicts?.length?<Notice tone="danger">{p.conflicts.join(" ")}</Notice>:null}{p.status==="proposed"?<div className="mt-2 flex gap-2"><Button size="sm" onClick={async()=>{try{await api.decideAgendaPlacement(agenda[0].id,p.id,"accept");toast("Placement applied through canonical conflict checks");load();loadAgenda()}catch(e:any){setErr(`AI proposal blocked: ${e.message}`);loadAgenda()}}}>Accept</Button><Button size="sm" variant="outline" onClick={async()=>{await api.decideAgendaPlacement(agenda[0].id,p.id,"reject");loadAgenda()}}>Reject</Button></div>:null}</article>})}</div>{!agenda[0].placements.length?<EmptyState title="No eligible unscheduled sessions" description="Accept a session or move one back to the pool, then regenerate."/>:null}</div>:null}
+        <div className="mt-3 flex flex-wrap gap-3">{Object.entries(constraints).map(([key,value])=><label key={key} className="text-xs font-semibold text-mid">{key.replace(/([A-Z])/g," $1")}<input className="ml-2 w-16 rounded-lg border px-2 py-1" type="number" value={value} onChange={e=>setConstraints(x=>({...x,[key]:Number(e.target.value)}))}/></label>)}</div>
+        {agenda[0]?<div className="mt-4"><p className="text-xs text-mid">Generation {agenda[0].generation} · {new Date(agenda[0].generatedAt).toLocaleString()} · provenance: {agenda[0].provenance}</p><div className="mt-2 grid gap-2 lg:grid-cols-2">{agenda[0].placements.map((p:any)=>{const s=session(p.sessionId),room=d?.rooms.find((r:any)=>r.id===p.slot.roomId);return <article key={p.id} className="rounded-2xl border p-3"><div className="flex justify-between gap-2"><b>{s?.title||p.sessionId}</b><Badge tone={p.status==="accepted"?"ok":p.status==="conflict"?"danger":"primary"}>{p.status}</Badge></div><p className="mt-1 text-sm">{fmtDate(p.slot.startsAt)} · {fmtTime(p.slot.startsAt)} · {room?.name}</p><p className="mt-2 text-xs text-mid">Why: {p.rationale}</p>{p.conflicts?.length?<Notice tone="danger">{p.conflicts.join(" ")}</Notice>:null}{p.status==="proposed"?<div className="mt-2 flex gap-2"><Button size="sm" onClick={async()=>{try{await api.decideAgendaPlacement(agenda[0].id,p.id,"accept");toast("Placement applied through canonical conflict checks");load();loadAgenda()}catch(e:any){setErr(`AI proposal blocked: ${e.message}`);loadAgenda()}}}>Accept</Button><Button size="sm" variant="outline" onClick={async()=>{await api.decideAgendaPlacement(agenda[0].id,p.id,"reject");loadAgenda()}}>Reject</Button></div>:null}</article>})}</div>{!agenda[0].placements.length?<EmptyState title="No eligible unscheduled sessions" description="Accept a session or move one back to the pool, then regenerate."/>:null}</div>:null}
       </Card>
 
       {d?.warnings?.length ? (
@@ -648,7 +648,7 @@ export function SchedulePage() {
                 key={x.id}
                 draggable
                 onDragStart={() => setDrag(x.id)}
-                className="cursor-grab rounded-[18px] border border-line bg-soft p-3 active:cursor-grabbing"
+                className="cursor-grab rounded-2xl border border-line bg-soft p-3 active:cursor-grabbing"
               >
                 <Badge tone="primary">
                   {x.trackIds?.map((i: string) => d.tracks.find((t: any) => t.id === i)?.name).join(" · ")}
@@ -777,7 +777,7 @@ export function SchedulePage() {
                 return (
                   <section
                     key={day.id}
-                    className="rounded-[18px] border border-line p-3"
+                    className="rounded-2xl border border-line p-3"
                     onDragOver={(e) => e.preventDefault()}
                     onDrop={() => {
                       if (!drag) return;
@@ -792,12 +792,12 @@ export function SchedulePage() {
                   >
                     <h3 className="text-sm font-bold">{day.label}</h3>
                     <p className="text-[11px] text-mid">{day.dateLabel} · event timezone</p>
-                    <div className="mt-2 min-h-28 rounded-lg border border-dashed border-line p-2">
+                    <div className="mt-2 min-h-28 rounded-xl border border-dashed border-line p-2">
                       {daySlots.length ? (
                         daySlots.map((slot: any) => {
                           const s = session(slot.sessionId);
                           return (
-                            <div key={slot.id} className="mb-2 rounded-lg bg-soft p-2 text-xs">
+                            <div key={slot.id} className="mb-2 rounded-xl bg-soft p-2 text-xs">
                               <b className="text-sm">{s?.title}</b>
                               <div>
                                 {fmtTime(slot.startsAt)} · {d.rooms.find((r: any) => r.id === slot.roomId)?.name}
@@ -846,7 +846,7 @@ export function SchedulePage() {
               {(view === "track" ? trackLanes : roomLanes).map((lane: any) => (
                 <section
                   key={lane.id}
-                  className="rounded-[18px] border border-line p-3"
+                  className="rounded-2xl border border-line p-3"
                   onDragOver={(e) => e.preventDefault()}
                   onDrop={() => {
                     if (!drag) return;
@@ -894,7 +894,7 @@ export function SchedulePage() {
                     )}
                     <span className="text-[11px] text-mid">Drop → {hour}:00 · {fmtTzLabel()}</span>
                   </div>
-                  <div className="min-h-16 rounded-lg border border-dashed border-line bg-soft/50 p-2">
+                  <div className="min-h-16 rounded-xl border border-dashed border-line bg-soft/50 p-2">
                     {items
                       .filter((slot: any) => {
                         const s = session(slot.sessionId);
@@ -912,8 +912,8 @@ export function SchedulePage() {
                             onDragStart={() => setDrag(s.id)}
                             data-testid={`scheduled-${slot.sessionId}`}
                             className={cn(
-                              "mb-2 cursor-grab rounded-lg border-l-4 border-l-lime bg-white p-2 shadow-sm transition-shadow",
-                              justPlaced === slot.sessionId && "ring-2 ring-ink ring-offset-2 ring-offset-canvas",
+                              "mb-2 cursor-grab rounded-xl border-l-4 border-l-brand-500 bg-white p-2 shadow-sm transition-shadow",
+                              justPlaced === slot.sessionId && "ring-2 ring-brand-500 ring-offset-2 ring-offset-canvas",
                             )}
                           >
                             {justPlaced === slot.sessionId ? (
@@ -1015,7 +1015,7 @@ export function SchedulePage() {
             <div className="grid gap-3 sm:grid-cols-3">
               <Field label="Day">
                 <select
-                  className="h-10 w-full rounded-[18px] border border-line bg-white px-3 text-sm"
+                  className="h-10 w-full rounded-full bg-white px-3 text-sm ring-1 ring-line focus:outline-none focus:ring-2 focus:ring-brand-400"
                   aria-label="Day"
                   value={place.day}
                   onChange={(e) => setPlace({ ...place, day: e.target.value })}
@@ -1029,7 +1029,7 @@ export function SchedulePage() {
               </Field>
               <Field label={`Start time (${fmtTzLabel()})`}>
                 <select
-                  className="h-10 w-full rounded-[18px] border border-line bg-white px-3 text-sm"
+                  className="h-10 w-full rounded-full bg-white px-3 text-sm ring-1 ring-line focus:outline-none focus:ring-2 focus:ring-brand-400"
                   aria-label="Start time"
                   value={place.time}
                   onChange={(e) => setPlace({ ...place, time: e.target.value })}
@@ -1051,7 +1051,7 @@ export function SchedulePage() {
               </Field>
               <Field label="Room">
                 <select
-                  className="h-10 w-full rounded-[18px] border border-line bg-white px-3 text-sm"
+                  className="h-10 w-full rounded-full bg-white px-3 text-sm ring-1 ring-line focus:outline-none focus:ring-2 focus:ring-brand-400"
                   aria-label="Room"
                   value={place.roomId}
                   onChange={(e) => setPlace({ ...place, roomId: e.target.value })}
@@ -1152,7 +1152,7 @@ export function SchedulePage() {
                     <button
                       key={i}
                       type="button"
-                      className="flex w-full items-center justify-between rounded-[18px] border border-line px-3 py-2 text-left hover:border-ink/20"
+                      className="flex w-full items-center justify-between rounded-2xl border border-line px-3 py-2 text-left hover:border-brand-200"
                       onClick={() => {
                         const slot = {
                           ...pending.slot,

@@ -1,5 +1,5 @@
 /**
- * CUE CLI runtime helpers.
+ * Ruckus CLI runtime helpers.
  *
  * Node built-ins only: the worker bundle must gain zero runtime dependencies, and
  * the CLI must run from a clean checkout with `npx tsx cli/cue.ts`.
@@ -56,12 +56,12 @@ export interface Config {
 }
 
 export function resolveConfig(flags: Flags, env: NodeJS.ProcessEnv = process.env): Config {
-  const url = (flagStr(flags, "url") || env.CUE_URL || DEFAULT_URL).replace(/\/+$/, "");
+  const url = (flagStr(flags, "url") || env.RUCKUS_URL || DEFAULT_URL).replace(/\/+$/, "");
   return {
     url,
-    event: flagStr(flags, "event") || env.CUE_EVENT || DEFAULT_EVENT,
-    role: flagStr(flags, "role") || env.CUE_ROLE || "organizer",
-    persona: flagStr(flags, "persona") || env.CUE_PERSONA || "org-swyx",
+    event: flagStr(flags, "event") || env.RUCKUS_EVENT || DEFAULT_EVENT,
+    role: flagStr(flags, "role") || env.RUCKUS_ROLE || "organizer",
+    persona: flagStr(flags, "persona") || env.RUCKUS_PERSONA || "org-swyx",
     json: flagBool(flags, "json"),
   };
 }

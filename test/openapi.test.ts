@@ -74,7 +74,7 @@ test("the document declares OpenAPI 3.1 with the expected envelope", () => {
   const yaml = doc();
   assert.match(yaml, /^openapi: 3\.1\.\d+$/m, "declares an OpenAPI 3.1 version");
   assert.match(yaml, /^info:$/m);
-  assert.match(yaml, /^ {2}title: CUE Conference Program Operations API$/m);
+  assert.match(yaml, /^ {2}title: Ruckus Conference Program Operations API$/m);
   assert.match(yaml, /^ {2}version: \d+\.\d+\.\d+$/m);
   assert.match(yaml, /^servers:$/m);
   assert.match(yaml, /cue-program-ops\.headley-max\.workers\.dev/);
@@ -179,7 +179,7 @@ test("representative paths from every group are documented with their methods", 
     "post /sync/runs/{id}/retry",
     // meta
     "get /health",
-    "get /demo",
+    "get /api/demo",
   ]) {
     assert.ok(documented.has(op), `expected ${op} in docs/openapi.yaml`);
   }

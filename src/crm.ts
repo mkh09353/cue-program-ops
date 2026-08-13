@@ -694,7 +694,7 @@ export function syncEventSpeakersIntoCrm(life: LifecycleStore = store) {
           tags: ["event-speaker", sub.category].filter(Boolean) as string[],
           stage: "confirmed",
         },
-        { id: "system", name: "CUE" },
+        { id: "system", name: "Ruckus" },
       );
       if (!made.ok) continue;
       contact = made.contact;
@@ -711,7 +711,7 @@ export function syncEventSpeakersIntoCrm(life: LifecycleStore = store) {
       linked++;
     }
     if (contact.stage === "prospect" || contact.stage === "contacted") {
-      moveStage(contact.id, "confirmed", { id: "system", name: "CUE" }, "Synced from accepted speakers");
+      moveStage(contact.id, "confirmed", { id: "system", name: "Ruckus" }, "Synced from accepted speakers");
     }
   }
   return { contacts: crm.contacts.length, linked };
@@ -938,13 +938,13 @@ export function seedCrmDemo(life: LifecycleStore = store) {
         stage: "prospect",
         customFields: row.customFields,
       },
-      { id: "system", name: "CUE" },
+      { id: "system", name: "Ruckus" },
     );
     if (!made.ok) continue;
     if (row.stage !== "prospect") {
       // walk transitions when needed
       const path = pathToStage("prospect", row.stage);
-      for (const step of path) moveStage(made.contact.id, step, { id: "system", name: "CUE" });
+      for (const step of path) moveStage(made.contact.id, step, { id: "system", name: "Ruckus" });
     }
     addNote(made.contact.id, row.note, { id: "org-swyx", name: "Jordan Alvarez" });
   }

@@ -1,4 +1,4 @@
-# CUE deployment and runtime configuration
+# Ruckus deployment and runtime configuration
 
 **Live competition deployment:** https://cue-program-ops.headley-max.workers.dev
 
@@ -15,7 +15,7 @@ npm test && npm run typecheck && npm run build
 | API | `src/dev.ts` | `http://localhost:8787` | Hono REST/HTML, snapshots, providers and sync |
 | UI | Vite | `http://localhost:5173` | React SPA; proxies API prefixes |
 
-Vite proxies `/api`, `/public`, `/embed`, `/health`, `/demo` and `/sync` to the API. With no environment configuration CUE uses process memory, `MockMailer` and `MockAcceleventsClient`; no provider credentials or external network are required.
+Vite proxies `/api`, `/public`, `/embed`, `/health` and `/sync` to the API. With no environment configuration Ruckus uses process memory, `MockMailer` and `MockAcceleventsClient`; no provider credentials or external network are required.
 
 ## Cloudflare Worker
 
@@ -90,9 +90,9 @@ Selected only when `AIRTABLE_TOKEN` and `AIRTABLE_BASE_ID` are both set.
 | Startup | `restoreSnapshot()` imports the latest matching snapshot |
 | Mutation behavior | Best-effort save; error is logged and does not roll back valid in-memory mutation |
 
-`CUE Snapshots` remains the only Airtable restore source. After that blob upsert succeeds, CUE also writes normalized `Speakers` and `Sessions` tables as automation-friendly mirrors. `Speakers` contains `Name`, `Email`, `Title`, `Company`, `Bio`, `Workflow Status`, `Event`, and the speaker ID in `External ID`. `Sessions` contains `Title`, `Abstract`, `Status`, `Track`, `Room`, `Starts At`, `Ends At`, comma-separated `Speakers`, `Event`, and the session ID in `External ID`. A newly accepted/confirmed speaker or new canonical session creates a row, so Airtable automations can trigger; later saves update the same row by its stable `External ID`. The normalized tables auto-create through Airtable's Metadata API when the token has `schema.bases:write`. Existing tables need only normal record access.
+`CUE Snapshots` remains the only Airtable restore source. After that blob upsert succeeds, Ruckus also writes normalized `Speakers` and `Sessions` tables as automation-friendly mirrors. `Speakers` contains `Name`, `Email`, `Title`, `Company`, `Bio`, `Workflow Status`, `Event`, and the speaker ID in `External ID`. `Sessions` contains `Title`, `Abstract`, `Status`, `Track`, `Room`, `Starts At`, `Ends At`, comma-separated `Speakers`, `Event`, and the session ID in `External ID`. A newly accepted/confirmed speaker or new canonical session creates a row, so Airtable automations can trigger; later saves update the same row by its stable `External ID`. The normalized tables auto-create through Airtable's Metadata API when the token has `schema.bases:write`. Existing tables need only normal record access.
 
-Normalized writes are best-effort and independent per table: metadata or row failures are logged and do not invalidate a successful snapshot save, and they are not transactional with the blob or D1. CUE does not currently delete or reconcile stale mirror rows when an entity stops qualifying or disappears. D1 remains the Worker's primary snapshot store; Airtable remains a secondary recovery copy and operational mirror, not tenant-isolated production storage.
+Normalized writes are best-effort and independent per table: metadata or row failures are logged and do not invalidate a successful snapshot save, and they are not transactional with the blob or D1. Ruckus does not currently delete or reconcile stale mirror rows when an entity stops qualifying or disappears. D1 remains the Worker's primary snapshot store; Airtable remains a secondary recovery copy and operational mirror, not tenant-isolated production storage.
 
 ## D1 snapshot persistence
 
@@ -164,7 +164,7 @@ Before submission/deployment:
 2. `npm test`
 3. `npm run typecheck`
 4. `npm run build`
-5. `/health` reports `product: "CUE"` and expected mock/configured mode
+5. `/health` reports `product: "Ruckus"` and expected mock/configured mode
 6. Complete [WALKTHROUGH.md](WALKTHROUGH.md) without provider credentials
 7. Confirm no accidental `ACCELEVENTS_LIVE=true`
 8. Confirm the public sessions, speakers, agenda, itinerary and gallery surfaces render

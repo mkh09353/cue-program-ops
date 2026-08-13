@@ -158,7 +158,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
         aria-modal="true"
         aria-label="Command palette"
         data-testid="command-palette"
-        className="relative z-10 w-full max-w-xl overflow-hidden rounded-[24px] border border-line bg-paper shadow-card"
+        className="relative z-10 w-full max-w-xl overflow-hidden rounded-3xl border border-line bg-paper shadow-lift"
         onKeyDown={onKeyDown}
       >
         <div className="flex items-center gap-2 border-b border-line px-4">
@@ -195,8 +195,8 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
                     data-active={index === active}
                     tabIndex={-1}
                     className={cn(
-                      "cursor-pointer rounded-[16px] px-3 py-2 text-sm text-ink",
-                      index === active ? "bg-ink text-soft" : "hover:bg-canvas",
+                      "cursor-pointer rounded-2xl px-3 py-2 text-sm text-ink",
+                      index === active ? "bg-brand-600 text-white" : "hover:bg-brand-50",
                     )}
                     onMouseEnter={() => setActive(index)}
                     onClick={() => go(item)}
@@ -216,7 +216,8 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
           )}
         </div>
         <div className="border-t border-line px-4 py-2 text-[11px] text-mid">
-          ↑↓ to navigate · Enter to open · Esc to close{loading ? " · loading records…" : ""}
+          ↑↓ to navigate · Enter to open · Esc to close
+          <span className={loading ? "" : "invisible"}> · loading records…</span>
         </div>
       </div>
     </div>,
@@ -234,7 +235,7 @@ export function CommandPaletteButton({ onClick }: { onClick: () => void }) {
       aria-haspopup="dialog"
       aria-keyshortcuts="Meta+K Control+K"
       title="Search (⌘K)"
-      className="flex h-9 items-center gap-2 rounded-[18px] border border-line bg-paper px-3 text-sm text-mid hover:bg-canvas hover:text-ink"
+      className="flex h-9 items-center gap-2 rounded-full bg-white px-3 text-sm text-mid ring-1 ring-line transition hover:text-ink hover:ring-brand-200"
     >
       <Search className="h-4 w-4" aria-hidden />
       <span className="hidden sm:inline">Search</span>

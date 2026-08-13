@@ -40,7 +40,7 @@ export function embedSnippet(input: { url: string; name: string; format: EmbedSn
   const format = normalizeSnippetFormat(input.format);
   if (format === "link") return input.url;
   if (format !== "script") return iframe;
-  const css = (input.css || "").trim() || ".cue-embed{border-radius:18px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.1)}";
+  const css = (input.css || "").trim() || ".cue-embed{border-radius:24px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.1)}";
   return `<style>\n${css}\n</style>\n<div class="cue-embed">\n  ${iframe}\n</div>`;
 }
 
@@ -49,7 +49,7 @@ export function PublishPage() {
   const [runs, setRuns] = useState<any[]>([]);
   const [widget, setWidget] = useState<"sessions" | "speakers" | "agenda" | "itinerary" | "gallery">("sessions");
   const [configs,setConfigs]=useState<any[]>([]),[configName,setConfigName]=useState(""),[trackFilter,setTrackFilter]=useState("");
-  const [formatFilter,setFormatFilter]=useState(""),[dayFilter,setDayFilter]=useState(""),[accent,setAccent]=useState("#12141A"),[configErr,setConfigErr]=useState("");
+  const [formatFilter,setFormatFilter]=useState(""),[dayFilter,setDayFilter]=useState(""),[accent,setAccent]=useState("#7c3aed"),[configErr,setConfigErr]=useState("");
   const [cardFields,setCardFields]=useState({speakers:true,room:true,track:true,description:true});
   const [configSaved,setConfigSaved]=useState("");
   const [configBusy,setConfigBusy]=useState(false);
@@ -97,7 +97,7 @@ export function PublishPage() {
     { id: "gallery" as const, label: "Speaker gallery", path: `/e/${EVENT_SLUG}/public/gallery`, blurb: "Visual photo grid of published speakers." },
   ];
   const active = widgets.find((w) => w.id === widget) || widgets[0];
-  const iframeSnippet = `<iframe src="${origin}${active.path}" title="${active.label}" style="width:100%;min-height:640px;border:0;border-radius:12px" loading="lazy"></iframe>`;
+  const iframeSnippet = `<iframe src="${origin}${active.path}" title="${active.label}" style="width:100%;min-height:640px;border:0;border-radius:24px" loading="lazy"></iframe>`;
   const jsonFeed = `${origin}/e/${EVENT_SLUG}/public/feed.json`;
   const sessionsJson = `${origin}/e/${EVENT_SLUG}/public/sessions.json`;
   const icsFeed = `${origin}/e/${EVENT_SLUG}/public/ics`;
@@ -141,7 +141,7 @@ export function PublishPage() {
         <p className="text-sm text-mid">
           Pick a surface, copy an iframe snippet, or share JSON / iCal feeds. All widgets read the same canonical projection — no republish step.
         </p>
-        <div className="mt-4 rounded-[18px] border border-line p-4">
+        <div className="mt-4 rounded-2xl border border-line p-4">
           <b>Saved embed configurations</b>
           <p className="mt-1 text-xs text-mid">
             Save a reusable embed for the <b>{widget}</b> widget: brand color, plus any combination of track, format and day filters.
@@ -171,7 +171,7 @@ export function PublishPage() {
             </Field>
             <Field label="Branding color" hint="Accent for headers, badges and links on this embed only.">
               <div className="flex items-center gap-2">
-                <input type="color" aria-label="Embed branding color" className="h-10 w-12 cursor-pointer rounded-[12px] border border-line bg-white" value={accent} onChange={e=>setAccent(e.target.value)}/>
+                <input type="color" aria-label="Embed branding color" className="h-10 w-12 cursor-pointer rounded-xl border border-line bg-white" value={accent} onChange={e=>setAccent(e.target.value)}/>
                 <Input aria-label="Embed branding color hex" value={accent} onChange={e=>setAccent(e.target.value)}/>
               </div>
             </Field>
@@ -207,7 +207,7 @@ export function PublishPage() {
               <Textarea aria-label="Embed custom CSS" data-testid="embed-css" rows={2} placeholder=".cue-embed{border-radius:18px}" value={customCss} onChange={e=>setCustomCss(e.target.value)}/>
             </Field>
           </div>
-          <div className="mt-3 rounded-[18px] border border-line p-3">
+          <div className="mt-3 rounded-2xl border border-line p-3">
             <b className="text-xs uppercase tracking-wide text-mid">Card fields to display</b>
             <p className="mt-1 text-xs text-mid">Unchecked fields are omitted from the rendered cards in this embed.</p>
             <div className="mt-2 flex flex-wrap gap-2">
@@ -219,7 +219,7 @@ export function PublishPage() {
               ] as const).map(([key,label])=>{
                 const id=`embed-field-${key}`;
                 const checked=(cardFields as any)[key];
-                return <label key={key} htmlFor={id} className={`flex cursor-pointer items-center gap-2 rounded-[18px] border px-3 py-2 text-sm ${checked?"border-ink bg-soft":"border-line bg-white"}`}>
+                return <label key={key} htmlFor={id} className={`flex cursor-pointer items-center gap-2 rounded-full border px-3 py-2 text-sm ${checked?"border-brand-400 bg-brand-50":"border-line bg-white"}`}>
                   <input id={id} type="checkbox" aria-label={`Show ${label}`} checked={checked} onChange={e=>setCardFields(prev=>({...prev,[key]:e.target.checked}))}/>
                   {label}
                 </label>;
@@ -244,7 +244,7 @@ export function PublishPage() {
             const snippet=embedSnippet({url,name:c.name,format:pref.format,css:pref.css});
             const cssDraft=cssDrafts[c.id]??pref.css;
             const filterBits=[c.filters?.track&&`track: ${c.filters.track}`,c.filters?.format&&`format: ${c.filters.format}`,c.filters?.day&&`day: ${c.filters.day}`].filter(Boolean);
-            return <div key={c.id} className="mt-3 rounded-[18px] bg-soft p-3 text-sm">
+            return <div key={c.id} className="mt-3 rounded-2xl bg-soft p-3 text-sm">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex flex-wrap items-center gap-2">
                   <b>{c.name}</b>
@@ -301,13 +301,13 @@ export function PublishPage() {
           ))}
         </div>
         <p className="mt-3 text-sm text-mid">{active.blurb}</p>
-        <div className="mt-3 overflow-hidden rounded-[18px] border">
+        <div className="mt-3 overflow-hidden rounded-2xl border">
           <iframe title={`${active.label} preview`} src={active.path} className="h-80 w-full bg-white" />
         </div>
         <div className="mt-3 grid gap-3 lg:grid-cols-2">
           <div>
             <div className="mb-1 text-[11px] font-bold uppercase tracking-wide text-mid">iframe snippet</div>
-            <pre className="overflow-x-auto rounded-[18px] bg-ink p-3 text-[11px] text-soft">{iframeSnippet}</pre>
+            <pre className="overflow-x-auto rounded-2xl bg-ink p-3 text-[11px] text-soft">{iframeSnippet}</pre>
             <div className="mt-2 flex flex-wrap gap-2">
               <Button
                 size="sm"
@@ -326,7 +326,7 @@ export function PublishPage() {
             </div>
           </div>
           <div className="space-y-2 text-sm">
-            <div className="rounded-[18px] border border-line bg-soft p-3">
+            <div className="rounded-2xl border border-line bg-soft p-3">
               <div className="text-[11px] font-bold uppercase tracking-wide text-mid">JSON feed</div>
               <code className="mt-1 block break-all text-xs">{jsonFeed}</code>
               <div className="mt-2 flex flex-wrap gap-2">
@@ -347,7 +347,7 @@ export function PublishPage() {
                 </Button>
               </div>
             </div>
-            <div className="rounded-[18px] border border-line bg-soft p-3">
+            <div className="rounded-2xl border border-line bg-soft p-3">
               <div className="text-[11px] font-bold uppercase tracking-wide text-mid">XML feed ({active.label})</div>
               <code className="mt-1 block break-all text-xs">{xmlByWidget[widget]}</code>
               <div className="mt-2 flex flex-wrap gap-2">
@@ -373,7 +373,7 @@ export function PublishPage() {
                 </Button>
               </div>
             </div>
-            <div className="rounded-[18px] border border-line bg-soft p-3">
+            <div className="rounded-2xl border border-line bg-soft p-3">
               <div className="text-[11px] font-bold uppercase tracking-wide text-mid">iCal feed</div>
               <code className="mt-1 block break-all text-xs">{icsFeed}</code>
               <div className="mt-2 flex flex-wrap gap-2">
@@ -394,7 +394,7 @@ export function PublishPage() {
                 </Button>
               </div>
             </div>
-            <div className="rounded-[18px] border border-dashed border-line p-3 text-xs text-mid">
+            <div className="rounded-2xl border border-dashed border-line p-3 text-xs text-mid">
               Legacy aliases still work:{" "}
               <a className="font-semibold text-ink" href={legacyGallery} target="_blank" rel="noreferrer">
                 /public/.../gallery
@@ -417,7 +417,7 @@ export function PublishPage() {
           <p className="max-w-3xl text-sm text-mid">
             Preview plans create/update/skip without remote calls. Run uses the in-process mock client. Production HTTP
             paths and field names remain placeholders until Accelevents confirms its API — do not enable{" "}
-            <code className="rounded bg-canvas px-1">ACCELEVENTS_LIVE=true</code> without that contract.
+            <code className="rounded-lg bg-canvas px-1">ACCELEVENTS_LIVE=true</code> without that contract.
           </p>
           <div className="mt-4 flex flex-wrap gap-2">
             <Button
@@ -452,7 +452,7 @@ export function PublishPage() {
           </div>
 
           {sync ? (
-            <div className="mt-4 rounded-[18px] border border-line bg-soft p-4 text-sm">
+            <div className="mt-4 rounded-2xl border border-line bg-soft p-4 text-sm">
               <b>
                 {sync.run?.mode === "dry_run" ? "Preview" : "Run"} · {formatStatus(sync.run?.status)}
               </b>
@@ -476,7 +476,7 @@ export function PublishPage() {
           {runs.length ? (
             <ul className="mt-2 space-y-2 text-sm">
               {runs.map((r) => (
-                <li key={r.id} className="rounded-lg border border-line px-3 py-2">
+                <li key={r.id} className="rounded-xl border border-line px-3 py-2">
                   {r.mode} · {formatStatus(r.status)} · create {r.counts?.create} / update {r.counts?.update} / skip{" "}
                   {r.counts?.skip} / error {r.counts?.error}
                 </li>
@@ -767,10 +767,11 @@ export function FormsPage() {
         description="Edit the public call-for-proposals form. Save (or Save & publish) so field changes reach the public CFP."
         actions={
           <>
-            <Button variant="secondary" disabled={saving} onClick={() => save()}>
+            <Button variant="secondary" className="min-w-[7.5rem]" disabled={saving} onClick={() => save()}>
               {saving ? "Saving…" : dirty ? "Save form *" : "Save form"}
             </Button>
             <Button
+              className="min-w-[11.5rem]"
               disabled={saving}
               onClick={() => save({ openPublic: true })}
               aria-label="Save and publish CFP"
@@ -906,7 +907,7 @@ export function FormsPage() {
               onChange={(e) => setForm({ ...form, welcomeMd: e.target.value })}
             />
           </Field>
-          <div className="mb-3 rounded-[18px] border border-line bg-soft p-3">
+          <div className="mb-3 rounded-2xl border border-line bg-soft p-3">
             <div className="mb-1 text-[11px] font-bold uppercase tracking-wide text-mid">Welcome preview</div>
             <Markdown text={form.welcomeMd || ""} />
             {trackOptions.length ? (
@@ -923,7 +924,7 @@ export function FormsPage() {
               onChange={(e) => setForm({ ...form, successMd: e.target.value })}
             />
           </Field>
-          <div className="mb-3 rounded-[18px] border border-line bg-soft p-3">
+          <div className="mb-3 rounded-2xl border border-line bg-soft p-3">
             <div className="mb-1 text-[11px] font-bold uppercase tracking-wide text-mid">Success preview</div>
             <Markdown text={form.successMd || ""} />
           </div>
@@ -938,7 +939,7 @@ export function FormsPage() {
             {form.fields.map((f: any, idx: number) => {
               const hasCondition = !!f.visibleWhen;
               return (
-                <div key={f.key} className="rounded-[18px] border border-line p-3" data-testid={`field-row-${f.key}`}>
+                <div key={f.key} className="rounded-2xl border border-line p-3" data-testid={`field-row-${f.key}`}>
                   <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                     <span className="text-[11px] font-bold uppercase tracking-wide text-mid">
                       Question {idx + 1} of {form.fields.length}
@@ -1148,7 +1149,7 @@ export function FormsPage() {
           </h3>
           <ul className="space-y-2 text-sm">
             {form.routes.map((r: any, idx: number) => (
-              <li key={`${r.category}-${idx}`} className="grid grid-cols-[1fr_1fr] gap-2 rounded-lg bg-soft p-2">
+              <li key={`${r.category}-${idx}`} className="grid grid-cols-[1fr_1fr] gap-2 rounded-xl bg-soft p-2">
                 <div>
                   <div className="text-[10px] font-bold uppercase text-mid">Category</div>
                   <Input
@@ -1209,7 +1210,7 @@ export function FormsPage() {
             Add route
           </Button>
 
-          <div className="mt-5 rounded-[18px] border border-dashed border-line p-3">
+          <div className="mt-5 rounded-2xl border border-dashed border-line p-3">
             <div className="mb-2 text-xs font-bold uppercase tracking-wide text-mid">Logic preview</div>
             <div className="mb-2 flex flex-wrap gap-2">
               {selectFields.map((f: any) => (
@@ -1498,7 +1499,7 @@ export function SettingsPage() {
           <Field label="Timezone">
             <Input value={event.timezone} onChange={(e) => setEvent({ ...event, timezone: e.target.value })} />
           </Field>
-          <div className="mb-3 rounded-[18px] border border-line bg-soft p-3">
+          <div className="mb-3 rounded-2xl border border-line bg-soft p-3">
             <label htmlFor="speaker-confirmation" className="flex cursor-pointer items-start gap-3">
               <input
                 id="speaker-confirmation"

@@ -38,7 +38,7 @@ test("ChipCombobox is one reusable component with combobox ARIA", () => {
 test("the combobox is compact and keyboard driven", () => {
   const src = ui();
   // One row at rest; the dropdown floats rather than growing the form.
-  assert.match(src, /flex min-h-10 flex-wrap items-center gap-1 rounded-\[18px\]/, "input row is one row high");
+  assert.match(src, /flex min-h-10 flex-wrap items-center gap-1 rounded-2xl/, "input row is one row high");
   assert.match(src, /absolute left-0 right-0 z-40 mt-1 max-h-60 overflow-y-auto/, "dropdown floats and scrolls");
   // Keyboard: arrows, Enter, Escape, Backspace.
   assert.match(src, /e\.key === "ArrowDown"/);

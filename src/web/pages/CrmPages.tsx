@@ -13,7 +13,11 @@ import {
   PageHeader,
   Select,
   Spinner,
+  Table,
+  TableWrap,
   Textarea,
+  Th,
+  THead,
   toast,
 } from "../components/ui";
 
@@ -34,7 +38,7 @@ export const CRM_STAGE_TRANSITIONS: Record<string, string[]> = {
 
 
 function CrmSubnav() {
-  const link = "rounded-lg px-3 py-1.5 text-sm font-medium text-mid hover:bg-canvas";
+  const link = "rounded-xl px-3 py-1.5 text-sm font-medium text-mid hover:bg-canvas";
   const active = "bg-canvas text-ink";
   return (
     <div className="mb-4 flex flex-wrap gap-1 border-b border-line pb-3">
@@ -172,28 +176,28 @@ export function CrmDirectoryPage() {
               setStage("");
             }}
           >
-            <Card className="p-4 transition hover:border-ink/20">
+            <Card className="p-4 transition hover:border-brand-200">
               <p className="text-xs font-semibold uppercase tracking-wide text-mid">Contacts</p>
               <p className="mt-1 text-2xl font-bold">{dash.totalContacts}</p>
               <p className="mt-1 text-xs text-mid">Show all →</p>
             </Card>
           </button>
           <Link to="/app/crm/segments" className="block" data-testid="kpi-segments">
-            <Card className="p-4 transition hover:border-ink/20">
+            <Card className="p-4 transition hover:border-brand-200">
               <p className="text-xs font-semibold uppercase tracking-wide text-mid">Segments</p>
               <p className="mt-1 text-2xl font-bold">{dash.segments}</p>
               <p className="mt-1 text-xs text-mid">Manage segments →</p>
             </Card>
           </Link>
           <Link to="/app/crm/campaigns" className="block">
-            <Card className="p-4 transition hover:border-ink/20">
+            <Card className="p-4 transition hover:border-brand-200">
               <p className="text-xs font-semibold uppercase tracking-wide text-mid">Campaigns</p>
               <p className="mt-1 text-2xl font-bold">{dash.campaigns}</p>
               <p className="mt-1 text-xs text-mid">View history →</p>
             </Card>
           </Link>
           <button type="button" className="text-left" data-testid="kpi-top-tag" onClick={() => setTag(dash.topTags?.[0]?.name || "")}>
-            <Card className="p-4 transition hover:border-ink/20">
+            <Card className="p-4 transition hover:border-brand-200">
               <p className="text-xs font-semibold uppercase tracking-wide text-mid">Top tag</p>
               <p className="mt-1 text-lg font-bold">{dash.topTags?.[0]?.name || "—"}</p>
               <p className="mt-1 text-xs text-mid">Filter by this tag →</p>
@@ -218,11 +222,11 @@ export function CrmDirectoryPage() {
                       onClick={() => setStage(bar.id)}
                     >
                       <div className="flex items-center justify-between text-xs">
-                        <span className={stage === bar.id ? "font-bold text-ink" : "text-mid"}>{bar.label}</span>
+                        <span className={stage === bar.id ? "font-medium text-ink" : "font-medium text-mid"}>{bar.label}</span>
                         <span className="font-semibold text-ink">{bar.count}</span>
                       </div>
                       <div className="mt-1 h-2 overflow-hidden rounded-full bg-canvas" aria-hidden>
-                        <div className="h-full bg-ink" style={{ width: `${Math.round((bar.count / max) * 100)}%` }} />
+                        <div className="h-full bg-brand-600" style={{ width: `${Math.round((bar.count / max) * 100)}%` }} />
                       </div>
                     </button>
                   </li>
@@ -235,7 +239,7 @@ export function CrmDirectoryPage() {
             <h3 className="text-sm font-bold uppercase tracking-wide text-mid">Recent activity</h3>
             <ul className="mt-3 space-y-2 text-sm">
               {(dash.recentActivity || []).map((row: any) => (
-                <li key={`${row.kind}-${row.id}`} className="rounded-[18px] bg-soft p-3">
+                <li key={`${row.kind}-${row.id}`} className="rounded-2xl bg-soft p-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <Badge tone="muted">{row.kind === "stage" ? "stage move" : row.kind}</Badge>
                     <span className="text-xs text-mid">{new Date(row.at).toLocaleString()}</span>
@@ -267,7 +271,7 @@ export function CrmDirectoryPage() {
           </Field>
           <Field label="Tag" hint="Options come from tags actually in use.">
             <select
-              className="w-full rounded-lg border border-line bg-white px-3 py-2 text-sm"
+              className="w-full rounded-2xl bg-white px-3 py-2 text-sm ring-1 ring-line focus:outline-none focus:ring-2 focus:ring-brand-400"
               aria-label="Filter by tag"
               value={tag}
               onChange={(e) => setTag(e.target.value)}
@@ -280,7 +284,7 @@ export function CrmDirectoryPage() {
           </Field>
           <Field label="Company" hint="Companies on existing contacts — no free text.">
             <select
-              className="w-full rounded-lg border border-line bg-white px-3 py-2 text-sm"
+              className="w-full rounded-2xl bg-white px-3 py-2 text-sm ring-1 ring-line focus:outline-none focus:ring-2 focus:ring-brand-400"
               aria-label="Filter by company"
               value={company}
               onChange={(e) => setCompany(e.target.value)}
@@ -293,7 +297,7 @@ export function CrmDirectoryPage() {
           </Field>
           <Field label="Stage">
             <select
-              className="w-full rounded-lg border border-line bg-white px-3 py-2 text-sm"
+              className="w-full rounded-2xl bg-white px-3 py-2 text-sm ring-1 ring-line focus:outline-none focus:ring-2 focus:ring-brand-400"
               value={stage}
               onChange={(e) => setStage(e.target.value)}
             >
@@ -361,25 +365,25 @@ export function CrmDirectoryPage() {
       {!rows.length ? (
         <EmptyState title="No contacts match" description="Adjust filters or import a CSV." />
       ) : (
-        <div className="overflow-x-auto rounded-[18px] border border-line bg-white">
-          <table className="min-w-full text-left text-sm">
-            <thead className="border-b border-line bg-soft text-xs uppercase tracking-wide text-mid">
+        <TableWrap>
+          <Table className="min-w-full">
+            <THead>
               <tr>
-                <th className="px-3 py-2">
+                <Th className="px-3 py-2">
                   <input
                     type="checkbox"
                     aria-label="Select all visible contacts"
                     checked={selected.length === rows.length && rows.length > 0}
                     onChange={(e) => setSelected(e.target.checked ? rows.map((r) => r.id) : [])}
                   />
-                </th>
-                <th className="px-3 py-2">Name</th>
-                <th className="px-3 py-2">Company</th>
-                <th className="px-3 py-2">Stage</th>
-                <th className="px-3 py-2">Tags</th>
-                <th className="px-3 py-2">Events</th>
+                </Th>
+                <Th className="px-3 py-2">Name</Th>
+                <Th className="px-3 py-2">Company</Th>
+                <Th className="px-3 py-2">Stage</Th>
+                <Th className="px-3 py-2">Tags</Th>
+                <Th className="px-3 py-2">Events</Th>
               </tr>
-            </thead>
+            </THead>
             <tbody>
               {rows.map((r) => (
                 <tr key={r.id} className="border-b border-line hover:bg-soft">
@@ -412,8 +416,8 @@ export function CrmDirectoryPage() {
                 </tr>
               ))}
             </tbody>
-          </table>
-        </div>
+          </Table>
+        </TableWrap>
       )}
 
       {composeOpen ? (
@@ -649,7 +653,7 @@ export function CrmContactPage() {
           </div>
           <ul className="mt-3 space-y-2">
             {(contact.notes || []).map((n: any) => (
-              <li key={n.id} className="rounded-lg border border-line bg-soft p-3 text-sm">
+              <li key={n.id} className="rounded-xl border border-line bg-soft p-3 text-sm">
                 <div className="text-xs text-mid">
                   {n.authorName} · {new Date(n.createdAt).toLocaleString()}
                 </div>
@@ -665,7 +669,7 @@ export function CrmContactPage() {
             {(contact.eventHistory || []).length ? (
               <ul className="mt-2 space-y-2 text-sm">
                 {contact.eventHistory.map((e: any, i: number) => (
-                  <li key={i} className="rounded-lg border border-line p-2">
+                  <li key={i} className="rounded-xl border border-line p-2">
                     <div className="font-semibold">{e.eventName}</div>
                     <div className="text-xs text-mid">
                       {e.role} · {e.status}
@@ -831,7 +835,7 @@ export function CrmContactPage() {
               <p className="mt-1 text-xs text-mid">Same name or email as this contact.</p>
               <ul className="mt-3 space-y-2 text-sm">
                 {dupes.map((d) => (
-                  <li key={d.id} className="rounded-lg border border-line p-2">
+                  <li key={d.id} className="rounded-xl border border-line p-2">
                     <div className="font-semibold">{d.name}</div>
                     <div className="text-xs text-mid">{d.email}</div>
                     <div className="mt-2 flex flex-wrap gap-2">
@@ -951,9 +955,9 @@ export function CrmPipelinePage() {
               if (id && from && canDrop(col.id)) void moveCard(id, col.id, from);
             }}
             className={cn(
-              "w-64 shrink-0 rounded-[18px] border border-line bg-soft p-3 transition",
+              "w-64 shrink-0 rounded-2xl border border-line bg-soft p-3 transition",
               dragging && !canDrop(col.id) && "opacity-40",
-              dropTarget === col.id && canDrop(col.id) && "border-ink bg-canvas ring-2 ring-ink",
+              dropTarget === col.id && canDrop(col.id) && "border-brand-400 bg-brand-50 ring-2 ring-brand-500",
             )}
           >
             <div className="mb-2 flex items-center justify-between">
@@ -979,7 +983,7 @@ export function CrmPipelinePage() {
                   className={cn(
                     "cursor-grab p-3 shadow-sm transition active:cursor-grabbing",
                     dragging?.id === c.id && "opacity-50",
-                    justMoved === c.id && "ring-2 ring-ink",
+                    justMoved === c.id && "ring-2 ring-brand-500",
                   )}
                 >
                   <Link to={`/app/crm/contacts/${c.id}`} className="font-semibold text-ink hover:underline">
@@ -1005,7 +1009,7 @@ export function CrmPipelinePage() {
                           type="button"
                           data-testid={`stage-button-${c.id}-${s}`}
                           aria-label={`Move ${c.name} to ${s}`}
-                          className="rounded bg-white px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-mid ring-1 ring-line hover:bg-canvas hover:text-ink"
+                          className="rounded-lg bg-white px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-mid ring-1 ring-line hover:bg-canvas hover:text-ink"
                           onClick={async () => {
                             try {
                               await api.crmMoveStage(c.id, s);
@@ -1059,7 +1063,7 @@ function CrmFieldDefinitionsCard() {
       {msg ? <Notice tone="ok" onClose={() => setMsg("")}>{msg}</Notice> : null}
       <ul className="mt-3 space-y-2 text-sm">
         {defs.map((d) => (
-          <li key={d.key} className="flex flex-wrap items-center justify-between gap-2 rounded-[18px] bg-soft p-3">
+          <li key={d.key} className="flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-soft p-3">
             <div>
               <b>{d.label}</b> <Badge tone="muted">{d.type}</Badge>
               <div className="text-xs text-mid">
@@ -1162,7 +1166,7 @@ export function CrmSegmentsPage() {
         <div className="flex flex-wrap gap-2">
           <Input className="max-w-xs" placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} />
           <select
-            className="rounded-lg border border-line bg-white px-3 py-2 text-sm"
+            className="rounded-2xl bg-white px-3 py-2 text-sm ring-1 ring-line focus:outline-none focus:ring-2 focus:ring-brand-400"
             value={stage}
             onChange={(e) => setStage(e.target.value)}
           >
@@ -1317,20 +1321,20 @@ export function CrmImportPage() {
       ) : null}
 
       {results ? (
-        <div className="mt-4 overflow-x-auto rounded-[18px] border border-line bg-white">
-          <table className="min-w-full text-left text-sm">
-            <thead className="border-b bg-soft text-xs uppercase text-mid">
+        <TableWrap className="mt-4">
+          <Table className="min-w-full">
+            <THead>
               <tr>
-                <th className="px-3 py-2">Row</th>
-                <th className="px-3 py-2">Name</th>
-                <th className="px-3 py-2">Email</th>
-                <th className="px-3 py-2">Status</th>
-                <th className="px-3 py-2">Detail</th>
+                <Th className="px-3 py-2">Row</Th>
+                <Th className="px-3 py-2">Name</Th>
+                <Th className="px-3 py-2">Email</Th>
+                <Th className="px-3 py-2">Status</Th>
+                <Th className="px-3 py-2">Detail</Th>
               </tr>
-            </thead>
+            </THead>
             <tbody>
               {results.map((r) => (
-                <tr key={r.row} className="border-b border-line">
+                <tr key={r.row} className="border-t border-line">
                   <td className="px-3 py-2">{r.row}</td>
                   <td className="px-3 py-2">{r.raw?.name}</td>
                   <td className="px-3 py-2">{r.raw?.email}</td>
@@ -1341,8 +1345,8 @@ export function CrmImportPage() {
                 </tr>
               ))}
             </tbody>
-          </table>
-        </div>
+          </Table>
+        </TableWrap>
       ) : null}
     </div>
   );

@@ -30,8 +30,9 @@ import {
   subscribePersona,
   switchToRole,
 } from "../lib/api";
-import { cn, EVENT_NAME, type Persona, type Role } from "../lib/utils";
-import { Button } from "./ui";
+import { cn, daysUntil, EVENT_NAME, type Persona, type Role } from "../lib/utils";
+import { Button, Card } from "./ui";
+import { RuckusDuckMark } from "./RuckusMascot";
 import { CommandPalette, CommandPaletteButton } from "./CommandPalette";
 import { signOut, useSession } from "../lib/auth";
 import {
@@ -151,7 +152,7 @@ export function EventSwitcher({ readOnly }: { readOnly?: boolean } = {}) {
         value={(form as any)[key]}
         placeholder={placeholder}
         onChange={(e) => setForm({ ...form, [key]: e.target.value })}
-        className="mt-1 w-full rounded-[10px] border border-line bg-paper px-2 py-1.5 text-sm font-normal normal-case tracking-normal text-ink"
+        className="mt-1 w-full rounded-full bg-white px-3 py-1.5 text-sm font-normal normal-case tracking-normal text-ink outline-none ring-1 ring-line focus:ring-2 focus:ring-brand-400"
       />
     </label>
   );
@@ -164,14 +165,14 @@ export function EventSwitcher({ readOnly }: { readOnly?: boolean } = {}) {
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label={`Current event: ${active.name}. Switch event`}
-        className="flex max-w-[240px] items-center gap-2 rounded-[10px] border border-line bg-paper px-2.5 py-1.5 text-left text-sm text-ink hover:bg-soft"
+        className="flex min-w-[11rem] max-w-[240px] items-center gap-2 rounded-full bg-white px-3 py-1.5 text-left text-sm text-ink ring-1 ring-line transition hover:ring-brand-200"
       >
         <span className="truncate font-medium" data-testid="active-event-name">{active.name}</span>
         <ChevronDown className="h-4 w-4 shrink-0 text-mid" />
       </button>
       {created ? (
         <div
-          className="absolute right-0 top-full z-40 mt-1 w-[320px] rounded-[14px] border border-line bg-paper p-3 text-sm shadow-card"
+          className="absolute right-0 top-full z-40 mt-1 w-[320px] rounded-2xl border border-line bg-paper p-3 text-sm shadow-lift"
           role="status"
           aria-live="polite"
           data-testid="event-created-banner"
@@ -195,7 +196,7 @@ export function EventSwitcher({ readOnly }: { readOnly?: boolean } = {}) {
         </div>
       ) : null}
       {open ? (
-        <div role="menu" className="absolute right-0 z-40 mt-1 max-h-[80vh] w-[320px] overflow-y-auto overscroll-contain rounded-[14px] border border-line bg-paper p-2 shadow-card">
+        <div role="menu" className="absolute right-0 z-40 mt-1 max-h-[80vh] w-[320px] overflow-y-auto overscroll-contain rounded-2xl border border-line bg-paper p-2 shadow-lift">
           <div className="px-2 pb-1 pt-1 text-[11px] uppercase tracking-wide text-mid">Events</div>
           {events.map((e) => (
             <button
@@ -207,8 +208,8 @@ export function EventSwitcher({ readOnly }: { readOnly?: boolean } = {}) {
                 setOpen(false);
               }}
               className={cn(
-                "flex w-full flex-col rounded-[10px] px-2 py-1.5 text-left text-sm hover:bg-soft",
-                e.id === active.id && "bg-soft font-medium",
+                "flex w-full flex-col rounded-xl px-2 py-1.5 text-left text-sm font-medium hover:bg-brand-50",
+                e.id === active.id && "bg-brand-50",
               )}
             >
               <span className="truncate text-ink">{e.name}</span>
@@ -235,7 +236,7 @@ export function EventSwitcher({ readOnly }: { readOnly?: boolean } = {}) {
                   {field("Tracks (optional, comma separated)", "tracks", "text", "Platform, DX")}
                   {error ? <div className="text-xs text-rose-600" role="alert">{error}</div> : null}
                   <div className="flex gap-2">
-                    <Button size="sm" data-testid="create-event-submit" onClick={submit} disabled={busy}>
+                    <Button size="sm" className="min-w-[7.5rem]" data-testid="create-event-submit" onClick={submit} disabled={busy}>
                       {busy ? "Creating…" : "Create event"}
                     </Button>
                     <Button size="sm" variant="ghost" onClick={() => setCreating(false)} disabled={busy}>
@@ -248,7 +249,7 @@ export function EventSwitcher({ readOnly }: { readOnly?: boolean } = {}) {
                   type="button"
                   role="menuitem"
                   onClick={() => setCreating(true)}
-                  className="flex w-full items-center gap-2 rounded-[10px] px-2 py-1.5 text-left text-sm text-ink hover:bg-soft"
+                  className="flex w-full items-center gap-2 rounded-xl px-2 py-1.5 text-left text-sm text-ink hover:bg-brand-50"
                 >
                   <Plus className="h-4 w-4" /> New event
                 </button>
@@ -300,7 +301,7 @@ function PersonaSwitcher({ lockRole }: { lockRole?: Role }) {
         // organiz…"). Only genuinely tiny screens constrain it, and the title
         // attribute then exposes the full label.
         title={selectedLabel}
-        className="h-9 w-auto max-w-[62vw] rounded-[18px] border-0 bg-canvas px-2.5 text-sm font-medium text-ink outline-none focus:ring-2 focus:ring-ink sm:max-w-none"
+        className="h-9 w-auto max-w-[62vw] rounded-full bg-white px-3 text-sm font-medium text-ink outline-none ring-1 ring-line focus:ring-2 focus:ring-brand-400 sm:min-w-[13rem] sm:max-w-none"
         value={value}
         onChange={(e) => {
           const pool = list.length ? list : getPersonaCatalog();
@@ -352,6 +353,7 @@ function SessionBadge({ compact = false }: { compact?: boolean }) {
         size="sm"
         variant="ghost"
         data-testid="sign-out"
+        className="min-w-[6.5rem]"
         disabled={busy}
         onClick={async () => {
           setBusy(true);
@@ -369,22 +371,48 @@ function SessionBadge({ compact = false }: { compact?: boolean }) {
   );
 }
 
+/**
+ * Shell brand lockup. Uses the same duck mark / wordmark as the marketing site
+ * rather than the old monochrome "R" tile, so the hand-off from "/" into any
+ * shell keeps the same identity.
+ */
 function Brand({ subtitle = "Conference ops", compact = false }: { subtitle?: string; compact?: boolean }) {
   return (
-    <div className="flex items-center gap-2">
-      <div
-        className="grid h-9 w-9 place-items-center rounded-[18px] bg-ink text-sm font-semibold text-soft"
-        aria-hidden
-      >
-        R
-      </div>
+    <div className="flex min-w-0 items-center gap-2.5">
+      {/* When the wordmark is visible the mark is decorative (empty alt), so the
+          brand is not announced twice. */}
+      <RuckusDuckMark className={compact ? "h-7 w-7" : "h-9 w-9"} title={compact ? "Ruckus" : ""} />
       {!compact ? (
-        <div>
-          <div className="text-sm font-semibold tracking-tight text-ink">Ruckus</div>
-          <div className="text-[10px] font-medium uppercase tracking-wider text-mid">{subtitle}</div>
+        <div className="min-w-0">
+          <div className="font-display text-[18px] font-extrabold leading-none tracking-tight text-navy">
+            Ruckus
+          </div>
+          <div className="mt-0.5 truncate text-[10px] font-medium uppercase tracking-[0.12em] text-mid">
+            {subtitle}
+          </div>
         </div>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * Persistent countdown chip in the organizer header, matching the marketing
+ * header's status pill. Derived from the already-loaded active event, so it adds
+ * no request; it renders nothing until the real event dates are known.
+ */
+function EventCountdownPill() {
+  const active = useActiveEvent();
+  if (!active.startsAt || Number.isNaN(Date.parse(active.startsAt))) return null;
+  const days = daysUntil(active.startsAt);
+  return (
+    <span
+      className="hidden items-center gap-1.5 rounded-full bg-brand-50 px-3 py-1.5 font-mono text-[11px] font-semibold uppercase tracking-[0.06em] text-brand-700 ring-1 ring-brand-200 xl:inline-flex"
+      data-testid="event-countdown"
+    >
+      <span className="h-1.5 w-1.5 rounded-full bg-brand-500" aria-hidden />
+      {days === 0 ? "Event is live today" : `${days} day${days === 1 ? "" : "s"} to showtime`}
+    </span>
   );
 }
 
@@ -392,7 +420,7 @@ function SkipLink() {
   return (
     <a
       href="#main"
-      className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[100] focus:rounded-[18px] focus:bg-ink focus:px-3 focus:py-2 focus:text-soft"
+      className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[100] focus:rounded-full focus:bg-brand-600 focus:px-3 focus:py-2 focus:font-semibold focus:text-white"
     >
       Skip to content
     </a>
@@ -480,8 +508,8 @@ export function OrganizerShell() {
   if (currentPersona.role !== "organizer") {
     return (
       <div className="grid min-h-screen place-items-center bg-canvas p-6">
-        <div className="max-w-md rounded-[24px] border border-line bg-paper p-6 text-center shadow-card">
-          <h1 className="text-xl font-semibold">Organizer access required</h1>
+        <Card className="max-w-md p-6 text-center">
+          <h1 className="font-display text-xl font-extrabold tracking-[-0.03em]">Organizer access required</h1>
           <p className="mt-2 text-sm text-mid">
             You are signed in as <b>{currentPersona.name}</b> ({currentPersona.role}). Persona simulation does not
             auto-promote non-organizers into organizer mode — switch persona explicitly or return to your portal.
@@ -499,7 +527,7 @@ export function OrganizerShell() {
               <a href={roleHome(currentPersona.role)}>Return to your portal</a>
             </Button>
           </div>
-        </div>
+        </Card>
       </div>
     );
   }
@@ -523,8 +551,9 @@ export function OrganizerShell() {
           onClick={() => setOpen(false)}
           className={({ isActive }) =>
             cn(
-              "flex items-center gap-2 rounded-[18px] px-3 py-2 text-sm font-medium text-mid hover:bg-canvas hover:text-ink",
-              hashAwareActive(item, isActive) && "bg-ink text-soft hover:bg-ink hover:text-soft",
+              "flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-mid transition hover:bg-brand-50 hover:text-ink",
+              hashAwareActive(item, isActive) &&
+                "bg-brand-600 text-white shadow-sm hover:bg-brand-600 hover:text-white",
             )
           }
         >
@@ -549,7 +578,7 @@ export function OrganizerShell() {
           </div>
         </aside>
         <div className="flex min-w-0 flex-1 flex-col">
-          <header className="sticky top-0 z-20 flex h-16 items-center justify-between gap-3 border-b border-line bg-canvas/90 px-4 backdrop-blur">
+          <header className="sticky top-0 z-20 flex h-16 items-center justify-between gap-3 border-b border-line bg-white/85 px-4 backdrop-blur">
             <div className="flex items-center gap-2">
               <Button
                 variant="ghost"
@@ -563,10 +592,13 @@ export function OrganizerShell() {
               <div className="md:hidden">
                 <Brand compact />
               </div>
-              <div className="hidden text-sm text-mid sm:block">Organizer workspace</div>
+              <div className="hidden text-[12px] font-medium uppercase tracking-[0.18em] text-mid lg:block">
+                Organizer workspace
+              </div>
               <EventSwitcher />
             </div>
             <div className="flex items-center gap-2">
+              <EventCountdownPill />
               <CommandPaletteButton onClick={() => setPaletteOpen(true)} />
               <PersonaSwitcher />
               <SessionBadge />
@@ -580,7 +612,7 @@ export function OrganizerShell() {
       {open ? (
         <div className="fixed inset-0 z-40 md:hidden">
           <button className="absolute inset-0 bg-ink/40" aria-label="Close menu" onClick={() => setOpen(false)} />
-          <div className="absolute left-0 top-0 h-full w-72 bg-soft shadow-card">
+          <div className="absolute left-0 top-0 h-full w-72 bg-soft shadow-lift">
             <div className="flex items-center justify-between border-b border-line p-4">
               <Brand />
               <Button variant="ghost" size="icon" onClick={() => setOpen(false)} aria-label="Close menu">
@@ -638,7 +670,7 @@ export function ReviewerShell() {
     return()=>{active=false};
   },[inviteToken,activeEvent.id]);
   const ready=inviteState.ready, personaKey=persona.id;
-  if(inviteState.error){return <div className="grid min-h-screen place-items-center bg-canvas p-6"><div className="max-w-md rounded-[24px] border border-line bg-paper p-6 text-center"><h1 className="text-xl font-semibold">Reviewer demo access link unavailable</h1><p className="mt-2 text-sm text-mid">{inviteState.error}</p><p className="mt-2 text-xs text-mid">No reviewer persona was selected. Ask the organizer for a new demo access link.</p></div></div>}
+  if(inviteState.error){return <div className="grid min-h-screen place-items-center bg-canvas p-6"><Card className="max-w-md p-6 text-center"><h1 className="font-display text-xl font-extrabold tracking-[-0.03em]">Reviewer demo access link unavailable</h1><p className="mt-2 text-sm text-mid">{inviteState.error}</p><p className="mt-2 text-xs text-mid">No reviewer persona was selected. Ask the organizer for a new demo access link.</p></Card></div>}
   if (!ready) {
     return (
       <div className="grid min-h-screen place-items-center bg-canvas text-sm text-mid">
@@ -649,8 +681,8 @@ export function ReviewerShell() {
   if (noReviewers) {
     return (
       <div className="grid min-h-screen place-items-center bg-canvas p-6">
-        <div className="max-w-md rounded-[24px] border border-line bg-paper p-6 text-center" data-testid="reviewer-none">
-          <h1 className="text-lg font-bold text-ink">No reviewers in this event</h1>
+        <Card className="max-w-md p-6 text-center" data-testid="reviewer-none">
+          <h1 className="font-display text-lg font-extrabold tracking-[-0.03em] text-ink">No reviewers in this event</h1>
           <p className="mt-2 text-sm text-mid">
             <b>{getActiveEvent().name}</b> has no reviewer personas yet. Invite a reviewer to a review round in the
             organizer workspace, then reload this page.
@@ -659,14 +691,14 @@ export function ReviewerShell() {
             <Button asChild variant="secondary"><a href="/app/evaluation-plan">Open Evaluation Plan</a></Button>
             <Button asChild variant="ghost"><a href="/app">Organizer workspace</a></Button>
           </div>
-        </div>
+        </Card>
       </div>
     );
   }
   return (
     <div className="min-h-screen bg-canvas">
       <SkipLink />
-      <header className="sticky top-0 z-10 flex items-center justify-between border-b border-line bg-paper/90 px-4 py-3 backdrop-blur">
+      <header className="sticky top-0 z-10 flex items-center justify-between border-b border-line bg-white/85 px-4 py-3 backdrop-blur">
         <div className="flex min-w-0 items-center gap-3 sm:gap-4">
           <Brand subtitle="Reviewer" />
           <nav className="flex gap-1 overflow-x-auto" aria-label="Reviewer">
@@ -681,8 +713,8 @@ export function ReviewerShell() {
                 end={l.end}
                 className={({ isActive }) =>
                   cn(
-                    "whitespace-nowrap rounded-[18px] px-3 py-2 text-sm font-medium text-mid",
-                    isActive && "bg-ink text-soft",
+                    "whitespace-nowrap rounded-full px-3 py-2 text-sm font-medium text-mid transition hover:bg-brand-50 hover:text-ink",
+                    isActive && "bg-brand-600 text-white hover:bg-brand-600 hover:text-white",
                   )
                 }
               >
@@ -740,14 +772,14 @@ export function PortalShell() {
   if (inviteState.error) {
     return (
       <div className="grid min-h-screen place-items-center bg-canvas p-6">
-        <div className="max-w-md rounded-[24px] border border-line bg-paper p-6 text-center" data-testid="speaker-invite-error">
-          <h1 className="text-lg font-bold text-ink">Speaker portal link is invalid or expired</h1>
+        <Card className="max-w-md p-6 text-center" data-testid="speaker-invite-error">
+          <h1 className="font-display text-lg font-extrabold tracking-[-0.03em] text-ink">Speaker portal link is invalid or expired</h1>
           <p className="mt-2 text-sm text-mid">
             Ask the organizer to resend your portal invite. Access links are personal, per-speaker tokens — we never
             sign you in as a different speaker.
           </p>
           <Button asChild className="mt-4" variant="secondary"><a href="/p">Continue with the demo persona picker</a></Button>
-        </div>
+        </Card>
       </div>
     );
   }
@@ -761,8 +793,8 @@ export function PortalShell() {
   if (missing) {
     return (
       <div className="grid min-h-screen place-items-center bg-canvas p-6">
-        <div className="max-w-md rounded-[24px] border border-line bg-paper p-6 text-center" data-testid="portal-no-speakers">
-          <h1 className="text-lg font-bold text-ink">No speaker personas in this event</h1>
+        <Card className="max-w-md p-6 text-center" data-testid="portal-no-speakers">
+          <h1 className="font-display text-lg font-extrabold tracking-[-0.03em] text-ink">No speaker personas in this event</h1>
           <p className="mt-2 text-sm text-mid">
             <b>{getActiveEvent().name}</b> has no speakers yet, so there is no portal to sign in to. Accept a submission
             or add a speaker in the organizer workspace, then come back.
@@ -771,7 +803,7 @@ export function PortalShell() {
             <Button asChild variant="secondary"><a href="/app/speakers">Open organizer roster</a></Button>
             <Button asChild variant="ghost"><a href="/app">Organizer workspace</a></Button>
           </div>
-        </div>
+        </Card>
       </div>
     );
   }
@@ -781,7 +813,7 @@ export function PortalShell() {
       style={{ paddingBottom: "max(5rem, env(safe-area-inset-bottom))" }}
     >
       <SkipLink />
-      <header className="sticky top-0 z-10 border-b border-line bg-paper/95 px-4 py-3 backdrop-blur">
+      <header className="sticky top-0 z-10 border-b border-line bg-white/90 px-4 py-3 backdrop-blur">
         <div className="mx-auto flex max-w-3xl items-center justify-between gap-3">
           <Brand subtitle="Speaker portal" />
           <nav className="hidden gap-1 sm:flex" aria-label="Speaker portal">
@@ -791,7 +823,10 @@ export function PortalShell() {
                 to={l.to}
                 end={l.end}
                 className={({ isActive }) =>
-                  cn("rounded-[18px] px-3 py-2 text-sm font-medium text-mid", isActive && "bg-ink text-soft")
+                  cn(
+                    "rounded-full px-3 py-2 text-sm font-medium text-mid transition hover:bg-brand-50 hover:text-ink",
+                    isActive && "bg-brand-600 text-white hover:bg-brand-600 hover:text-white",
+                  )
                 }
               >
                 {l.label}
@@ -818,7 +853,7 @@ export function PortalShell() {
             to={l.to}
             end={l.end}
             className={({ isActive }) =>
-              cn("py-3 text-center text-[11px] font-medium", isActive ? "text-ink" : "text-mid")
+              cn("py-3 text-center text-[11px] font-medium", isActive ? "text-brand-700" : "text-mid")
             }
           >
             {l.label}
@@ -862,7 +897,7 @@ export function PublicShell() {
         <Outlet />
       </main>
       <footer className="mx-auto max-w-2xl px-4 pb-8 text-center text-[11px] text-mid">
-        Powered by CUE
+        Powered by Ruckus
       </footer>
     </div>
   );

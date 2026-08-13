@@ -164,6 +164,14 @@ const personaOf = (c: any): (typeof store.personas)[number] => {
 const actor = (c: any): Role => personaOf(c).role;
 const speakerIdOf = (c: any) => personaOf(c).speakerId;
 
+/**
+ * Standalone embed page shell.
+ *
+ * NOTE: currently unreferenced — every public widget renders through
+ * src/publicSite.ts. It is retinted to the Ruckus brand tokens (docs/DESIGN.md)
+ * so it cannot reintroduce the retired indigo/cream palette if it is ever wired
+ * up again. Self-contained CSS, no Tailwind, --accent overridable.
+ */
 function htmlPage(title: string, body: string, extraHead = "") {
   return `<!doctype html>
 <html lang="en">
@@ -172,25 +180,27 @@ function htmlPage(title: string, body: string, extraHead = "") {
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>${title}</title>
 <style>
-  :root{color-scheme:light;--ink:#12141A;--bg:#F7F4EF;--card:#fff;--muted:#5c6170;--line:#e7e2d9;--accent:#5B5CFF;--ok:#1B7F4E}
-  *{box-sizing:border-box}body{margin:0;font-family:Inter,ui-sans-serif,system-ui,sans-serif;background:var(--bg);color:var(--ink)}
+  :root{color-scheme:light;--ink:#0a0a0a;--bg:#f5f5f5;--card:#fff;--muted:#737373;--line:#e5e5e5;--accent:#7c3aed;--accent-strong:#6d28d9;--accent-soft:#f5f3ff;--accent-line:#ddd6fe;--ok:#047857}
+  *{box-sizing:border-box}body{margin:0;font-family:Geist,ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--ink)}
   header{padding:20px 18px;border-bottom:1px solid var(--line);background:var(--card);position:sticky;top:0}
   header b{font-size:18px;letter-spacing:-.03em}header p{margin:4px 0 0;color:var(--muted);font-size:13px}
   main{padding:18px;max-width:960px;margin:0 auto}
   .grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(220px,1fr))}
-  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:24px;padding:16px;box-shadow:0 1px 2px rgba(10,10,10,.06)}
   .card h3{margin:0 0 6px;font-size:16px;letter-spacing:-.02em}.card p{margin:0;color:var(--muted);font-size:13px;line-height:1.45}
-  .pill{display:inline-block;font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;background:#eef0ff;color:var(--accent);padding:4px 8px;border-radius:999px;margin-bottom:8px}
+  .pill{display:inline-block;font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;background:var(--accent-soft);color:var(--accent-strong);border:1px solid var(--accent-line);padding:3px 8px;border-radius:999px;margin-bottom:8px}
   .meta{font-size:12px;color:var(--muted);margin-top:8px}
   .row{display:flex;gap:10px;align-items:flex-start;border-bottom:1px solid var(--line);padding:12px 0}
   .row:last-child{border-bottom:0}.time{min-width:88px;font-weight:700;font-size:13px}
-  .avatar{width:48px;height:48px;border-radius:999px;background:linear-gradient(135deg,#5B5CFF,#c7f464);display:grid;place-items:center;color:white;font-weight:800;margin-bottom:10px}
+  .avatar{width:48px;height:48px;border-radius:999px;background:var(--accent);display:grid;place-items:center;color:#fff;font-weight:700;margin-bottom:10px}
+  a{color:var(--accent-strong)}
+  :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
   @media(max-width:520px){.grid{grid-template-columns:1fr}.time{min-width:72px}}
 </style>
 ${extraHead}
 </head>
 <body>
-<header><b>${title}</b><p>Powered by CUE · mobile-friendly public embed</p></header>
+<header><b>${title}</b><p>Powered by Ruckus · mobile-friendly public embed</p></header>
 <main>${body}</main>
 </body></html>`;
 }
@@ -321,7 +331,7 @@ export function createApp(deps: AppDeps = {}) {
     // and never re-send a reminder to the same recipient within 24 hours.
     const automationMailer:Mailer=deps.automationProviderDelivery===true?mailer:new MockMailer();
     const remindedRecently=(life:typeof store,recipientId:string,now:number)=>life.communications.some(x=>x.kind==="reminder"&&x.speakerId===recipientId&&x.status!=="failed"&&now-Date.parse(x.createdAt)<24*3600000);
-    try{for(const event of listEvents()){activateEvent(event.id);const life=getEventStore(event.id)!;const state=life.automation||(life.automation={enabled:true,schedule:"0 9 * * *",speakerSent:0,reviewerSent:0,status:"never"});let speakerSent=0,reviewerSent=0;const ranAt=new Date().toISOString();try{const plans=reminderPlans(new Date(),life),deliverableIds=life.deliverableTasks.filter(x=>x.status!=="complete"&&Date.parse(x.dueAt)<=Date.now()+7*86400000).map(x=>x.speakerId),speakerIds=[...new Set([...plans.map(x=>x.speakerId),...deliverableIds])];for(const speakerId of speakerIds){if(remindedRecently(life,speakerId,Date.now()))continue;const row=sendTemplate("task_reminder",speakerId,"outstanding tasks and deliverables","reminder",life);await deliver(row,life,automationMailer);speakerSent++}for(const reviewerId of [...new Set(life.reviewAssignments.filter(a=>a.status==="assigned").map(a=>a.reviewerId))]){const p=life.personas.find(x=>x.id===reviewerId&&x.role==="reviewer");if(!p)continue;if(remindedRecently(life,reviewerId,Date.now()))continue;const outstanding=life.reviewAssignments.filter(a=>a.reviewerId===reviewerId&&a.status==="assigned").length,result=await automationMailer.send({to:p.email,subject:`${outstanding} CUE reviews outstanding`,text:`Please complete your ${outstanding} assigned reviews.`}).catch(()=>({status:"failed" as const}));life.communications.push({id:`comm-${crypto.randomUUID().slice(0,8)}`,speakerId:reviewerId,subject:`${outstanding} CUE reviews outstanding`,body:`Scheduled reviewer reminder for ${p.name}`,kind:"reminder",status:result.status,providerId:"providerId" in result?result.providerId:undefined,ics:"",createdAt:ranAt});reviewerSent++}const result={eventId:event.id,speakerSent,reviewerSent,status:"completed" as const,ranAt};Object.assign(state,{lastRunAt:ranAt,speakerSent,reviewerSent,status:"completed",eventResults:[result]});eventResults.push(result);totalSpeakerSent+=speakerSent;totalReviewerSent+=reviewerSent;await persist(event.id,life)}catch(error){const result={eventId:event.id,speakerSent,reviewerSent,status:"failed" as const,ranAt};Object.assign(state,{lastRunAt:ranAt,speakerSent,reviewerSent,status:"failed",eventResults:[result]});eventResults.push(result);await persist(event.id,life)}}const lastRunAt=new Date().toISOString();return c.json({data:{status:eventResults.some(x=>x.status==="failed")?"failed":"completed",lastRunAt,speakerSent:totalSpeakerSent,reviewerSent:totalReviewerSent,eventResults}})}finally{activateEvent(previous)}
+    try{for(const event of listEvents()){activateEvent(event.id);const life=getEventStore(event.id)!;const state=life.automation||(life.automation={enabled:true,schedule:"0 9 * * *",speakerSent:0,reviewerSent:0,status:"never"});let speakerSent=0,reviewerSent=0;const ranAt=new Date().toISOString();try{const plans=reminderPlans(new Date(),life),deliverableIds=life.deliverableTasks.filter(x=>x.status!=="complete"&&Date.parse(x.dueAt)<=Date.now()+7*86400000).map(x=>x.speakerId),speakerIds=[...new Set([...plans.map(x=>x.speakerId),...deliverableIds])];for(const speakerId of speakerIds){if(remindedRecently(life,speakerId,Date.now()))continue;const row=sendTemplate("task_reminder",speakerId,"outstanding tasks and deliverables","reminder",life);await deliver(row,life,automationMailer);speakerSent++}for(const reviewerId of [...new Set(life.reviewAssignments.filter(a=>a.status==="assigned").map(a=>a.reviewerId))]){const p=life.personas.find(x=>x.id===reviewerId&&x.role==="reviewer");if(!p)continue;if(remindedRecently(life,reviewerId,Date.now()))continue;const outstanding=life.reviewAssignments.filter(a=>a.reviewerId===reviewerId&&a.status==="assigned").length,result=await automationMailer.send({to:p.email,subject:`${outstanding} Ruckus reviews outstanding`,text:`Please complete your ${outstanding} assigned reviews.`}).catch(()=>({status:"failed" as const}));life.communications.push({id:`comm-${crypto.randomUUID().slice(0,8)}`,speakerId:reviewerId,subject:`${outstanding} Ruckus reviews outstanding`,body:`Scheduled reviewer reminder for ${p.name}`,kind:"reminder",status:result.status,providerId:"providerId" in result?result.providerId:undefined,ics:"",createdAt:ranAt});reviewerSent++}const result={eventId:event.id,speakerSent,reviewerSent,status:"completed" as const,ranAt};Object.assign(state,{lastRunAt:ranAt,speakerSent,reviewerSent,status:"completed",eventResults:[result]});eventResults.push(result);totalSpeakerSent+=speakerSent;totalReviewerSent+=reviewerSent;await persist(event.id,life)}catch(error){const result={eventId:event.id,speakerSent,reviewerSent,status:"failed" as const,ranAt};Object.assign(state,{lastRunAt:ranAt,speakerSent,reviewerSent,status:"failed",eventResults:[result]});eventResults.push(result);await persist(event.id,life)}}const lastRunAt=new Date().toISOString();return c.json({data:{status:eventResults.some(x=>x.status==="failed")?"failed":"completed",lastRunAt,speakerSent:totalSpeakerSent,reviewerSent:totalReviewerSent,eventResults}})}finally{activateEvent(previous)}
   });
   const normalizedEmbed=(x:any)=>({...x,enabled:x.enabled!==false,snippetFormat:x.snippetFormat||"iframe",customCss:x.customCss||""});
   app.get("/api/events/:eventId/embed-configs",(c)=>c.json({data:(store.embedConfigs||[]).map(normalizedEmbed)}));
@@ -331,10 +341,10 @@ export function createApp(deps: AppDeps = {}) {
   app.delete("/api/events/:eventId/embed-configs/:id",async(c)=>{if(actor(c)!=="organizer")return fail(c,"organizer role required",403);const i=(store.embedConfigs||[]).findIndex(x=>x.id===c.req.param("id"));if(i<0)return fail(c,"embed config not found",404);store.embedConfigs.splice(i,1);await persist();return c.body(null,204)});
 
   app.get("/health", (c) =>
-    c.json({ ok: true, mode: client instanceof MockAcceleventsClient ? "mock" : "configured", product: "CUE" }),
+    c.json({ ok: true, mode: client instanceof MockAcceleventsClient ? "mock" : "configured", product: "Ruckus" }),
   );
   app.get(OPENAPI_PATH, (c) => c.body(OPENAPI_YAML, 200, { "content-type": OPENAPI_CONTENT_TYPE }));
-  app.get("/demo", async (c) => c.json(await repo.getData("evt-ai-summit-2026")));
+  app.get("/api/demo", async (c) => c.json(await repo.getData("evt-ai-summit-2026")));
 
   // —— Bootstrap / command ——
   app.get("/api/events/:eventId/bootstrap", (c) => {
@@ -1095,7 +1105,7 @@ export function createApp(deps: AppDeps = {}) {
         const tpl = b.templateKey ? store.templates.find((t) => t.key === b.templateKey || t.id === b.templateKey) : undefined;
         const preview = renderMergePreview(
           {
-            subject: typeof b.subject === "string" ? b.subject : tpl?.subject || "Message from CUE",
+            subject: typeof b.subject === "string" ? b.subject : tpl?.subject || "Message from Ruckus",
             body: typeof b.body === "string" ? b.body : tpl?.body || "",
             includeCalendarLinks: Boolean(b.includeCalendarLinks ?? tpl?.includeCalendarLinks),
           },

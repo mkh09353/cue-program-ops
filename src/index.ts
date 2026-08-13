@@ -19,7 +19,6 @@ export interface Env extends CueEnv {
 }
 const apiPath = (pathname: string) =>
   pathname === "/health" ||
-  pathname === "/demo" ||
   pathname === "/.well-known/mcp.json" ||
   // /docs/* is the server-rendered API documentation page, not an SPA route.
   ["/api/", "/public/", "/embed/", "/sync/", "/docs/"].some((prefix) => pathname.startsWith(prefix)) ||

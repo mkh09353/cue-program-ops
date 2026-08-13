@@ -16,6 +16,9 @@ import {
   LoadState,
   Notice,
   PageHeader,
+  Table,
+  Th,
+  THead,
   toast,
 } from "../components/ui";
 import { useAsyncData } from "../lib/useAsyncData";
@@ -60,21 +63,21 @@ export function SessionsTable({
   return (
     <Card className="overflow-hidden" data-testid="sessions-table">
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[900px] text-left text-sm">
-          <thead className="border-b bg-soft text-[11px] uppercase tracking-wide text-mid">
+        <Table className="min-w-[900px]">
+          <THead>
             <tr>
-              <th className="px-4 py-3">Code</th>
-              <th className="px-4 py-3">Title</th>
-              <th className="px-4 py-3">Speakers</th>
-              <th className="px-4 py-3">Schedule</th>
-              <th className="px-4 py-3">Publication</th>
-              <th className="px-4 py-3">Source</th>
-              <th className="px-4 py-3">Actions</th>
+              <Th>Code</Th>
+              <Th>Title</Th>
+              <Th>Speakers</Th>
+              <Th>Schedule</Th>
+              <Th>Publication</Th>
+              <Th>Source</Th>
+              <Th>Actions</Th>
             </tr>
-          </thead>
+          </THead>
           <tbody>
             {rows.map((row) => (
-              <tr key={row.id} className="border-b last:border-0 hover:bg-soft" data-testid={`session-row-${row.id}`}>
+              <tr key={row.id} className="border-b border-line last:border-0 hover:bg-brand-50/50" data-testid={`session-row-${row.id}`}>
                 <td className="px-4 py-3 font-mono text-xs" data-testid={`session-code-${row.id}`}>
                   {row.code || "—"}
                 </td>
@@ -159,7 +162,7 @@ export function SessionsTable({
               </tr>
             ))}
           </tbody>
-        </table>
+        </Table>
       </div>
     </Card>
   );

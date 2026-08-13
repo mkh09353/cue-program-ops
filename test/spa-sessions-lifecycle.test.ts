@@ -189,7 +189,7 @@ test("embed PATCH persists exactly the fields the publish page sends", async () 
 
 test("submission codes surface in the table, the CSV export and Review Studio", async () => {
   const src = readFileSync("src/web/pages/SubmissionsPages.tsx", "utf8");
-  assert.match(src, /<th className="px-4 py-3">Code<\/th>/, "the inbox has a Code column");
+  assert.match(src, /<Th>Code<\/Th>/, "the inbox has a Code column");
   assert.match(src, /data-testid={`submission-code-\$\{s\.id\}`}/);
   assert.match(src, /data-testid="submission-code"/, "Review Studio shows the code");
   assert.match(src, /title={data\.code \? `Review Studio · \$\{data\.code\}` : "Review Studio"}/);

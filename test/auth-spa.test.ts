@@ -77,7 +77,7 @@ test("the magic-link response carries a demo-only login url the page can surface
   const res = await app.request("/api/auth/magic-link", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ email: "dana@demo.cue.dev" }),
+    body: JSON.stringify({ email: "dana@demo.ruckus.to" }),
   });
   const body = (await res.json()) as any;
   assert.equal(body.data.accepted, true);

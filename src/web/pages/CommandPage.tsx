@@ -49,7 +49,7 @@ export function LifecycleChecklistCard({ steps }: { steps: any[] }) {
                 aria-hidden
                 className={
                   step.done
-                    ? "mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full bg-ink text-[11px] font-bold text-soft"
+                    ? "mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full bg-emerald-600 text-[11px] font-bold text-white"
                     : "mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full border border-line text-[11px] text-mid"
                 }
               >
@@ -230,7 +230,7 @@ export function CommandPage() {
             <h2 className="text-xs font-bold uppercase tracking-wider text-mid">Blocked speakers</h2>
             <ul className="mt-3 space-y-2">
               {data.blockedSpeakers.map((s: any) => (
-                <li key={s.speakerId} className="rounded-[18px] bg-soft p-3 text-sm">
+                <li key={s.speakerId} className="rounded-2xl bg-soft p-3 text-sm">
                   <div className="flex items-center justify-between gap-2">
                     <b>{s.name}</b>
                     <Badge tone={s.pct >= 100 ? "ok" : s.pct > 0 ? "warn" : "danger"}>{s.pct}%</Badge>

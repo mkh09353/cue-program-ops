@@ -24,7 +24,7 @@ interface Run {
 /** Spawn the real CLI exactly as a user (or agent) would. */
 async function cue(args: string[], env: Record<string, string> = {}): Promise<Run> {
   const child = spawn("npx", ["tsx", "cli/cue.ts", ...args], {
-    env: { ...process.env, CUE_URL: BASE, ...env },
+    env: { ...process.env, RUCKUS_URL: BASE, ...env },
     stdio: ["ignore", "pipe", "pipe"],
   });
   let stdout = "";
@@ -50,7 +50,7 @@ test("help documents every command group well enough to operate from", async () 
     assert.ok(run.stdout.includes(group), `help is missing the ${group} command`);
   }
   assert.ok(run.stdout.includes("--json"), "help documents the json flag");
-  assert.ok(run.stdout.includes("CUE_EVENT"), "help documents the env vars");
+  assert.ok(run.stdout.includes("RUCKUS_EVENT"), "help documents the env vars");
   assert.ok(run.stdout.includes("x-demo-role"), "help explains demo identity");
 
   const scoped = await cue(["schedule", "--help"]);
@@ -131,7 +131,7 @@ test("cfp submit works end to end and returns a portal magic link", async () => 
   const submitted = await cue([
     "cfp", "submit",
     "--title", "CLI subprocess talk",
-    "--abstract", "A proposal submitted by the CUE CLI during the test run. ".repeat(2),
+    "--abstract", "A proposal submitted by the Ruckus CLI during the test run. ".repeat(2),
     "--name", "Subprocess Speaker",
     "--email", "subprocess.speaker@example.test",
     "--field", "category=AI Engineering",

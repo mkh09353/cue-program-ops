@@ -11,11 +11,14 @@ import {
   Field,
   Notice,
   PageHeader,
+  Select,
   Spinner,
   StatusBadge,
+  Table,
   Textarea,
+  Th,
+  THead,
   toast,
-  Select,
 } from "../components/ui";
 
 const CRITERIA = ["relevance", "novelty", "clarity", "depth"] as const;
@@ -276,22 +279,22 @@ export function SubmissionsListPage() {
       ) : (
         <Card className="overflow-hidden" data-testid="submissions-table">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[720px] text-left text-sm">
-              <thead className="border-b bg-soft text-[11px] uppercase tracking-wide text-mid">
+            <Table className="min-w-[720px]">
+              <THead>
                 <tr>
-                  <th className="px-4 py-3">Code</th>
-                  <th className="px-4 py-3">Title</th>
-                  <th className="px-4 py-3">Speaker</th>
-                  <th className="px-4 py-3">Track</th>
-                  <th className="px-4 py-3">Board</th>
-                  <th className="px-4 py-3">Round</th>
-                  <th className="px-4 py-3">Score</th>
-                  <th className="px-4 py-3">Status</th>
+                  <Th>Code</Th>
+                  <Th>Title</Th>
+                  <Th>Speaker</Th>
+                  <Th>Track</Th>
+                  <Th>Board</Th>
+                  <Th>Round</Th>
+                  <Th>Score</Th>
+                  <Th>Status</Th>
                 </tr>
-              </thead>
+              </THead>
               <tbody>
                 {enriched.map((s) => (
-                  <tr key={s.id} className="border-b last:border-0 hover:bg-soft">
+                  <tr key={s.id} className="border-b border-line last:border-0 hover:bg-brand-50/50">
                     <td className="px-4 py-3 font-mono text-xs" data-testid={`submission-code-${s.id}`}>
                       {s.code || "—"}
                     </td>
@@ -322,7 +325,7 @@ export function SubmissionsListPage() {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </Table>
           </div>
           {!enriched.length ? (
             <div className="p-6">
@@ -472,10 +475,10 @@ export function ReviewStudioPage() {
             <Badge tone="info">Board · {data.reviewBoard}</Badge>
           </div>
           <h2 className="text-2xl font-bold tracking-tight">{data.title}</h2>
-          <div className="mt-2 rounded-[18px] border border-line p-3 text-sm"><b>Speakers</b><ul className="mt-1 space-y-1">{(data.participants||[{id:data.speakerId,name:data.name,email:data.email,role:"lead"},...(data.additionalSpeakers||[])]).map((p:any)=><li key={p.id}>{p.name} · {p.email} <Badge tone="muted">{p.role==="co-author"?"co-author":p.role==="lead"?"lead":"co-presenter"}</Badge></li>)}</ul></div>
+          <div className="mt-2 rounded-2xl border border-line p-3 text-sm"><b>Speakers</b><ul className="mt-1 space-y-1">{(data.participants||[{id:data.speakerId,name:data.name,email:data.email,role:"lead"},...(data.additionalSpeakers||[])]).map((p:any)=><li key={p.id}>{p.name} · {p.email} <Badge tone="muted">{p.role==="co-author"?"co-author":p.role==="lead"?"lead":"co-presenter"}</Badge></li>)}</ul></div>
           <p className="mt-4 whitespace-pre-wrap text-sm leading-relaxed text-ink-soft">{data.abstract}</p>
           {data.answers?.workshopPlan ? (
-            <div className="mt-4 rounded-[18px] bg-canvas p-3 text-sm">
+            <div className="mt-4 rounded-2xl bg-canvas p-3 text-sm">
               <b>Workshop plan</b>
               <p className="mt-1">{String(data.answers.workshopPlan)}</p>
               {data.answers.duration ? (
@@ -483,7 +486,7 @@ export function ReviewStudioPage() {
               ) : null}
             </div>
           ) : null}
-          <div className="mt-4 rounded-[18px] border border-line p-3">
+          <div className="mt-4 rounded-2xl border border-line p-3">
             <h3 className="text-xs font-bold uppercase tracking-wide text-mid">Submission answers</h3>
             <dl className="mt-2 grid gap-2 text-sm sm:grid-cols-2">
               {Object.entries(data.answers || {}).filter(([key]) => !["title","abstract","category","format","workshopPlan","duration","additionalSpeakers"].includes(key)).map(([key,value]) => <div key={key}><dt className="text-xs font-semibold text-mid">{key.replaceAll("_"," ")}</dt><dd className="whitespace-pre-wrap">{String(value ?? "—")}</dd></div>)}
@@ -548,7 +551,7 @@ export function ReviewStudioPage() {
                 return (
                   <Field key={c.id} label={`${c.label}${c.weight ? ` · ${c.weight}×` : ""}`}>
                     <select
-                      className="h-10 w-full rounded-[18px] border border-line bg-white px-3 text-sm"
+                      className="h-10 w-full rounded-full bg-white px-3 text-sm ring-1 ring-line focus:outline-none focus:ring-2 focus:ring-brand-400"
                       aria-label={c.label}
                       value={String(scores[c.id] || "")}
                       onChange={(e) => setScores((s) => ({ ...s, [c.id]: e.target.value }))}
@@ -602,7 +605,7 @@ export function ReviewStudioPage() {
           </div>
           {aiDraft ? (
             <div
-              className="mt-3 rounded-[18px] border border-line bg-soft p-3 text-sm"
+              className="mt-3 rounded-2xl border border-line bg-soft p-3 text-sm"
               data-testid="ai-draft-panel"
               role="status"
               aria-live="polite"
@@ -619,7 +622,7 @@ export function ReviewStudioPage() {
                   </div>
                   <ul className="mt-2 flex flex-wrap gap-3" data-testid="ai-draft-scores">
                     {aiDraft.entries.map((e) => (
-                      <li key={e.label} className="rounded-[10px] bg-paper px-2 py-1">
+                      <li key={e.label} className="rounded-xl bg-paper px-2 py-1">
                         <b className="capitalize">{e.label}</b> <span className="font-mono">{e.value}</span>
                       </li>
                     ))}
@@ -760,7 +763,7 @@ export function ReviewStudioPage() {
                   : Object.entries(r.scores || {}).map(([key, value]) => ({ key, label: key, value }));
                 const comment = r.comment || r.notes || "";
                 return (
-                  <li key={r.id} className="rounded-lg bg-soft p-3" data-testid="review-history-item">
+                  <li key={r.id} className="rounded-xl bg-soft p-3" data-testid="review-history-item">
                     <div className="flex flex-wrap items-center gap-2">
                       <b className="text-ink">{r.reviewerName || r.reviewerId}</b>
                       <span className="uppercase">{r.roundName || r.round}</span>
@@ -776,7 +779,7 @@ export function ReviewStudioPage() {
                     {entries.length ? (
                       <div className="mt-2 flex flex-wrap gap-2">
                         {entries.map((e: any) => (
-                          <span key={e.key} className="rounded-md bg-white px-2 py-0.5">
+                          <span key={e.key} className="rounded-lg bg-white px-2 py-0.5">
                             {e.label} {String(e.value)}
                           </span>
                         ))}

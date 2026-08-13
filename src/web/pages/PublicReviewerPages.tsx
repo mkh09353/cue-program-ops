@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { getActiveEvent, api, setPersona, setPersonaCatalog } from "../lib/api";
 import { formatStatus } from "../lib/utils";
+import { RuckusWordmark } from "../components/RuckusMascot";
 import {
   Badge,
   Button,
@@ -59,31 +60,52 @@ export function DemoLandingPage() {
   ];
 
   return (
-    <div className="min-h-screen bg-canvas">
-      <div className="mx-auto max-w-5xl px-6 py-12 sm:py-16">
-        <div className="mb-2 text-xs font-medium uppercase tracking-[0.2em] text-mid">Kill My SaaS · CUE</div>
-        <h1 className="max-w-3xl text-4xl font-semibold tracking-tight sm:text-5xl" style={{ letterSpacing: "-0.05em" }}>
-          Conference program ops, end to end — without Sessionboard.
-        </h1>
-        <p className="mt-4 max-w-2xl text-lg text-mid">
+    <div className="ruckus-brand min-h-screen bg-white">
+      <div className="mx-auto max-w-5xl px-4 pt-6 sm:px-6">
+        {/* Hero panel mirrors the marketing landing page: tinted violet field, dotted
+            grain, brand lockup, display type. Copy and links are unchanged. */}
+        <div
+          className="relative overflow-hidden rounded-[32px] bg-ruckus-50/70 px-5 py-10 sm:px-10 sm:py-14"
+          style={{
+            backgroundImage: "radial-gradient(rgba(124,58,237,0.18) 1px, transparent 1px)",
+            backgroundSize: "18px 18px",
+          }}
+        >
+          <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/50 via-transparent to-white/70" />
+          <div className="relative">
+            <div className="mb-5">
+              <RuckusWordmark showTagline />
+            </div>
+            <div className="mb-2 text-[12px] font-medium uppercase tracking-[0.18em] text-mid">Kill My SaaS · Ruckus</div>
+            <h1
+              className="max-w-3xl font-display text-4xl font-extrabold leading-[1.05] tracking-tight sm:text-5xl"
+              style={{ letterSpacing: "-0.03em" }}
+            >
+              Conference program ops, end to end — without Sessionboard.
+            </h1>
+            <p className="mt-4 max-w-2xl text-lg text-neutral-600">
           Open-source path for <b>{eventName}</b>: CFP → review → onboard → schedule → publish → Accelevents.
           Jump straight in with the persona picker, or use an emailed magic link — no passwords by design. State is
           durable: Durable Object + Cloudflare D1, mirrored to Airtable.
-        </p>
+            </p>
 
-        <div className="mt-6 flex flex-wrap gap-2">
-          <Badge tone="primary">No passwords · magic links</Badge>
-          <Badge tone="muted">Real email via Resend</Badge>
-          <Badge tone="muted">D1 + Airtable persistence</Badge>
-          <Badge tone="muted">Workers AI review drafts</Badge>
-          <Badge tone="muted">Agent CLI + OpenAPI</Badge>
-          <Badge tone="muted">Accelevents one-way mock</Badge>
+            <div className="mt-6 flex flex-wrap gap-2">
+              <Badge tone="primary">No passwords · magic links</Badge>
+              <Badge tone="muted">Real email via Resend</Badge>
+              <Badge tone="muted">D1 + Airtable persistence</Badge>
+              <Badge tone="muted">Workers AI review drafts</Badge>
+              <Badge tone="muted">Agent CLI + OpenAPI</Badge>
+              <Badge tone="muted">Accelevents one-way mock</Badge>
+            </div>
+          </div>
         </div>
+      </div>
 
-        <section className="mt-10">
+      <div className="mx-auto max-w-5xl px-6 pb-16">
+        <section className="mt-12">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="text-xs font-medium uppercase tracking-wide text-mid">Enter a role shell</h2>
-            <Link className="text-sm font-semibold text-ink underline" to="/login" data-testid="demo-sign-in-link">
+            <h2 className="text-[12px] font-medium uppercase tracking-[0.18em] text-mid">Enter a role shell</h2>
+            <Link className="text-sm font-semibold text-brand-700 underline" to="/login" data-testid="demo-sign-in-link">
               Sign in with a real session →
             </Link>
           </div>
@@ -116,8 +138,8 @@ export function DemoLandingPage() {
             ).map((shell) => {
               const list = byRole(shell.role);
               return (
-                <Card key={shell.role} className="flex flex-col p-5">
-                  <div className="text-xs font-medium uppercase tracking-wide text-mid">{shell.title}</div>
+                <Card key={shell.role} hover className="flex flex-col p-5">
+                  <div className="text-[12px] font-medium uppercase tracking-[0.18em] text-mid">{shell.title}</div>
                   <p className="mt-2 text-sm text-mid">{shell.blurb}</p>
                   <code className="mt-2 block text-[11px] text-mid">{shell.path}/*</code>
                   <div className="mt-4 flex flex-1 flex-col gap-2">
@@ -125,7 +147,7 @@ export function DemoLandingPage() {
                       <button
                         key={p.id}
                         type="button"
-                        className="rounded-[18px] border border-line bg-paper px-3 py-2 text-left shadow-sm hover:border-ink/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink"
+                        className="rounded-2xl bg-white px-3 py-2 text-left shadow-sm ring-1 ring-line transition hover:ring-brand-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600"
                         onClick={() => enter(p)}
                       >
                         <div className="font-semibold">{p.name}</div>
@@ -139,7 +161,7 @@ export function DemoLandingPage() {
                     ) : null}
                   </div>
                   <Link
-                    className="mt-3 block rounded-[18px] border border-line bg-canvas px-3 py-2 text-center text-sm font-semibold text-ink hover:border-ink/20"
+                    className="ruckus-press mt-3 block rounded-full bg-brand-600 px-3 py-2 text-center text-sm font-semibold text-white shadow-sm transition hover:bg-brand-700"
                     to={`/login?demo=${shell.role}`}
                     data-testid={`demo-session-${shell.role}`}
                   >
@@ -152,14 +174,14 @@ export function DemoLandingPage() {
         </section>
 
         <section className="mt-12">
-          <h2 className="text-xs font-medium uppercase tracking-wide text-mid">Public surfaces</h2>
+          <h2 className="text-[12px] font-medium uppercase tracking-[0.18em] text-mid">Public surfaces</h2>
           <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {publicLinks.map((l) => (
               // Server-rendered pages: must be full-page loads, not SPA router links.
               <a
                 key={l.to}
                 href={l.to}
-                className="rounded-[24px] border border-line bg-paper p-4 shadow-card transition hover:border-ink/20"
+                className="rounded-3xl border border-line bg-paper p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-brand-200 hover:shadow-card"
               >
                 <div className="font-semibold text-ink">{l.label}</div>
                 <div className="mt-1 text-xs text-mid">{l.blurb}</div>
@@ -167,13 +189,13 @@ export function DemoLandingPage() {
             ))}
           </div>
           <div className="mt-4 flex flex-wrap gap-3 text-sm font-semibold">
-            <Link className="text-ink" to="/app/publish">
+            <Link className="text-brand-700 hover:underline" to="/app/publish">
               Organizer embed manager →
             </Link>
-            <a className="text-ink" href="/public/events/evt-ai-summit-2026/gallery">
+            <a className="text-brand-700 hover:underline" href="/public/events/evt-ai-summit-2026/gallery">
               Legacy gallery alias →
             </a>
-            <a className="text-ink" href="/health">
+            <a className="text-brand-700 hover:underline" href="/health">
               /health →
             </a>
           </div>
@@ -181,7 +203,7 @@ export function DemoLandingPage() {
 
         <section className="mt-12 grid gap-6 lg:grid-cols-2">
           <Card className="p-5">
-            <h2 className="text-xs font-medium uppercase tracking-wide text-mid">Judge walkthrough</h2>
+            <h2 className="text-[12px] font-medium uppercase tracking-[0.18em] text-mid">Judge walkthrough</h2>
             <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm text-ink-soft">
               {loop.map((step) => (
                 <li key={step}>{step}</li>
@@ -189,7 +211,7 @@ export function DemoLandingPage() {
             </ol>
           </Card>
           <Card className="p-5">
-            <h2 className="text-xs font-medium uppercase tracking-wide text-mid">How this demo runs</h2>
+            <h2 className="text-[12px] font-medium uppercase tracking-[0.18em] text-mid">How this demo runs</h2>
             <ul className="mt-3 space-y-2 text-sm text-ink-soft">
               <li>Identity: credential-free persona picker plus real per-person magic links (emailed access tokens for speakers and reviewers) — no password accounts by design.</li>
               <li>Email: LIVE provider delivery via Resend — invites, magic links, decision notices, and reminders really send; per-recipient provider IDs are logged. (Mock mailer is the safe default when no key is configured.)</li>
@@ -265,14 +287,14 @@ export function PublicCfpPage() {
         <div className="mt-2">
           <Markdown text={data.form.successMd || ""} />
         </div>
-        <p className="mt-4 rounded-[18px] bg-canvas p-3 text-sm">
+        <p className="mt-4 rounded-2xl bg-canvas p-3 text-sm">
           Routed to <b>{result.boardLabel || result.reviewBoard}</b> review board
           {String(answers.format || "").startsWith("Workshop") ? " · Workshop conditional fields were collected." : ""}.
         </p>
         <p className="mt-3 text-sm"><b>Reference:</b> {result.id}</p>
         <a className="mt-2 block text-sm font-semibold text-ink underline" href={result.editUrl}>View or edit this submission</a>
         {result.portalUrl || result.portalPath ? (
-          <div className="mt-4 rounded-[18px] border border-line bg-soft p-3 text-sm" data-testid="portal-magic-link">
+          <div className="mt-4 rounded-2xl border border-line bg-soft p-3 text-sm" data-testid="portal-magic-link">
             <b className="block">Access your speaker portal</b>
             <a className="mt-1 block break-all font-semibold text-ink underline" href={result.portalPath || result.portalUrl}>
               {result.portalUrl || result.portalPath}
@@ -382,7 +404,7 @@ export function PublicCfpPage() {
 
   return (
     <div>
-      <div className="mb-4 rounded-[24px] border border-line bg-canvas px-4 py-3 text-sm text-ink">
+      <div className="mb-4 rounded-3xl border border-line bg-canvas px-4 py-3 text-sm text-ink">
         Accepting until {new Date(data.form.closeAt).toLocaleString()} · max {data.form.maxPerUser} per user ·{" "}
         {formatStatus(data.form.status)}
       </div>
@@ -406,7 +428,7 @@ export function PublicCfpPage() {
         {["You", "Talk", "Review"].map((label, i) => (
           <span
             key={label}
-            className={`rounded-full px-3 py-1 ${i === step ? "bg-ink text-white" : "bg-canvas text-mid"}`}
+            className={`rounded-full px-3 py-1 ${i === step ? "bg-brand-600 text-white" : "bg-canvas text-mid"}`}
           >
             {i + 1}. {label}
           </span>
@@ -439,7 +461,7 @@ export function PublicCfpPage() {
               <Field label="Email">
                 <Input required type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
               </Field>
-              <div className="mb-4 rounded-[18px] border border-line bg-paper p-4"><div className="flex items-center justify-between"><b>Co-authors / co-presenters</b><Button type="button" size="sm" variant="outline" onClick={()=>setAnswers(a=>({...a,additionalSpeakers:[...(a.additionalSpeakers||[]),{name:"",email:"",role:"co-presenter"}]}))}>Add person</Button></div>
+              <div className="mb-4 rounded-2xl border border-line bg-paper p-4"><div className="flex items-center justify-between"><b>Co-authors / co-presenters</b><Button type="button" size="sm" variant="outline" onClick={()=>setAnswers(a=>({...a,additionalSpeakers:[...(a.additionalSpeakers||[]),{name:"",email:"",role:"co-presenter"}]}))}>Add person</Button></div>
                 {(answers.additionalSpeakers||[]).map((person:any,i:number)=><div key={i} className="mt-3 grid gap-2 sm:grid-cols-[1fr_1fr_150px_auto]"><Input aria-label={`Additional speaker ${i+1} name`} placeholder="Name" value={person.name} onChange={e=>setAnswers(a=>({...a,additionalSpeakers:a.additionalSpeakers.map((x:any,n:number)=>n===i?{...x,name:e.target.value}:x)}))}/><Input aria-label={`Additional speaker ${i+1} email`} type="email" placeholder="Email" value={person.email} onChange={e=>setAnswers(a=>({...a,additionalSpeakers:a.additionalSpeakers.map((x:any,n:number)=>n===i?{...x,email:e.target.value}:x)}))}/><Select aria-label={`Additional speaker ${i+1} role`} value={person.role||"co-presenter"} onChange={e=>setAnswers(a=>({...a,additionalSpeakers:a.additionalSpeakers.map((x:any,n:number)=>n===i?{...x,role:e.target.value}:x)}))}><option value="co-presenter">Co-presenter</option><option value="co-author">Co-author</option></Select><Button type="button" variant="outline" onClick={()=>setAnswers(a=>({...a,additionalSpeakers:a.additionalSpeakers.filter((_:any,n:number)=>n!==i)}))}>Remove</Button></div>)}
                 {Object.entries(fieldErrors)
                   .filter(([k]) => k.startsWith("coauthor-"))
@@ -457,7 +479,7 @@ export function PublicCfpPage() {
 
           {step === 1 ? (
             <>
-              {visibleFields.map((f: any,idx:number) => (<div key={f.key} className={fieldErrors[f.key]?"rounded-[18px] border border-ink/40 bg-canvas p-3":""}>{f.section && visibleFields[idx-1]?.section!==f.section?<h2 className="mb-3 mt-5 border-b pb-2 text-lg font-bold">{f.section}</h2>:null}
+              {visibleFields.map((f: any,idx:number) => (<div key={f.key} className={fieldErrors[f.key]?"rounded-2xl border border-rose-300 bg-rose-50 p-3":""}>{f.section && visibleFields[idx-1]?.section!==f.section?<h2 className="mb-3 mt-5 border-b pb-2 text-lg font-bold">{f.section}</h2>:null}
                 <Field label={`${f.label}${f.required ? " *" : ""}`} hint={f.helpText}>
                   {f.type === "textarea" ? (
                     <Textarea
@@ -521,7 +543,7 @@ export function PublicCfpPage() {
               </div>
               {/* The confirmation must sit AT the button: a top-of-form notice and a
                   toast are both invisible from this scroll position. */}
-              {draftState?<div className="mt-3 rounded-[18px] border border-line bg-soft p-3 text-sm" data-testid="draft-saved-inline" role="status" aria-live="polite">
+              {draftState?<div className="mt-3 rounded-2xl border border-line bg-soft p-3 text-sm" data-testid="draft-saved-inline" role="status" aria-live="polite">
                 {draftState.status==="error"
                   ? <span className="text-rose-600" data-testid="draft-save-error">{draftState.error}</span>
                   : <>
@@ -646,7 +668,7 @@ export function ReviewerQueuePage({ done = false }: { done?: boolean }) {
           <Link
             key={r.id}
             to={`/r/${r.id}`}
-            className="flex items-center justify-between rounded-[24px] border border-line bg-white p-4 hover:border-ink/20"
+            className="flex items-center justify-between rounded-3xl border border-line bg-white p-4 hover:border-brand-200"
           >
             <div>
               <div className="font-bold">{r.submission?.title || r.submissionId}</div>
@@ -737,10 +759,10 @@ export function ReviewerSubmissionPage() {
         </Card>
         <Card className="p-5">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-2"><div><h2 className="font-bold">Scorecard</h2><p className="text-xs text-mid">AI drafts are heuristic, advisory, and never submit or decide.</p></div><Button variant="secondary" data-testid="ai-draft-button" disabled={aiBusy} onClick={async()=>{setAiBusy(true);setAiDraft({status:"loading"});try{const r:any=await api.aiAssist(data.review?.id || data.assignment.id);setResponses(x=>({...x,...(r.data.scores||{}),comments:r.data.notes||x.comments||""}));setAiDraft({status:"ready",entries:Object.entries(r.data.scores||{}).filter(([,v])=>typeof v==="number").map(([k,v])=>({label:k,value:Number(v)})),notes:String(r.data.notes||r.data.aiDraft||""),at:new Date().toLocaleTimeString()});setNotice("AI advisory draft applied. Review and edit every value before submitting.")}catch(e:any){setAiDraft({status:"error",error:e?.message||"AI draft failed"});setErr(e.message)}finally{setAiBusy(false)}}}>{aiBusy?"Drafting AI review…":"AI draft review"}</Button></div>
-          {aiDraft?<div className="mb-4 rounded-[18px] border border-line bg-soft p-3 text-sm" data-testid="ai-draft-panel" role="status" aria-live="polite">
+          {aiDraft?<div className="mb-4 rounded-2xl border border-line bg-soft p-3 text-sm" data-testid="ai-draft-panel" role="status" aria-live="polite">
             {aiDraft.status==="loading"?<span data-testid="ai-draft-loading">Drafting AI review… scoring this abstract now.</span>:aiDraft.status==="error"?<span className="text-rose-600" data-testid="ai-draft-error">{aiDraft.error}</span>:<>
               <div className="flex flex-wrap items-center gap-2"><Badge tone="ai">AI advisory draft</Badge><span className="text-xs text-mid">generated {aiDraft.at} · advisory only — you remain responsible for the score</span></div>
-              <ul className="mt-2 flex flex-wrap gap-3" data-testid="ai-draft-scores">{aiDraft.entries.map(e=><li key={e.label} className="rounded-[10px] bg-paper px-2 py-1"><b className="capitalize">{e.label}</b> <span className="font-mono">{e.value}</span></li>)}</ul>
+              <ul className="mt-2 flex flex-wrap gap-3" data-testid="ai-draft-scores">{aiDraft.entries.map(e=><li key={e.label} className="rounded-xl bg-paper px-2 py-1"><b className="capitalize">{e.label}</b> <span className="font-mono">{e.value}</span></li>)}</ul>
               <p className="mt-2 text-xs leading-relaxed text-ink-soft" data-testid="ai-draft-rationale">{aiDraft.notes}</p>
             </>}
           </div>:null}
@@ -806,7 +828,7 @@ export function ReviewerSubmissionPage() {
           </div>
           {confirmRecuse ? (
             <div
-              className="mt-4 rounded-[18px] border border-line bg-canvas p-4"
+              className="mt-4 rounded-2xl border border-line bg-canvas p-4"
               role="dialog"
               aria-label="Confirm recusal"
             >

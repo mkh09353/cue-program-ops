@@ -168,7 +168,7 @@ test("schedule page announces placements and restores the last viewed day", () =
   assert.match(page, /window\.setTimeout\(\(\) => setJustPlaced/, "highlight clears itself");
   assert.match(page, /toast\(`\$\{verb\} · \$\{day\?\.label \|\| dayKey\} · \$\{fmtTime\(slot\.startsAt\)\} · \$\{roomName\}`\)/);
   assert.match(page, /announcePlacement\(slot, "Scheduled"\)/, "drag-drop path announces too");
-  assert.match(page, /ring-2 ring-ink/, "flash outline");
+  assert.match(page, /ring-2 ring-brand-500/, "flash outline");
   // Item 2
   assert.match(page, /data-testid="recent-placements"/);
   assert.match(page, /d\.lastPlacements \|\| \[\]/);

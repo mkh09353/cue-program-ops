@@ -13,11 +13,14 @@ import {
   LoadState,
   Notice,
   PageHeader,
+  Select,
   Spinner,
   StatusBadge,
+  Table,
   Textarea,
+  Th,
+  THead,
   toast,
-  Select,
 } from "../components/ui";
 import { useAsyncData } from "../lib/useAsyncData";
 
@@ -274,7 +277,7 @@ export function SpeakersPage() {
           </div>
         }
       />
-      {duplicatePairs.length ? <Card className="mb-4 border-line p-4"><div className="flex flex-wrap items-center justify-between gap-2"><div><h2 className="text-sm font-bold uppercase tracking-wide text-mid">{duplicatePairs.length} possible duplicate{duplicatePairs.length === 1 ? "" : "s"} — Review &amp; merge</h2><p className="mt-1 text-xs text-mid">Name matches with different emails. They stay separate until you merge; the richer, older record is kept and enriched with the duplicate\u2019s missing details.</p></div><Button size="sm" onClick={()=>void mergeAll(duplicatePairs)}>Merge all suggested duplicates</Button></div><div className="mt-3 space-y-2">{duplicatePairs.map(pair=><div key={`${pair.primary.speakerId}-${pair.duplicate.speakerId}`} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line p-3 text-sm"><div><b>{pair.primary.name}</b><div className="text-xs text-mid">Keep {pair.primary.email} · merge {pair.duplicate.email}</div></div><Button size="sm" onClick={async()=>{await api.mergeSpeakers(pair.primary.speakerId,pair.duplicate.speakerId);toast("Speaker records merged");load();}}>Merge duplicate</Button></div>)}</div></Card>:null}
+      {duplicatePairs.length ? <Card className="mb-4 border-line p-4"><div className="flex flex-wrap items-center justify-between gap-2"><div><h2 className="text-sm font-bold uppercase tracking-wide text-mid">{duplicatePairs.length} possible duplicate{duplicatePairs.length === 1 ? "" : "s"} — Review &amp; merge</h2><p className="mt-1 text-xs text-mid">Name matches with different emails. They stay separate until you merge; the richer, older record is kept and enriched with the duplicate\u2019s missing details.</p></div><Button size="sm" onClick={()=>void mergeAll(duplicatePairs)}>Merge all suggested duplicates</Button></div><div className="mt-3 space-y-2">{duplicatePairs.map(pair=><div key={`${pair.primary.speakerId}-${pair.duplicate.speakerId}`} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-line p-3 text-sm"><div><b>{pair.primary.name}</b><div className="text-xs text-mid">Keep {pair.primary.email} · merge {pair.duplicate.email}</div></div><Button size="sm" onClick={async()=>{await api.mergeSpeakers(pair.primary.speakerId,pair.duplicate.speakerId);toast("Speaker records merged");load();}}>Merge duplicate</Button></div>)}</div></Card>:null}
       {err ? <Notice tone="danger">{err}</Notice> : null}
 
       {progress ? (
@@ -299,22 +302,22 @@ export function SpeakersPage() {
               </Select>
             </div>
           </div>
-          <table className="min-w-full text-left text-xs">
-            <thead>
-              <tr className="border-b text-mid">
-                <th className="py-2 pr-3">Speaker</th>
-                <th className="py-2 pr-3">Status</th>
-                <th className="py-2 pr-3">%</th>
+          <Table className="min-w-full text-xs">
+            <THead>
+              <tr>
+                <Th className="py-2 pr-3">Speaker</Th>
+                <Th className="py-2 pr-3">Status</Th>
+                <Th className="py-2 pr-3">%</Th>
                 {(progress.columns || []).map((c: string) => (
-                  <th key={c} className="py-2 pr-3">
+                  <Th key={c} className="py-2 pr-3">
                     {c}
-                  </th>
+                  </Th>
                 ))}
               </tr>
-            </thead>
+            </THead>
             <tbody>
               {progressRows.map((r: any) => (
-                <tr key={r.speakerId} className="border-b border-line">
+                <tr key={r.speakerId} className="border-t border-line">
                   <td className="py-2 pr-3 font-semibold">
                     <Link className="text-ink hover:underline" to={`/app/speakers/${r.speakerId}`}>
                       {r.name}
@@ -339,7 +342,7 @@ export function SpeakersPage() {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </Table>
         </Card>
       ) : null}
 
@@ -348,7 +351,7 @@ export function SpeakersPage() {
           <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Name, company, email…" />
         </Field>
         <Field label="Filter by workflow status">
-          <select className="h-10 w-full rounded-lg border border-line bg-white px-3 text-sm" value={status} onChange={(e) => setStatus(e.target.value)}>
+          <select className="h-10 w-full rounded-full bg-white px-3 text-sm ring-1 ring-line focus:outline-none focus:ring-2 focus:ring-brand-400" value={status} onChange={(e) => setStatus(e.target.value)}>
             <option value="">All</option>
             {["invited", "confirmed", "accepted", "declined", "withdrawn"].map((s) => (
               <option key={s} value={s}>
@@ -358,7 +361,7 @@ export function SpeakersPage() {
           </select>
         </Field>
         <Field label="Readiness">
-          <select className="h-10 w-full rounded-lg border border-line bg-white px-3 text-sm" value={readiness} onChange={(e) => setReadiness(e.target.value)}>
+          <select className="h-10 w-full rounded-full bg-white px-3 text-sm ring-1 ring-line focus:outline-none focus:ring-2 focus:ring-brand-400" value={readiness} onChange={(e) => setReadiness(e.target.value)}>
             <option value="">All</option>
             <option value="ready">Ready</option>
             <option value="not_ready">Not ready</option>
@@ -471,7 +474,7 @@ export function SpeakersPage() {
           <Field label="Travel preference">
             <Input value={form.travelPreference} onChange={(e) => setForm({ ...form, travelPreference: e.target.value })} />
           </Field>
-          <label htmlFor="create-as-new" className="mt-2 flex cursor-pointer items-start gap-2 rounded-[18px] border border-line bg-soft p-3 text-sm">
+          <label htmlFor="create-as-new" className="mt-2 flex cursor-pointer items-start gap-2 rounded-2xl border border-line bg-soft p-3 text-sm">
             <input
               id="create-as-new"
               type="checkbox"
@@ -522,7 +525,7 @@ export function SpeakersPage() {
             <input
               type="file"
               accept=".csv,text/csv"
-              className="mb-3 block w-full rounded-lg border border-line bg-white px-3 py-2 text-sm text-ink"
+              className="mb-3 block w-full rounded-2xl bg-white px-3 py-2 text-sm ring-1 ring-line focus:outline-none focus:ring-2 focus:ring-brand-400 text-ink"
               aria-label="Upload speakers CSV"
               onChange={async (e) => {
                 const file = e.target.files?.[0];
@@ -549,7 +552,7 @@ export function SpeakersPage() {
             Import
           </Button>
           {importSummary ? <p className="mt-3 text-sm font-semibold" role="status">{importSummary.created} created · {importSummary.updated} updated (existing email) · {importSummary.duplicates} possible duplicates (name match)</p> : null}
-          {importDupes.length ? <div className="mt-4 rounded-lg border border-line bg-soft p-3"><div className="flex flex-wrap items-center justify-between gap-2"><div><b className="text-sm">Possible duplicate speakers</b><p className="text-xs text-mid">Same name, different email. Review before combining records.</p></div><Button size="sm" onClick={()=>void mergeAll(importDupes)}>Merge all suggested duplicates</Button></div>{importDupes.map((pair:any)=><div key={pair.duplicate.speakerId} className="mt-2 rounded border border-line bg-white p-2 text-sm"><div>{pair.primary.name}: {pair.primary.email} / {pair.duplicate.email}</div><Button size="sm" className="mt-2" onClick={async()=>{await api.mergeSpeakers(pair.primary.speakerId,pair.duplicate.speakerId);toast("Speaker records merged");setImportDupes(x=>x.filter((d:any)=>d!==pair));load();}}>Merge duplicate</Button></div>)}</div>:null}
+          {importDupes.length ? <div className="mt-4 rounded-xl border border-line bg-soft p-3"><div className="flex flex-wrap items-center justify-between gap-2"><div><b className="text-sm">Possible duplicate speakers</b><p className="text-xs text-mid">Same name, different email. Review before combining records.</p></div><Button size="sm" onClick={()=>void mergeAll(importDupes)}>Merge all suggested duplicates</Button></div>{importDupes.map((pair:any)=><div key={pair.duplicate.speakerId} className="mt-2 rounded-lg border border-line bg-white p-2 text-sm"><div>{pair.primary.name}: {pair.primary.email} / {pair.duplicate.email}</div><Button size="sm" className="mt-2" onClick={async()=>{await api.mergeSpeakers(pair.primary.speakerId,pair.duplicate.speakerId);toast("Speaker records merged");setImportDupes(x=>x.filter((d:any)=>d!==pair));load();}}>Merge duplicate</Button></div>)}</div>:null}
         </Modal>
       ) : null}
 
@@ -592,7 +595,7 @@ export function SpeakersPage() {
           </Field>
           <Field label="Type">
             <select
-              className="h-10 w-full rounded-lg border border-line bg-white px-3 text-sm"
+              className="h-10 w-full rounded-full bg-white px-3 text-sm ring-1 ring-line focus:outline-none focus:ring-2 focus:ring-brand-400"
               value={taskForm.type}
               onChange={(e) => setTaskForm({ ...taskForm, type: e.target.value })}
             >
@@ -630,8 +633,8 @@ export function SpeakersPage() {
                   <label
                     key={r.speakerId}
                     htmlFor={id}
-                    className={`flex cursor-pointer items-center gap-2 rounded-[18px] border px-3 py-2 text-sm ${
-                      checked ? "border-ink bg-soft" : "border-line bg-white"
+                    className={`flex cursor-pointer items-center gap-2 rounded-full border px-3 py-2 text-sm ${
+                      checked ? "border-brand-400 bg-brand-50" : "border-line bg-white"
                     }`}
                   >
                     <input
@@ -899,7 +902,7 @@ export function SpeakerDetailPage() {
               <Field label="Workflow status">
                 <div className="flex flex-wrap items-center gap-2">
                   <select
-                    className="h-10 min-w-48 flex-1 rounded-lg border border-line bg-white px-3 text-sm"
+                    className="h-10 min-w-48 flex-1 rounded-full bg-white px-3 text-sm ring-1 ring-line focus:outline-none focus:ring-2 focus:ring-brand-400"
                     value={edit.workflowStatus}
                     onChange={(e) => {
                       setEdit({ ...edit, workflowStatus: e.target.value });
@@ -1015,7 +1018,7 @@ export function SpeakerDetailPage() {
             <h3 className="text-xs font-bold uppercase tracking-wide text-mid">Sessions</h3>
             <ul className="mt-2 space-y-2 text-sm">
               {(row.sessions || []).map((s: any) => (
-                <li key={s.id} className="rounded-lg border border-line p-2">
+                <li key={s.id} className="rounded-xl border border-line p-2">
                   <Input aria-label={`Session title for ${s.title}`} defaultValue={s.title} onBlur={async e=>{const title=e.target.value.trim();if(title&&title!==s.title){await api.editContentSession(s.id,{title});toast("Session renamed");load();}}}/>
                   <div className="text-xs text-mid">
                     {s.status}
@@ -1026,7 +1029,7 @@ export function SpeakerDetailPage() {
               {!row.sessions?.length ? <li className="text-mid">No session assignment yet.</li> : null}
             </ul>
             <Field label="Link speaker to an existing session" hint="Uses the canonical event session list.">
-              <select className="h-10 w-full rounded-lg border border-line bg-white px-3 text-sm" defaultValue="" onChange={async e=>{if(e.target.value){await api.linkSpeakerSession(row.speakerId,e.target.value);toast("Speaker linked to session");load();}}}>
+              <select className="h-10 w-full rounded-full bg-white px-3 text-sm ring-1 ring-line focus:outline-none focus:ring-2 focus:ring-brand-400" defaultValue="" onChange={async e=>{if(e.target.value){await api.linkSpeakerSession(row.speakerId,e.target.value);toast("Speaker linked to session");load();}}}>
                 <option value="">Choose session…</option>
                 {(row.availableSessions||[]).map((s:any)=><option key={s.id} value={s.id}>{s.title} · {s.status}</option>)}
               </select>
@@ -1057,7 +1060,7 @@ export function SpeakerDetailPage() {
           <Card className="p-4">
             <h3 className="text-xs font-bold uppercase tracking-wide text-mid">Communication history</h3>
             <ul className="mt-2 space-y-2 text-sm">
-              {(row.communications || []).map((c:any)=><li key={c.id} className="rounded border border-line p-2"><div className="flex items-center justify-between gap-2"><b>{c.subject}</b><StatusBadge status={c.status}/></div><div className="text-xs text-mid">{c.createdAt}{c.status === "sent" && c.providerId ? ` · provider id ${c.providerId}` : ""}</div></li>)}
+              {(row.communications || []).map((c:any)=><li key={c.id} className="rounded-lg border border-line p-2"><div className="flex items-center justify-between gap-2"><b>{c.subject}</b><StatusBadge status={c.status}/></div><div className="text-xs text-mid">{c.createdAt}{c.status === "sent" && c.providerId ? ` · provider id ${c.providerId}` : ""}</div></li>)}
               {!row.communications?.length ? <li className="text-mid">No communication history.</li> : null}
             </ul>
           </Card>
@@ -1066,7 +1069,7 @@ export function SpeakerDetailPage() {
             <h3 className="text-xs font-bold uppercase tracking-wide text-mid">Files / deliverables</h3>
             <ul className="mt-2 space-y-2 text-sm">
               {(row.files || []).map((f: any) => (
-                <li key={f.id} className="rounded border border-line p-2">
+                <li key={f.id} className="rounded-lg border border-line p-2">
                   <b>{f.name}</b>
                   <div className="text-xs text-mid">
                     {f.kind} · {f.createdAt?.slice(0, 19)} · {f.visibility}
@@ -1086,7 +1089,7 @@ export function SpeakerDetailPage() {
                 </li>
               ))}
               {(row.contentFiles || []).map((f: any) => (
-                <li key={f.id} className="rounded border border-line p-2">
+                <li key={f.id} className="rounded-lg border border-line p-2">
                   <b>{f.currentVersion?.name || f.id}</b>
                   <div className="text-xs text-mid">
                     content · {f.status} · {f.currentVersion?.uploadedAt?.slice(0, 19)}
@@ -1102,7 +1105,7 @@ export function SpeakerDetailPage() {
                 <li className="text-mid">No files yet.</li>
               ) : null}
               {!row.files?.some((f: any) => f.kind === "headshot") && (row.headshotUrl || row.profile?.headshotUrl) ? (
-                <li className="rounded border border-line p-2">
+                <li className="rounded-lg border border-line p-2">
                   <b>{row.headshotName || "headshot.png"}</b>
                   <div className="text-xs text-mid">headshot · profile</div>
                   <a
@@ -1267,7 +1270,7 @@ export function CommsPage() {
                 key={t.id}
                 type="button"
                 onClick={() => setActive(t)}
-                className={`w-full rounded-lg px-3 py-2 text-left text-sm font-semibold ${active?.id === t.id ? "bg-ink text-white" : "hover:bg-canvas"}`}
+                className={`w-full rounded-xl px-3 py-2 text-left text-sm font-semibold ${active?.id === t.id ? "bg-brand-600 text-white" : "hover:bg-brand-50"}`}
               >
                 {t.name}
               </button>
@@ -1293,7 +1296,7 @@ export function CommsPage() {
                 Include calendar invitation language (downloadable ICS — not calendar push)
               </label>
 
-              <div className="mb-3 max-h-40 space-y-1 overflow-auto rounded-lg border border-line p-2">
+              <div className="mb-3 max-h-40 space-y-1 overflow-auto rounded-xl border border-line p-2">
                 <label className="flex items-center gap-2 text-xs font-semibold">
                   <input
                     type="checkbox"
@@ -1386,7 +1389,7 @@ export function CommsPage() {
               ) : null}
 
               {preview ? (
-                <div className="mt-4 rounded-[18px] border border-line bg-soft p-3 text-sm">
+                <div className="mt-4 rounded-2xl border border-line bg-soft p-3 text-sm">
                   <div className="text-xs font-bold uppercase text-ink">Per-recipient preview</div>
                   <div className="mt-1 font-semibold">{preview.subject}</div>
                   <pre className="mt-2 whitespace-pre-wrap text-xs text-ink-soft">{preview.body}</pre>
@@ -1406,8 +1409,8 @@ export function CommsPage() {
                 key={c.id}
                 data-testid={`comm-log-${c.id}`}
                 className={cn(
-                  "rounded-[18px] border border-line p-3 text-sm",
-                  sentIds.includes(c.id) && "ring-2 ring-ink ring-offset-2 ring-offset-canvas",
+                  "rounded-2xl border border-line p-3 text-sm",
+                  sentIds.includes(c.id) && "ring-2 ring-brand-500 ring-offset-2 ring-offset-canvas",
                 )}
               >
                 <div className="flex items-center justify-between gap-2">
@@ -1423,7 +1426,7 @@ export function CommsPage() {
                 <p className="mt-1 text-[11px] text-mid">{c.deliveryNote || (c.status === "mock_sent" ? "Mock delivery" : "")}</p>
                 {c.status === "sent" && c.providerId ? <p className="mt-1 text-[11px] font-semibold text-mid">provider id {c.providerId}</p> : null}
                 {c.feedback ? (
-                  <p className="mt-2 rounded-[10px] bg-soft p-2 text-xs" data-testid={`comm-feedback-${c.id}`}>
+                  <p className="mt-2 rounded-xl bg-soft p-2 text-xs" data-testid={`comm-feedback-${c.id}`}>
                     <b>Committee feedback included:</b> <span className="whitespace-pre-wrap text-ink-soft">{c.feedback}</span>
                   </p>
                 ) : null}

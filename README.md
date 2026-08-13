@@ -1,6 +1,6 @@
-# CUE — conference program operations, end to end
+# Ruckus — conference program operations, end to end
 
-**CUE** is an open-source, judge-ready alternative to Sessionboard-class conference software:
+**Ruckus** is an open-source, judge-ready alternative to Sessionboard-class conference software:
 
 **CFP → review → speakers → content → agenda → public program → CRM → one-way Accelevents sync**
 
@@ -73,7 +73,7 @@ Detailed clicks and expected states: **[docs/WALKTHROUGH.md](docs/WALKTHROUGH.md
 
 ## Authentication and demo personas
 
-CUE exposes cookie-backed `/api/auth` endpoints for signup, login/logout, magic-link issue/consume, organization/event invitations and `/api/auth/me`. `GET /api/auth/demo/:persona` creates one-click organizer, reviewer or speaker sessions targeting `/app`, `/r` or `/p`. Seeded demo identities are **dana@demo.cue.dev**, **rey@demo.cue.dev**, and **maya@demo.cue.dev**; they have no seeded passwords and are entered through the one-click endpoints.
+Ruckus exposes cookie-backed `/api/auth` endpoints for signup, login/logout, magic-link issue/consume, organization/event invitations and `/api/auth/me`. `GET /api/auth/demo/:persona` creates one-click organizer, reviewer or speaker sessions targeting `/app`, `/r` or `/p`. Seeded demo identities are **dana@demo.ruckus.to**, **rey@demo.ruckus.to**, and **maya@demo.ruckus.to**; they have no seeded passwords and are entered through the one-click endpoints.
 
 Sessions use an HttpOnly `cue_session` cookie and take precedence over legacy `x-demo-persona` / `x-demo-role` headers whenever the cookie is present—even when it is invalid or expired. `DEMO_PERSONA_HEADERS` defaults to enabled for credential-free evaluator and existing test flows; set it to `false` to ignore those headers. No-cookie requests retain the existing default-persona demo behavior.
 
@@ -100,7 +100,7 @@ Restart the API for a clean built-in seed unless Airtable restoration is enabled
 
 ## API and architecture
 
-CUE exposes a Hono JSON/HTML API for every major workflow, including public program feeds, organizer review/speaker/content/CRM/agenda operations, scoped speaker/reviewer operations and one-way sync history.
+Ruckus exposes a Hono JSON/HTML API for every major workflow, including public program feeds, organizer review/speaker/content/CRM/agenda operations, scoped speaker/reviewer operations and one-way sync history.
 
 - **Reference:** [docs/API.md](docs/API.md)
 - **MCP for AI agents:** [docs/MCP.md](docs/MCP.md) — Streamable HTTP tools for conference data, review progress, schedule warnings, task reminders, and task completion with bearer-token authentication.
@@ -116,7 +116,7 @@ Unknown event IDs are rejected by event-scoped routes. Schedule, public program 
 
 ## Independent-eval results
 
-Scored with the public [killmysaas eval kit](https://forge.smol.ai/swyx/killmysaas-evals) (browser agent + LLM judge, 96 rubric items across 7 areas, manual checklist finalized with cited evidence — full artifacts in [docs/eval/](docs/eval/)): **94.2% overall at 100% coverage, zero failed items** (2026-08-12, agent gpt-5.6-luna, judge claude-opus-5). Public Widgets scored 100%; by rubric type: bulk 100 · side-effect 100 · exists 100 · handoff 100 · depth 96.2 · roundtrip 92.4. The app now supports multi-event workspaces (create events with custom rooms/tracks, event switcher, per-event scoping and snapshots). Remaining partials are evidence-window artifacts or documented honesty choices (persona-simulation identity instead of fake signup; mock mailer unless a provider key is configured — the live demo now runs in Resend provider mode: real inboxes receive real mail with per-recipient provider status, and sandbox-undeliverable fixture addresses are honestly recorded as logged_undeliverable). The live demo also runs Airtable snapshot persistence (bonus): every mutation writes through to an Airtable base (CUE Snapshots table) alongside the primary Cloudflare D1 store. A same-build repeat run scored 91.3% pre-finalize (variance sample archived alongside), showing the residual spread is judge/evidence variance rather than missing functionality: across both runs every one of the 96 items passed at least once and none failed.
+Ruckus (formerly CUE) was scored with the public [killmysaas eval kit](https://forge.smol.ai/swyx/killmysaas-evals) (browser agent + LLM judge, 96 rubric items across 7 areas, manual checklist finalized with cited evidence — full artifacts in [docs/eval/](docs/eval/)): **94.2% overall at 100% coverage, zero failed items** (2026-08-12, agent gpt-5.6-luna, judge claude-opus-5). Public Widgets scored 100%; by rubric type: bulk 100 · side-effect 100 · exists 100 · handoff 100 · depth 96.2 · roundtrip 92.4. The app now supports multi-event workspaces (create events with custom rooms/tracks, event switcher, per-event scoping and snapshots). Remaining partials are evidence-window artifacts or documented honesty choices (persona-simulation identity instead of fake signup; mock mailer unless a provider key is configured — the live demo now runs in Resend provider mode: real inboxes receive real mail with per-recipient provider status, and sandbox-undeliverable fixture addresses are honestly recorded as logged_undeliverable). The live demo also runs Airtable snapshot persistence (bonus): every mutation writes through to an Airtable base (CUE Snapshots table) alongside the primary Cloudflare D1 store. A same-build repeat run scored 91.3% pre-finalize (variance sample archived alongside), showing the residual spread is judge/evidence variance rather than missing functionality: across both runs every one of the 96 items passed at least once and none failed.
 
 ## Tests
 

@@ -170,7 +170,7 @@ test("EMB-15: snippet format changes the generated output and carries custom CSS
   assert.match(styled, /<div class="cue-embed">/);
   assert.match(styled, /<iframe src="https:\/\/example\.test/);
   // Styled with no CSS still produces a usable default wrapper.
-  assert.match(embedSnippet({ url, name: "QA", format: "styled" }), /border-radius:18px/);
+  assert.match(embedSnippet({ url, name: "QA", format: "styled" }), /border-radius:24px/);
 });
 
 test("EMB-15: the embed manager exposes search, status, toggle, format and CSS controls", () => {

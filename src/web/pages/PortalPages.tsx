@@ -92,7 +92,7 @@ export function PortalHomePage() {
           <StatusBadge status={data.readiness.state} />
         </div>
         <div className="mt-3 h-2 overflow-hidden rounded-full bg-canvas" aria-hidden>
-          <div className="h-full bg-ink" style={{ width: `${data.readiness.pct}%` }} />
+          <div className="h-full bg-brand-600" style={{ width: `${data.readiness.pct}%` }} />
         </div>
         <p className="mt-2 text-sm text-mid">
           {data.readiness.completedRequiredTaskCount}/{data.readiness.requiredTaskCount} required tasks complete
@@ -234,7 +234,7 @@ export function PortalTalksPage() {
               {s.category} · {s.format} · board {s.reviewBoard}
             </p>
             {s.decisionFeedback ? (
-              <div className="mt-3 rounded-[18px] border border-line bg-soft p-3 text-sm" data-testid={`decision-feedback-${s.id}`}>
+              <div className="mt-3 rounded-2xl border border-line bg-soft p-3 text-sm" data-testid={`decision-feedback-${s.id}`}>
                 <b className="block">Committee feedback:</b>
                 <span className="whitespace-pre-wrap text-ink-soft">{s.decisionFeedback}</span>
               </div>
@@ -266,7 +266,7 @@ export function PortalTasksPage() {
           <Link
             key={t.id}
             to={`/p/tasks/${t.id}`}
-            className="flex items-center justify-between rounded-[24px] border border-line bg-white p-4 hover:border-ink/20"
+            className="flex items-center justify-between rounded-3xl border border-line bg-white p-4 hover:border-brand-200"
           >
             <div>
               <div className="font-semibold">{t.title}</div>
@@ -279,7 +279,7 @@ export function PortalTasksPage() {
             <StatusBadge status={effectiveStatus} />
           </Link>
         )})}
-        {deliverables.filter((d:any)=>!linkedIds.has(d.id)).map((d:any)=><Link key={d.id} to={`/p/deliverables/${d.id}`} data-testid={`portal-deliverable-task-${d.id}`} className="flex items-center justify-between rounded-[24px] border border-line bg-white p-4 hover:border-ink/20"><div><div className="font-semibold">{d.name}</div><div className="text-xs text-mid">Organizer file request · due {String(d.dueAt).slice(0,10)} · {d.uploadCount} version{d.uploadCount===1?"":"s"}</div></div><StatusBadge status={d.overdue?"overdue":d.status}/></Link>)}
+        {deliverables.filter((d:any)=>!linkedIds.has(d.id)).map((d:any)=><Link key={d.id} to={`/p/deliverables/${d.id}`} data-testid={`portal-deliverable-task-${d.id}`} className="flex items-center justify-between rounded-3xl border border-line bg-white p-4 hover:border-brand-200"><div><div className="font-semibold">{d.name}</div><div className="text-xs text-mid">Organizer file request · due {String(d.dueAt).slice(0,10)} · {d.uploadCount} version{d.uploadCount===1?"":"s"}</div></div><StatusBadge status={d.overdue?"overdue":d.status}/></Link>)}
         {!data.tasks.length&&!deliverables.length ? (
           <EmptyState title="No tasks" description="Accepted speakers receive onboarding tasks here." />
         ) : null}
@@ -317,7 +317,7 @@ export function PortalDeliverablesPage() {
           <Link
             key={t.id}
             to={`/p/deliverables/${t.id}`}
-            className="flex justify-between rounded-[24px] border border-line bg-white p-4 hover:border-ink/20"
+            className="flex justify-between rounded-3xl border border-line bg-white p-4 hover:border-brand-200"
           >
             <div>
               <b>{t.name}</b>
@@ -381,7 +381,7 @@ export function PortalDeliverableDetailPage() {
   if(!data&&!err)return <Spinner/>;
   if(err)return <PersonaScopeNotice what="deliverable" error={err} backTo="/p/deliverables" backLabel="All my deliverables"/>;
   const file=data.file;
-  return <div><PageHeader title={data.name} description={`${data.session?.title||"Speaker deliverable"} · Due ${data.dueAt.slice(0,10)}`}/><Card className="p-5"><StatusBadge status={data.overdue?"overdue":data.status}/><p className="mt-3 text-sm">{data.instructions}</p><div className="mt-4 rounded-[18px] border border-dashed p-4"><b>Upload file</b><p className="mb-2 text-xs text-mid">Accepted: {data.acceptedTypes.join(", ")} · Maximum 2 MB. Re-uploading creates a new version.</p><Input key={`deliverable-upload-${uploadNonce}`} type="file" aria-label="Choose a file to upload" disabled={uploadBusy} accept={data.acceptedTypes.join(",")} onChange={e=>{const f=e.target.files?.[0];e.target.value="";if(f)void upload(f)}}/>{uploadBusy?<p className="mt-2 text-xs font-semibold text-ink">Uploading…</p>:null}{uploadResult?<Notice tone="ok" onClose={()=>setUploadResult("")}><span data-testid="upload-result">{uploadResult}</span></Notice>:null}</div>{file?<div className="mt-5"><h2 className="font-bold">{file.versions.find((v:any)=>v.current)?.name}</h2><p className="text-sm text-mid">Approval: {file.status} · <span data-testid="version-count">{file.versions.length}</span> version{file.versions.length===1?"":"s"}</p>{[...file.versions].reverse().map((v:any)=><div key={v.id} className="mt-2 flex justify-between rounded bg-soft p-2 text-sm"><span>v{v.version} · {new Date(v.uploadedAt).toLocaleString()}</span><span>{v.current?<Badge tone="ok">Current</Badge>:null} <a className="text-ink underline" href={`/api/content/files/${file.id}/versions/${v.id}`}>View</a></span></div>)}<h3 className="mt-4 text-xs font-bold uppercase text-mid">Comments</h3>{file.comments.map((c:any)=><p key={c.id} className="mt-2 rounded bg-soft p-2 text-sm"><Badge tone={fileCommentRole(c)==="Organizer"?"ok":"muted"}>{fileCommentRole(c)}</Badge>{" "}<b>{c.authorName}</b> · <span className="font-mono text-xs">{fileThreadStamp(c.createdAt)}</span><br/>{c.body}</p>)}<div className="mt-2 flex gap-2"><Input value={comment} onChange={e=>setComment(e.target.value)} placeholder="Add a comment"/><Button onClick={async()=>{await api.addFileComment(file.id,comment);setComment("");load()}}>Comment</Button></div></div>:null}</Card></div>;
+  return <div><PageHeader title={data.name} description={`${data.session?.title||"Speaker deliverable"} · Due ${data.dueAt.slice(0,10)}`}/><Card className="p-5"><StatusBadge status={data.overdue?"overdue":data.status}/><p className="mt-3 text-sm">{data.instructions}</p><div className="mt-4 rounded-2xl border border-dashed p-4"><b>Upload file</b><p className="mb-2 text-xs text-mid">Accepted: {data.acceptedTypes.join(", ")} · Maximum 2 MB. Re-uploading creates a new version.</p><Input key={`deliverable-upload-${uploadNonce}`} type="file" aria-label="Choose a file to upload" disabled={uploadBusy} accept={data.acceptedTypes.join(",")} onChange={e=>{const f=e.target.files?.[0];e.target.value="";if(f)void upload(f)}}/>{uploadBusy?<p className="mt-2 text-xs font-semibold text-ink">Uploading…</p>:null}{uploadResult?<Notice tone="ok" onClose={()=>setUploadResult("")}><span data-testid="upload-result">{uploadResult}</span></Notice>:null}</div>{file?<div className="mt-5"><h2 className="font-bold">{file.versions.find((v:any)=>v.current)?.name}</h2><p className="text-sm text-mid">Approval: {file.status} · <span data-testid="version-count">{file.versions.length}</span> version{file.versions.length===1?"":"s"}</p>{[...file.versions].reverse().map((v:any)=><div key={v.id} className="mt-2 flex justify-between rounded-lg bg-soft p-2 text-sm"><span>v{v.version} · {new Date(v.uploadedAt).toLocaleString()}</span><span>{v.current?<Badge tone="ok">Current</Badge>:null} <a className="text-ink underline" href={`/api/content/files/${file.id}/versions/${v.id}`}>View</a></span></div>)}<h3 className="mt-4 text-xs font-bold uppercase text-mid">Comments</h3>{file.comments.map((c:any)=><p key={c.id} className="mt-2 rounded-lg bg-soft p-2 text-sm"><Badge tone={fileCommentRole(c)==="Organizer"?"ok":"muted"}>{fileCommentRole(c)}</Badge>{" "}<b>{c.authorName}</b> · <span className="font-mono text-xs">{fileThreadStamp(c.createdAt)}</span><br/>{c.body}</p>)}<div className="mt-2 flex gap-2"><Input value={comment} onChange={e=>setComment(e.target.value)} placeholder="Add a comment"/><Button onClick={async()=>{await api.addFileComment(file.id,comment);setComment("");load()}}>Comment</Button></div></div>:null}</Card></div>;
 }
 
 const FILE_TYPES = new Set(["headshot", "slides", "supporting_doc"]);
@@ -603,7 +603,7 @@ export function PortalTaskDetailPage() {
                   />
                 ) : f.type === "select" ? (
                   <select
-                    className="h-10 w-full rounded-lg border border-line bg-white px-3 text-sm"
+                    className="h-10 w-full rounded-full bg-white px-3 text-sm ring-1 ring-line focus:outline-none focus:ring-2 focus:ring-brand-400"
                     value={formAnswers[f.key] || ""}
                     disabled={task.status === "completed"}
                     onChange={(e) => setFormAnswers({ ...formAnswers, [f.key]: e.target.value })}
@@ -664,7 +664,7 @@ export function PortalTaskDetailPage() {
                 onChange={(e) => setFileName(e.target.value)}
               />
             </Field>
-            <div className="mb-2 rounded-[18px] border border-dashed border-line bg-soft p-3 text-xs text-mid">
+            <div className="mb-2 rounded-2xl border border-dashed border-line bg-soft p-3 text-xs text-mid">
               <b className="text-ink">Upload requirements</b>
               <br />
               Accepted file types: <b className="text-ink">{UPLOAD_HINTS[task.type]?.types || "PDF, PNG, JPEG"}</b> ·
@@ -780,7 +780,7 @@ export function PortalTaskDetailPage() {
         ) : null}
 
         {isFile && linkedDeliverable ? (
-          <div className="mt-4 rounded-[18px] border border-line bg-soft p-4" data-testid="task-uploaded-panel">
+          <div className="mt-4 rounded-2xl border border-line bg-soft p-4" data-testid="task-uploaded-panel">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <b className="text-sm">Uploaded file</b>
               <Badge tone={linkedFile?.versions?.length ? "ok" : "warn"}>
@@ -800,7 +800,7 @@ export function PortalTaskDetailPage() {
                 </p>
                 <ul className="mt-2 space-y-1 text-xs">
                   {[...linkedFile.versions].reverse().map((v: any) => (
-                    <li key={v.id} className="flex flex-wrap items-center justify-between gap-2 rounded bg-white p-2">
+                    <li key={v.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-white p-2">
                       <span>
                         v{v.version} · {v.name} · {fileThreadStamp(v.uploadedAt)}
                       </span>
@@ -816,7 +816,7 @@ export function PortalTaskDetailPage() {
                 <div className="mt-3">
                   <b className="text-xs uppercase tracking-wide text-mid">Comments</b>
                   {(linkedFile.comments || []).map((c: any) => (
-                    <p key={c.id} className={`mt-1 rounded border p-2 text-xs ${postedComment?.id===c.id?"border-ink bg-white ring-2 ring-ink/10":"border-transparent bg-white"}`}>
+                    <p key={c.id} className={`mt-1 rounded-lg border p-2 text-xs ${postedComment?.id===c.id?"border-brand-400 bg-white ring-2 ring-brand-500/10":"border-transparent bg-white"}`}>
                       <Badge tone={fileCommentRole(c)==="Organizer"?"ok":"muted"}>{fileCommentRole(c)}</Badge>{" "}<b>{c.authorName}</b> · <span className="font-mono">{fileThreadStamp(c.createdAt)}</span>
                       <br />
                       {c.body}
@@ -918,7 +918,7 @@ export function PortalResourceDetailPage() {
       <Card className="p-5">
         <p className="whitespace-pre-wrap text-sm leading-relaxed text-ink-soft">{r.body}</p>
         {safeEmbed ? (
-          <div className="mt-4 overflow-hidden rounded-[18px] border">
+          <div className="mt-4 overflow-hidden rounded-2xl border">
             <iframe
               title="resource embed"
               src={r.embedUrl}
@@ -931,7 +931,7 @@ export function PortalResourceDetailPage() {
             </p>
           </div>
         ) : (
-          <div className="mt-4 rounded-[24px] border border-dashed border-line bg-soft p-6">
+          <div className="mt-4 rounded-3xl border border-dashed border-line bg-soft p-6">
             <div className="text-xs font-bold uppercase tracking-wide text-ink">Speaker handbook</div>
             <h3 className="mt-2 text-lg font-bold">Session day checklist</h3>
             <ul className="mt-3 list-disc space-y-2 pl-5 text-sm text-ink-soft">

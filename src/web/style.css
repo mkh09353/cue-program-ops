@@ -24,10 +24,21 @@
   --mid: #737373;
   --line: #e5e5e5;
   --danger: #e7000b;
+  /* Ruckus brand accent — primary actions, active nav, focus rings. */
+  --brand: #7c3aed;
+  --brand-strong: #6d28d9;
+  --brand-soft: #ede9fe;
+  --brand-line: #ddd6fe;
   --radius-pill: 18px;
   --radius-card: 24px;
   --shadow-card: 0 0 0 1px rgba(23, 23, 23, 0.05), 0 1px 3px rgba(0, 0, 0, 0.1),
     0 1px 2px -1px rgba(0, 0, 0, 0.1);
+}
+
+html {
+  /* Reserve the scrollbar gutter so page-height changes (tab/day switches,
+     filtered lists) don't shift centered content horizontally. */
+  scrollbar-gutter: stable;
 }
 
 html,
@@ -102,8 +113,12 @@ a {
   color: #1e1b2e;
 }
 
+/* Violet focus ring app-wide. This used to be scoped to `.ruckus-brand`, which
+   only the marketing page set, so the organizer/reviewer/speaker shells never
+   got it. Keep the scoped selector too: it is harmless and documents intent. */
+:focus-visible,
 .ruckus-brand :focus-visible {
-  outline: 2px solid #7c3aed;
+  outline: 2px solid var(--brand);
   outline-offset: 2px;
   border-radius: 4px;
 }

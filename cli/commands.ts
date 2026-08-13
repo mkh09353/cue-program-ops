@@ -1,5 +1,5 @@
 /**
- * CUE CLI command implementations.
+ * Ruckus CLI command implementations.
  *
  * Every command is registered with usage + option help so that `cue help` and
  * `cue <group> --help` are sufficient for an agent to operate the tool without
@@ -115,7 +115,7 @@ const events: Command = {
       if (!match) throw new ApiError(`event not found: ${target}`, 404);
       emit(config, match, () => {
         out(`Active event for future commands: ${match.name} (${match.id})`);
-        out(`Export it:  export CUE_EVENT=${match.id}`);
+        out(`Export it:  export RUCKUS_EVENT=${match.id}`);
       });
       return;
     }
