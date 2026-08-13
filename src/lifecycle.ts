@@ -78,6 +78,8 @@ export interface Submission {
   /** Committee feedback sent to the speaker with the accept/reject decision. */
   decisionFeedback?: string;
   id: string;
+  /** Stable event-local human reference. Optional only for pre-code snapshots. */
+  code?: string;
   eventId: string;
   speakerId: string;
   name: string;
@@ -172,7 +174,7 @@ export interface SpeakerTask {
   speakerId: string;
   submissionId?: string;
   title: string;
-  type: "profile" | "headshot" | "slides" | "supporting_doc" | "confirm" | "form";
+  type: "profile" | "headshot" | "slides" | "supporting_doc" | "confirm" | "confirmation" | "form";
   required: boolean;
   status: "not_started" | "completed";
   dueAt: string;
@@ -247,7 +249,7 @@ export interface Resource {
 export interface ReminderPlan { speakerId: string; taskId: string; templateKey: "task_reminder"; dueAt: string; overdue: boolean }
 /** Which card fields a saved embed renders (all true when omitted). */
 export interface EmbedCardFields { speakers?:boolean; room?:boolean; track?:boolean; description?:boolean }
-export interface EmbedConfig { id:string; name:string; widget:"sessions"|"speakers"|"agenda"|"itinerary"|"gallery"; filters:{track?:string;format?:string;room?:string;day?:string}; theme:{accent?:string}; fields?:EmbedCardFields; createdAt:string }
+export interface EmbedConfig { id:string; name:string; widget:"sessions"|"speakers"|"agenda"|"itinerary"|"gallery"; filters:{track?:string;format?:string;room?:string;day?:string}; theme:{accent?:string}; fields?:EmbedCardFields; enabled?:boolean; snippetFormat?:"iframe"|"script"|"link"; customCss?:string; createdAt:string }
 
 /** Named CSS colors accepted for embed branding (kept tiny and audit-able). */
 export const ACCENT_NAMED_COLORS = new Set([
@@ -284,6 +286,9 @@ export interface SessionDraft {
   title: string;
   abstract: string;
   status: "draft" | "scheduled" | "published";
+  publicationState?: "draft" | "approved";
+  cancelled?: boolean;
+  cancellationReason?: string;
   trackId: string;
   roomId?: string;
   slot?: { startsAt: string; endsAt: string };
@@ -301,12 +306,16 @@ export interface LifecycleStore {
     endsAt: string;
     website: string;
     location: string;
+    /** Whether accepted speakers must explicitly confirm. Optional for old snapshots. */
+    speakerConfirmation?: boolean;
   };
   form: CfpForm;
   /** Additional submission forms for this event. The primary form (`form`) is
    * untouched so every existing single-form path keeps working unchanged. */
   extraForms?: CfpForm[];
   submissions: Submission[];
+  /** Last issued event-local SESS number. Optional for snapshots predating codes. */
+  submissionCodeCounter?: number;
   reviews: Review[];
   reviewRounds: ReviewRound[];
   reviewAssignments: ReviewAssignment[];
@@ -331,6 +340,22 @@ export interface LifecycleStore {
   speakerInvites: SpeakerInvite[];
   embedConfigs: EmbedConfig[];
   automation: AutomationState;
+}
+
+const submissionCodeNumber = (code?: string) => /^SESS-(\d+)$/.exec(code || "")?.[1];
+/** Preserve every existing code and assign only missing rows, deterministically. */
+export function backfillSubmissionCodes(life: LifecycleStore = store) {
+  let counter = Math.max(Number(life.submissionCodeCounter || 0), ...life.submissions.map((row) => Number(submissionCodeNumber(row.code) || 0)));
+  const missing = life.submissions.filter((row) => !row.code).sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+  for (const row of missing) row.code = `SESS-${String(++counter).padStart(2, "0")}`;
+  life.submissionCodeCounter = counter;
+  return life.submissions;
+}
+
+export function nextSubmissionCode(life: LifecycleStore = store) {
+  const max = Math.max(Number(life.submissionCodeCounter || 0), ...life.submissions.map((row) => Number(submissionCodeNumber(row.code) || 0)));
+  life.submissionCodeCounter = max + 1;
+  return `SESS-${String(life.submissionCodeCounter).padStart(2, "0")}`;
 }
 
 const now = () => new Date().toISOString();
@@ -372,6 +397,7 @@ export let store: LifecycleStore = {
     endsAt: "2026-10-15T01:00:00.000Z",
     website: "https://ai.engineer",
     location: "New York, NY",
+    speakerConfirmation: true,
   },
   boards: [
     { id: "engineering", label: "Engineering board" },
@@ -1155,6 +1181,8 @@ export function renderTemplate(
 
 export function ensureOnboarding(submission: Submission) {
   if (store.tasks.some((t) => t.speakerId === submission.speakerId)) {
+    const confirmation=store.tasks.find(t=>t.speakerId===submission.speakerId&&t.submissionId===submission.id&&t.type==="confirmation");
+    if(confirmation&&store.event.speakerConfirmation===false)confirmation.status="completed";
     // Deliverables are a separate, file-backed table from onboarding tasks; an
     // accepted speaker must always get both or /p/deliverables looks broken.
     ensureDeliverables(submission);
@@ -1162,6 +1190,7 @@ export function ensureOnboarding(submission: Submission) {
   }
   const due = "2026-10-01T00:00:00.000Z";
   const base = [
+    { type: "confirmation" as const, title: "Confirm your participation" },
     { type: "profile" as const, title: "Complete your speaker profile" },
     { type: "headshot" as const, title: "Upload headshot" },
     { type: "slides" as const, title: "Upload presentation slides" },
@@ -1175,7 +1204,7 @@ export function ensureOnboarding(submission: Submission) {
       title: b.title,
       type: b.type,
       required: b.required !== false,
-      status: "not_started",
+      status: b.type === "confirmation" && store.event.speakerConfirmation === false ? "completed" : "not_started",
       dueAt: due,
     });
   }
@@ -1395,6 +1424,8 @@ export function commandSnapshot() {
 }
 
 /** The seeded default event's store, captured before any rebinding. */
+backfillSubmissionCodes(store);
+for (const session of store.sessions) if (!session.publicationState) session.publicationState = "approved";
 export const seededStore: LifecycleStore = store;
 
 /** Rebind the active event's lifecycle state. See the note on `store`. */

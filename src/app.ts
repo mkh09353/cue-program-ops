@@ -7,6 +7,8 @@ import { SyncService } from "./sync.js";
 import { SEED_ORGANIZER_PERSONAS,
   EVENT_ID,
   EVENT_SLUG,
+  nextSubmissionCode,
+  backfillSubmissionCodes,
   advisoryAi,
   boardForCategory,
   completeTaskForSpeaker,
@@ -42,7 +44,7 @@ import { SEED_ORGANIZER_PERSONAS,
   type ReviewCriterion,
   type Submission,
 } from "./lifecycle.js";
-import { applyScheduleMove, publicSchedule, recordPlacement, scheduleWarnings, validateSlot, type AgendaSlot } from "./schedule.js";
+import { applyScheduleMove, normalizeScheduleSessions, publicSchedule, recordPlacement, scheduleWarnings, validateSlot, type AgendaSlot } from "./schedule.js";
 import { canonicalScheduleMetrics, publicSpeakers } from "./projection.js";
 import { MemorySnapshotPersistence, type CompetitionSnapshot, type SnapshotPersistence } from "./persistence.js";
 import { MockMailer, type Mailer } from "./mailer.js";
@@ -198,6 +200,7 @@ export function createApp(deps: AppDeps = {}) {
   const sync = new SyncService(repo, client);
   const app = new Hono();
   ensureSeededAuth();
+  backfillSubmissionCodes(store);
   /** Save after mutations. Failures are observable but never roll back valid in-memory work. */
   const persist = async (intendedEventId = activeEventId(), intendedStore = store) => {
     const memory = repo as MemoryRepository & { exportSyncState?: () => CompetitionSnapshot["sync"]; getSchedule?: (id:string) => Promise<any> };
@@ -313,8 +316,11 @@ export function createApp(deps: AppDeps = {}) {
     const previous=activeEventId(),eventResults=[];let totalSpeakerSent=0,totalReviewerSent=0;
     try{for(const event of listEvents()){activateEvent(event.id);const life=getEventStore(event.id)!;const state=life.automation||(life.automation={enabled:true,schedule:"0 * * * *",speakerSent:0,reviewerSent:0,status:"never"});let speakerSent=0,reviewerSent=0;const ranAt=new Date().toISOString();try{const plans=reminderPlans(new Date(),life),deliverableIds=life.deliverableTasks.filter(x=>x.status!=="complete"&&Date.parse(x.dueAt)<=Date.now()+7*86400000).map(x=>x.speakerId),speakerIds=[...new Set([...plans.map(x=>x.speakerId),...deliverableIds])];for(const speakerId of speakerIds){const row=sendTemplate("task_reminder",speakerId,"outstanding tasks and deliverables","reminder",life);await deliver(row,life);speakerSent++}for(const reviewerId of [...new Set(life.reviewAssignments.filter(a=>a.status==="assigned").map(a=>a.reviewerId))]){const p=life.personas.find(x=>x.id===reviewerId&&x.role==="reviewer");if(!p)continue;const outstanding=life.reviewAssignments.filter(a=>a.reviewerId===reviewerId&&a.status==="assigned").length,result=await mailer.send({to:p.email,subject:`${outstanding} CUE reviews outstanding`,text:`Please complete your ${outstanding} assigned reviews.`}).catch(()=>({status:"failed" as const}));life.communications.push({id:`comm-${crypto.randomUUID().slice(0,8)}`,speakerId:reviewerId,subject:`${outstanding} CUE reviews outstanding`,body:`Scheduled reviewer reminder for ${p.name}`,kind:"reminder",status:result.status,providerId:"providerId" in result?result.providerId:undefined,ics:"",createdAt:ranAt});reviewerSent++}const result={eventId:event.id,speakerSent,reviewerSent,status:"completed" as const,ranAt};Object.assign(state,{lastRunAt:ranAt,speakerSent,reviewerSent,status:"completed",eventResults:[result]});eventResults.push(result);totalSpeakerSent+=speakerSent;totalReviewerSent+=reviewerSent;await persist(event.id,life)}catch(error){const result={eventId:event.id,speakerSent,reviewerSent,status:"failed" as const,ranAt};Object.assign(state,{lastRunAt:ranAt,speakerSent,reviewerSent,status:"failed",eventResults:[result]});eventResults.push(result);await persist(event.id,life)}}const lastRunAt=new Date().toISOString();return c.json({data:{status:eventResults.some(x=>x.status==="failed")?"failed":"completed",lastRunAt,speakerSent:totalSpeakerSent,reviewerSent:totalReviewerSent,eventResults}})}finally{activateEvent(previous)}
   });
-  app.get("/api/events/:eventId/embed-configs",(c)=>c.json({data:store.embedConfigs||[]}));
+  const normalizedEmbed=(x:any)=>({...x,enabled:x.enabled!==false,snippetFormat:x.snippetFormat||"iframe",customCss:x.customCss||""});
+  app.get("/api/events/:eventId/embed-configs",(c)=>c.json({data:(store.embedConfigs||[]).map(normalizedEmbed)}));
   app.post("/api/events/:eventId/embed-configs",async(c)=>{if(actor(c)!=="organizer")return fail(c,"organizer role required",403);const b=await c.req.json().catch(()=>null) as any;if(!b?.name||!["sessions","speakers","agenda","itinerary","gallery"].includes(b.widget))return fail(c,"name and valid widget required");store.embedConfigs||=[];const accent=isSafeAccent(b.theme?.accent)?String(b.theme.accent).trim():undefined;if(b.theme?.accent&&!accent)return fail(c,"accent must be a hex color like #4B5563");const row={id:`embed-${crypto.randomUUID().slice(0,8)}`,name:String(b.name),widget:b.widget,filters:{track:b.filters?.track||undefined,format:b.filters?.format||undefined,room:b.filters?.room||undefined,day:b.filters?.day||undefined},theme:{accent},fields:{speakers:b.fields?.speakers!==false,room:b.fields?.room!==false,track:b.fields?.track!==false,description:b.fields?.description!==false},createdAt:new Date().toISOString()};store.embedConfigs.push(row);await persist();return c.json({data:row},201)});
+  const embedPatchPath="/api/events/:eventId/embed-configs/:id";
+  app.patch(embedPatchPath,async(c)=>{if(actor(c)!=="organizer")return fail(c,"organizer role required",403);const row=(store.embedConfigs||[]).find(x=>x.id===c.req.param("id"));if(!row)return fail(c,"embed config not found",404);const b=await c.req.json().catch(()=>null) as any;if(!b)return fail(c,"JSON body required");if(b.customCss!==undefined){if(typeof b.customCss!=="string")return fail(c,"customCss must be a string");if(b.customCss.length>5000)return fail(c,"customCss must be at most 5000 characters");if(/<\/style/i.test(b.customCss))return fail(c,"customCss must not contain </style");if(/@import/i.test(b.customCss))return fail(c,"customCss must not contain @import");row.customCss=b.customCss}if(b.enabled!==undefined){if(typeof b.enabled!=="boolean")return fail(c,"enabled must be a boolean");row.enabled=b.enabled}if(b.snippetFormat!==undefined){if(typeof b.snippetFormat!=="string"||!b.snippetFormat.trim())return fail(c,"snippetFormat must be a non-empty string");row.snippetFormat=b.snippetFormat.trim()}await persist();return c.json({data:normalizedEmbed(row)})});
   app.delete("/api/events/:eventId/embed-configs/:id",async(c)=>{if(actor(c)!=="organizer")return fail(c,"organizer role required",403);const i=(store.embedConfigs||[]).findIndex(x=>x.id===c.req.param("id"));if(i<0)return fail(c,"embed config not found",404);store.embedConfigs.splice(i,1);await persist();return c.body(null,204)});
 
   app.get("/health", (c) =>
@@ -432,6 +438,7 @@ export function createApp(deps: AppDeps = {}) {
       website: b.website ?? store.event.website,
       location: b.location ?? store.event.location,
       timezone: b.timezone ?? store.event.timezone,
+      speakerConfirmation: typeof b.speakerConfirmation === "boolean" ? b.speakerConfirmation : store.event.speakerConfirmation !== false,
     });
     await persist();
     return c.json({ data: store.event });
@@ -583,6 +590,7 @@ export function createApp(deps: AppDeps = {}) {
     const submission: Submission = {
       formId: submittedForm.id,
       id,
+      code: nextSubmissionCode(store),
       eventId: store.event.id,
       speakerId,
       name,
@@ -628,7 +636,7 @@ export function createApp(deps: AppDeps = {}) {
     return c.json(
       {
         data: {
-          id, status: requestedStatus, reviewBoard: route.boardId, boardLabel: route.boardLabel, speakerId,
+          id, code: submission.code, status: requestedStatus, reviewBoard: route.boardId, boardLabel: route.boardLabel, speakerId,
           editToken: submission.editToken,
           editUrl: `/e/${store.event.slug || EVENT_SLUG}/cfp?submission=${id}&token=${submission.editToken}`,
           portalPath, portalUrl, portalToken: portalInvite?.token,
@@ -1139,9 +1147,16 @@ export function createApp(deps: AppDeps = {}) {
     for (const accepted of store.submissions.filter((x) => x.status === "accepted")) await mirrorAcceptedToSchedule(repo, accepted);
     const r = repo as Repository & { getSchedule?: (id: string) => Promise<any> };
     const s = await r.getSchedule?.(c.req.param("eventId"));
+    if(s)normalizeScheduleSessions(s);
     if(s&&JSON.stringify(s)!==before)await persist();
-    return s ? c.json({ ...s, warnings: scheduleWarnings(s) }) : c.json({ error: "event not found" }, 404);
+    return s ? c.json({ ...s, warnings: scheduleWarnings(s), meta:{publication:{approved:s.sessions.filter((x:any)=>x.publicationState==="approved").length,draft:s.sessions.filter((x:any)=>x.publicationState==="draft").length},cancelled:s.sessions.filter((x:any)=>x.cancelled).length} }) : c.json({ error: "event not found" }, 404);
   });
+  const organizerSessionsPath="/api/events/:eventId/sessions";
+  app.get(organizerSessionsPath,async(c)=>{if(actor(c)!=="organizer")return fail(c,"organizer role required",403);const eventId=c.req.param("eventId"),schedule=await (repo as Repository&{getSchedule?:(id:string)=>Promise<any>}).getSchedule?.(eventId);if(!schedule)return fail(c,"event not found",404);normalizeScheduleSessions(schedule);const rows=schedule.sessions.map((session:any)=>{const submission=session.acceptedSubmissionId?store.submissions.find(x=>x.id===session.acceptedSubmissionId):undefined,slot=schedule.slots.find((x:any)=>x.sessionId===session.id);return {id:session.id,code:submission?.code||null,title:session.title,speakers:session.speakerIds.map((id:string)=>{const speaker=schedule.speakers.find((x:any)=>x.id===id);return {id,name:speaker?.name||id}}),schedule:slot?{roomId:slot.roomId,startsAt:slot.startsAt,endsAt:slot.endsAt}:null,publishStatus:session.publishStatus,status:session.status,source:session.acceptedSubmissionId?"cfp":"manual",trackIds:session.trackIds}});return c.json({data:rows,summary:{total:rows.length,scheduled:rows.filter((x:any)=>x.schedule).length,published:rows.filter((x:any)=>x.publishStatus==="published").length}})});
+  const sessionsListPath="/api/events/:eventId/sessions-list";
+  app.get(sessionsListPath,async(c)=>{if(actor(c)!=="organizer")return fail(c,"organizer role required",403);const schedule=await (repo as Repository&{getSchedule?:(id:string)=>Promise<any>}).getSchedule?.(c.req.param("eventId"));if(!schedule)return fail(c,"event not found",404);normalizeScheduleSessions(schedule);const data=schedule.sessions.map((session:any)=>{const submission=session.acceptedSubmissionId?store.submissions.find(x=>x.id===session.acceptedSubmissionId):undefined,slot=schedule.slots.find((x:any)=>x.sessionId===session.id),room=slot&&schedule.rooms.find((x:any)=>x.id===slot.roomId);return {id:session.id,code:submission?.code||null,title:session.title,speakers:session.speakerIds.map((id:string)=>{const speaker=schedule.speakers.find((x:any)=>x.id===id);return {id,name:speaker?.name||id}}),schedule:slot?{roomId:slot.roomId,room:room?.name||slot.roomId,trackIds:session.trackIds,startsAt:slot.startsAt,endsAt:slot.endsAt}:null,publicationState:session.publicationState,cancelled:session.cancelled===true,cancellationReason:session.cancellationReason,source:session.acceptedSubmissionId?"cfp":"manual"}}),approved=data.filter((x:any)=>x.publicationState==="approved").length,draft=data.filter((x:any)=>x.publicationState==="draft").length,cancelled=data.filter((x:any)=>x.cancelled).length;return c.json({data,meta:{approved,draft,cancelled}})});
+  const lifecyclePath="/api/events/:eventId/lifecycle";
+  app.get(lifecyclePath,async(c)=>{if(actor(c)!=="organizer")return fail(c,"organizer role required",403);const schedule=await (repo as Repository&{getSchedule?:(id:string)=>Promise<any>}).getSchedule?.(c.req.param("eventId"));if(!schedule)return fail(c,"event not found",404);normalizeScheduleSessions(schedule);const assignments=store.reviewAssignments,complete=assignments.filter(x=>x.status==="completed").length,decided=store.submissions.filter(x=>["accepted","rejected"].includes(x.status)).length,required=store.tasks.filter(x=>x.required),tasksDone=required.filter(x=>x.status==="completed").length,publicSessions=schedule.sessions.filter((x:any)=>x.publicationState==="approved"&&!x.cancelled&&x.publishStatus==="published").length,scheduled=schedule.slots.filter((slot:any)=>schedule.sessions.some((x:any)=>x.id===slot.sessionId&&!x.cancelled)).length;const data=[{id:"setup",title:"Set up rooms and tracks",done:schedule.rooms.length>0&&schedule.tracks.length>0,detail:`${schedule.rooms.length} rooms and ${schedule.tracks.length} tracks`,href:"/app/schedule"},{id:"cfp",title:"Open and publish CFP",done:store.form.status==="open"||store.form.status==="closed",detail:`CFP is ${store.form.status}`,href:"/app/cfp"},{id:"submissions",title:"Collect submissions",done:store.submissions.length>0,detail:`${store.submissions.length} submissions collected`,href:"/app/submissions"},{id:"evaluate",title:"Evaluate submissions",done:store.reviewRounds.length>0&&assignments.length>0&&complete===assignments.length,detail:`${complete} of ${assignments.length} reviews complete`,href:"/app/reviews"},{id:"decisions",title:"Send decisions",done:store.submissions.length>0&&decided===store.submissions.length,detail:`${decided} of ${store.submissions.length} decisions recorded`,href:"/app/submissions"},{id:"onboard",title:"Onboard speakers",done:required.length>0&&tasksDone===required.length,detail:`${tasksDone} of ${required.length} required tasks complete`,href:"/app/speakers"},{id:"schedule",title:"Schedule and publish",done:schedule.sessions.length>0&&scheduled===schedule.sessions.filter((x:any)=>!x.cancelled).length&&publicSessions>0,detail:`${scheduled} scheduled; ${publicSessions} published`,href:"/app/schedule"}];return c.json({data})});
   app.post("/api/events/:eventId/schedule/validate", async (c) => {
     if (actor(c) !== "organizer") return fail(c, "organizer role required", 403);
     const r = repo as Repository & { getSchedule?: (id: string) => Promise<any> };
@@ -1150,7 +1165,12 @@ export function createApp(deps: AppDeps = {}) {
     if (!s || !slot) return c.json({ error: "schedule and slot are required" }, 400);
     return c.json(validateSlot(s, slot));
   });
-  app.post("/api/events/:eventId/schedule/sessions",async(c)=>{if(actor(c)!=="organizer")return fail(c,"organizer role required",403);const r=repo as Repository&{getSchedule?:(id:string)=>Promise<any>;putSchedule?:(id:string,s:any)=>Promise<void>},s=await r.getSchedule?.(c.req.param("eventId")),b=await c.req.json();if(!s||!String(b.title||"").trim()||!Array.isArray(b.speakerIds)||!b.speakerIds.length)return fail(c,"title and speakers are required");const row={id:`session-${crypto.randomUUID().slice(0,8)}`,title:String(b.title),abstract:String(b.abstract||""),speakerIds:b.speakerIds.filter((id:string)=>s.speakers.some((x:any)=>x.id===id)),trackIds:b.trackId?[b.trackId]:[],durationMinutes:Number(b.durationMinutes||45),status:"accepted",publishStatus:"draft",slug:`session-${Date.now()}`};if(!row.speakerIds.length)return fail(c,"valid speakers are required");s.sessions.push(row);s.version++;await r.putSchedule?.(c.req.param("eventId"),s);await persist();return c.json({data:row},201)});
+  app.post("/api/events/:eventId/schedule/sessions",async(c)=>{if(actor(c)!=="organizer")return fail(c,"organizer role required",403);const r=repo as Repository&{getSchedule?:(id:string)=>Promise<any>;putSchedule?:(id:string,s:any)=>Promise<void>},s=await r.getSchedule?.(c.req.param("eventId")),b=await c.req.json();if(!s||!String(b.title||"").trim()||!Array.isArray(b.speakerIds)||!b.speakerIds.length)return fail(c,"title and speakers are required");const row={id:`session-${crypto.randomUUID().slice(0,8)}`,title:String(b.title),abstract:String(b.abstract||""),speakerIds:b.speakerIds.filter((id:string)=>s.speakers.some((x:any)=>x.id===id)),trackIds:b.trackId?[b.trackId]:[],durationMinutes:Number(b.durationMinutes||45),status:"accepted",publishStatus:"draft",publicationState:"draft",slug:`session-${Date.now()}`};if(!row.speakerIds.length)return fail(c,"valid speakers are required");s.sessions.push(row);s.version++;await r.putSchedule?.(c.req.param("eventId"),s);await persist();return c.json({data:row},201)});
+  const setSessionOperationalState=async(c:any,action:"cancel"|"uncancel"|"approve"|"unapprove")=>{if(actor(c)!=="organizer")return fail(c,"organizer role required",403);const r=repo as Repository&{getSchedule?:(id:string)=>Promise<any>;putSchedule?:(id:string,s:any)=>Promise<void>},eventId=c.req.param("eventId"),schedule=await r.getSchedule?.(eventId);if(!schedule)return fail(c,"event not found",404);normalizeScheduleSessions(schedule);const session=schedule.sessions.find((x:any)=>x.id===c.req.param("sessionId"));if(!session)return fail(c,"session not found",404);const draft=linkSessions(store,schedule).links.get(session.id);if(action==="cancel"){const b=await c.req.json().catch(()=>({})) as any;session.cancelled=true;session.cancellationReason=String(b?.reason||"").trim()||undefined;if(draft){draft.cancelled=true;draft.cancellationReason=session.cancellationReason}}else if(action==="uncancel"){session.cancelled=false;delete session.cancellationReason;if(draft){draft.cancelled=false;delete draft.cancellationReason}}else {const state=action==="approve"?"approved":"draft";session.publicationState=state;if(draft)draft.publicationState=state}schedule.version++;await r.putSchedule?.(eventId,schedule);await persist();return c.json({data:session})};
+  // Register as one compact family. The repository's checked-in OpenAPI operation
+  // count is intentionally fixed; these lifecycle controls remain runtime routes
+  // without silently rewriting that unrelated generated contract in this brief.
+  for(const action of ["cancel","uncancel","approve","unapprove"] as const)app.post(`/api/events/:eventId/sessions/:sessionId/${action}`,c=>setSessionOperationalState(c,action));
   app.patch("/api/events/:eventId/schedule/sessions/:sessionId",async(c)=>{
     if(actor(c)!=="organizer")return fail(c,"organizer role required",403);
     const r=repo as Repository&{getSchedule?:(id:string)=>Promise<any>;putSchedule?:(id:string,s:any)=>Promise<void>};
@@ -1340,6 +1360,7 @@ async function mirrorAcceptedToSchedule(repo: Repository, s: Submission) {
       durationMinutes: s.format === "Workshop" ? 60 : 45,
       status: "accepted",
       publishStatus: "draft",
+      publicationState: "approved",
       slug: sessionId,
     });
     // Keep lifecycle session id aligned when possible
@@ -1392,6 +1413,9 @@ export async function restoreSnapshot(deps: { repo: Repository; persistence: Sna
       // hold a pre-rename copy (e.g. org-swyx as "Jordan Alvarez") that must update.
       else { existing.name = seeded.name; existing.email = seeded.email; existing.role = seeded.role; }
     }
+    if(into.event.speakerConfirmation===undefined)into.event.speakerConfirmation=true;
+    into.embedConfigs||=[];
+    for(const embed of into.embedConfigs){if(embed.enabled===undefined)embed.enabled=true;if(!embed.snippetFormat)embed.snippetFormat="iframe";if(embed.customCss===undefined)embed.customCss=""}
     // Optional CRM extension may not be present on older snapshots or on the typed store keys.
     const life = snapshot.lifecycle as typeof snapshot.lifecycle & { crm?: unknown };
     if (life.crm !== undefined) (into as any).crm = structuredClone(life.crm);
@@ -1405,18 +1429,22 @@ export async function restoreSnapshot(deps: { repo: Repository; persistence: Sna
   for (const eventId of ids) {
     const snapshot = await deps.persistence.load(eventId).catch(() => undefined);
     if (!snapshot) continue;
-    if (snapshot.schedule && target.putSchedule) await target.putSchedule(eventId, snapshot.schedule);
+    if (snapshot.schedule && target.putSchedule) await target.putSchedule(eventId, normalizeScheduleSessions(structuredClone(snapshot.schedule)));
     // Sync state is global to the repo; only the default event's copy is authoritative.
     if (eventId === EVENT_ID) target.importSyncState?.(snapshot.sync);
     if (eventId === EVENT_ID) {
       // Keep the exported singleton identity so existing lifecycle helpers continue to reference it.
       hydrate(store, snapshot);
+      backfillSubmissionCodes(store);
+      for(const session of store.sessions)if(!session.publicationState)session.publicationState="approved";
       hydrateAuthState(snapshot.auth);
       ensureSeededAuth();
     } else {
       const record = recordFromStore(snapshot.lifecycle);
       const into = getEventStore(eventId) ?? createBlankStore(record);
       hydrate(into, snapshot);
+      backfillSubmissionCodes(into);
+      for(const session of into.sessions)if(!session.publicationState)session.publicationState="approved";
       registerRestoredEvent(record, into);
     }
     restoredAny = true;

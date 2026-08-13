@@ -6,7 +6,7 @@ import { listEvents } from "./events.js";
 /** Published-only gate used by every public widget and feed. */
 export function isPublishedSession(session: ScheduleSession | undefined | null): boolean {
   if (!session) return false;
-  return session.publishStatus === "published" && (session.status === "published" || session.status === "accepted");
+  return !session.cancelled && session.publicationState !== "draft" && session.publishStatus === "published" && (session.status === "published" || session.status === "accepted");
 }
 
 export type PublicSpeakerView = {

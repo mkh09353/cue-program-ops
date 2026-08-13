@@ -341,6 +341,7 @@ export function applySessionEdit(input: {
   if (session) {
     const meta = state as SessionContentState & { publishedByApproval?: boolean };
     if (state.status === "approved") {
+      session.publicationState = "approved";
       if (session.publishStatus !== "published") {
         // This publication exists only because content was approved; remember that so
         // withdrawing approval can take it back off the public surfaces.
@@ -349,6 +350,7 @@ export function applySessionEdit(input: {
       }
       if (session.status !== "published") session.status = session.status || "accepted";
     } else if (state.status === "changes_requested") {
+      session.publicationState = "draft";
       session.publishStatus = "draft";
     } else if (meta.publishedByApproval && session.publishStatus === "published") {
       // draft / submitted on a session that was only ever published by approval.

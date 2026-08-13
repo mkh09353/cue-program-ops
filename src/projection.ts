@@ -9,7 +9,7 @@ export const scheduleEvent = (eventId: string, schedule: ScheduleProjection): Ev
   timezone: schedule.event.timezone,
 });
 
-const eligibleSession = (session: ScheduleSession) => session.status === "accepted" || session.status === "published";
+const eligibleSession = (session: ScheduleSession) => !session.cancelled && (session.status === "accepted" || session.status === "published");
 const scheduledEligible = (session: ScheduleSession) => eligibleSession(session);
 
 /** Speakers attached to at least one published (+ slotted) session — used by public gallery/feeds. */
