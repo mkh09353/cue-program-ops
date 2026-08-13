@@ -509,6 +509,9 @@ export function MarketingLandingPage() {
               onboarding, a conflict-aware agenda and public widgets — on canonical data you own. Open
               source, free to run, fork and inspect.
             </p>
+            <p className="mx-auto mt-3 max-w-2xl font-mono text-[13px] text-ruckus-700 sm:text-sm">
+              Oh — and there’s a CLI, so your agent can run the whole thing for you.
+            </p>
             <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
               <Link
                 to="/app"
