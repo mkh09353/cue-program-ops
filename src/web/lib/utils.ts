@@ -90,7 +90,12 @@ export interface Persona {
 }
 
 export const DEFAULT_PERSONAS: Persona[] = [
-  { id: "org-swyx", role: "organizer", name: "Jordan Alvarez", email: "jordan@ai.engineer" },
+  // Mirrors the seeded organizer catalog; swyx is the default persona.
+  { id: "org-swyx", role: "organizer", name: "swyx", email: "swyx@ai.engineer" },
+  { id: "org-sydney", role: "organizer", name: "Sydney", email: "sydney@ai.engineer" },
+  { id: "org-phlo", role: "organizer", name: "Phlo", email: "phlo@ai.engineer" },
+  { id: "org-kelsey", role: "organizer", name: "Kelsey", email: "kelsey@ai.engineer" },
+  { id: "org-jordan", role: "organizer", name: "Jordan Alvarez", email: "jordan@ai.engineer" },
   {
     id: "rev-ada",
     role: "reviewer",

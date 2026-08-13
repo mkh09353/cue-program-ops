@@ -19,6 +19,7 @@ import {
   readiness,
   isSafeAccent,
   resolveDemoPersona,
+  seededStore,
   appendFeedback,
   formsOf,
   findForm,
@@ -1345,6 +1346,14 @@ export async function restoreSnapshot(deps: { repo: Repository; persistence: Sna
     for (const key of Object.keys(into) as (keyof typeof store)[]) {
       const restored = snapshot.lifecycle[key];
       if (restored !== undefined) (into as any)[key]=structuredClone(restored);
+    }
+    // Seeded ORGANIZER personas are additive on restore: a snapshot taken before
+    // they existed must still expose them, and runtime personas (reviewer invites
+    // issued on the live site) must survive untouched. Match on id so a person who
+    // holds both an organizer and a reviewer persona keeps both.
+    const seededOrganizers = seededStore.personas.filter((p) => p.role === "organizer");
+    for (const seeded of seededOrganizers) {
+      if (!into.personas.some((p) => p.id === seeded.id)) into.personas.push(structuredClone(seeded));
     }
     // Optional CRM extension may not be present on older snapshots or on the typed store keys.
     const life = snapshot.lifecycle as typeof snapshot.lifecycle & { crm?: unknown };

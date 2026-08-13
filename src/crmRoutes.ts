@@ -160,7 +160,7 @@ export function createCrmRoutes(deps: {
     };
     if (b.role === "reviewer") {
       const contact=ensureCrm(deps.store).contacts.find(x=>x.id===c.req.param("id"));if(!contact)return fail(c,"contact not found",404);
-      let reviewer=target.personas.find(x=>x.email.toLowerCase()===contact.email.toLowerCase());if(reviewer&&reviewer.role!=="reviewer")return fail(c,"email belongs to another event role");
+      let reviewer=target.personas.find(x=>x.email.toLowerCase()===contact.email.toLowerCase()&&x.role==="reviewer");const speakerClash=target.personas.find(x=>x.email.toLowerCase()===contact.email.toLowerCase()&&x.role==="speaker");if(speakerClash)return fail(c,"email belongs to a speaker persona",409);
       if(!reviewer){reviewer={id:`rev-crm-${contact.id.slice(-8)}`,role:"reviewer",name:contact.name,email:contact.email};target.personas.push(reviewer)}
       const round=target.reviewRounds.find(x=>x.id===(b.roundId||"round-initial"))||target.reviewRounds[0];if(!round)return fail(c,"review round not found",404);if(!round.reviewerIds.includes(reviewer.id))round.reviewerIds.push(reviewer.id);
       await persistTarget();return c.json({data:{contact,reviewerId:reviewer.id,roundId:round.id,role:"reviewer",created:true}},201);

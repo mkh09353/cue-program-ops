@@ -850,7 +850,14 @@ export let store: LifecycleStore = {
     { id: "track-workshop", name: "Workshop" },
   ],
   personas: [
-    { id: "org-swyx", role: "organizer", name: "Jordan Alvarez", email: "jordan@ai.engineer" },
+    // AI Engineer team organizers. swyx is FIRST and keeps the canonical
+    // "org-swyx" id, so it is the persona the shells resolve to by default.
+    { id: "org-swyx", role: "organizer", name: "swyx", email: "swyx@ai.engineer" },
+    { id: "org-sydney", role: "organizer", name: "Sydney", email: "sydney@ai.engineer" },
+    { id: "org-phlo", role: "organizer", name: "Phlo", email: "phlo@ai.engineer" },
+    { id: "org-kelsey", role: "organizer", name: "Kelsey", email: "kelsey@ai.engineer" },
+    // Retained: the eval content fixtures attribute change history to this name.
+    { id: "org-jordan", role: "organizer", name: "Jordan Alvarez", email: "jordan@ai.engineer" },
     {
       id: "rev-ada",
       role: "reviewer",

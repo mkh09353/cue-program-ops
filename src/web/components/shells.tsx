@@ -286,12 +286,19 @@ function PersonaSwitcher({ lockRole }: { lockRole?: Role }) {
   const shown = options.length ? options : [persona];
   const value = shown.some((p) => p.id === persona.id) ? persona.id : shown[0]?.id || persona.id;
 
+  const selected = shown.find((p) => p.id === value) || shown[0];
+  const selectedLabel = selected ? `${selected.name} · ${selected.role}` : "Demo persona";
+
   return (
-    <label className="flex items-center gap-2 text-xs font-medium text-mid">
-      <span className="hidden sm:inline">Demo as</span>
+    <label className="flex min-w-0 items-center gap-2 text-xs font-medium text-mid">
+      <span className="hidden shrink-0 sm:inline">Demo as</span>
       <select
         aria-label="Demo persona"
-        className="h-9 max-w-[200px] rounded-[18px] border-0 bg-canvas px-2.5 text-sm font-medium text-ink outline-none focus:ring-2 focus:ring-ink"
+        // Width follows the content so names are never clipped ("Jordan Alvarez ·
+        // organiz…"). Only genuinely tiny screens constrain it, and the title
+        // attribute then exposes the full label.
+        title={selectedLabel}
+        className="h-9 w-auto max-w-[62vw] rounded-[18px] border-0 bg-canvas px-2.5 text-sm font-medium text-ink outline-none focus:ring-2 focus:ring-ink sm:max-w-none"
         value={value}
         onChange={(e) => {
           const pool = list.length ? list : getPersonaCatalog();

@@ -6,7 +6,9 @@ import { EVENT_ID, store } from "../src/lifecycle.js";
 import { MemoryRepository } from "../src/repository.js";
 import { historyChanges, historyStamp } from "../src/web/pages/ContentPages.js";
 
-const org = { "content-type": "application/json", "x-demo-persona": "org-swyx" };
+// Jordan Alvarez is the organizer the content fixtures attribute history to;
+// swyx is now the DEFAULT organizer (org-swyx), so name this persona explicitly.
+const org = { "content-type": "application/json", "x-demo-persona": "org-jordan" };
 const json = async (res: Response) => (await res.json()) as any;
 const patch = (app: any, path: string, body: unknown) =>
   app.request(path, { method: "PATCH", headers: org, body: JSON.stringify(body) });
