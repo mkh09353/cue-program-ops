@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, NavLink, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api, getEventId, subscribeData, type EventSummary } from "../lib/api";
+import { cn } from "../lib/utils";
 import {
   Badge,
   Button,
@@ -15,6 +16,22 @@ import {
   Textarea,
   toast,
 } from "../components/ui";
+
+/**
+ * Stage transition rules, mirrored from CRM_STAGE_TRANSITIONS in src/crm.ts so the
+ * board can mute invalid drop targets without pulling the server module (and the
+ * whole lifecycle seed) into the browser bundle.
+ * test/crm-pipeline-dnd.test.ts fails if the two ever diverge.
+ */
+export const CRM_STAGE_TRANSITIONS: Record<string, string[]> = {
+  prospect: ["contacted", "invited", "declined"],
+  contacted: ["invited", "prospect", "declined"],
+  invited: ["confirmed", "contacted", "declined"],
+  confirmed: ["alumni", "invited", "declined"],
+  alumni: ["prospect", "invited"],
+  declined: ["prospect", "contacted"],
+};
+
 
 function CrmSubnav() {
   const link = "rounded-lg px-3 py-1.5 text-sm font-medium text-mid hover:bg-canvas";
@@ -853,6 +870,37 @@ export function CrmPipelinePage() {
   const [loaded, setLoaded] = useState(false);
   const [contacts,setContacts]=useState<any[]>([]);
   const [prospectId,setProspectId]=useState("");
+  /** Drag state: which card is in flight, which column is hovered, what just landed. */
+  const [dragging, setDragging] = useState<{ id: string; from: string; name: string } | null>(null);
+  const [dropTarget, setDropTarget] = useState("");
+  const [justMoved, setJustMoved] = useState("");
+
+  const canDrop = (to: string) => !dragging || dragging.from === to || (CRM_STAGE_TRANSITIONS as any)[dragging.from]?.includes(to);
+
+  /** Optimistic move with revert-on-error; the server remains the authority. */
+  const moveCard = async (contactId: string, to: string, from: string) => {
+    if (from === to) return;
+    const snapshot = columns;
+    setColumns((prev) =>
+      prev.map((col) => {
+        if (col.id === from) return { ...col, contacts: (col.contacts || []).filter((c: any) => c.id !== contactId) };
+        if (col.id === to) {
+          const moved = (snapshot.find((x) => x.id === from)?.contacts || []).find((c: any) => c.id === contactId);
+          return { ...col, contacts: moved ? [{ ...moved, stage: to }, ...(col.contacts || [])] : col.contacts };
+        }
+        return col;
+      }),
+    );
+    try {
+      await api.crmMoveStage(contactId, to);
+      setJustMoved(contactId);
+      setTimeout(() => setJustMoved((current) => (current === contactId ? "" : current)), 1600);
+      load();
+    } catch (e: any) {
+      setColumns(snapshot); // snap back
+      toast(e?.message || "Could not move the contact", "danger");
+    }
+  };
 
   const load = () =>
     Promise.all([api.crmPipeline(),api.crmContacts()])
@@ -876,20 +924,64 @@ export function CrmPipelinePage() {
 
   return (
     <div>
-      <PageHeader title="Sourcing pipeline" description="Kanban-style stages for speaker prospects. Move cards with stage buttons." />
+      <PageHeader title="Sourcing pipeline" description="Kanban-style stages for speaker prospects." />
+      <p className="mb-3 text-xs text-mid" data-testid="pipeline-hint">Drag cards between stages, or use the stage buttons.</p>
       <CrmSubnav />
       {err ? <Notice tone="danger">{err}</Notice> : null}
       <Card className="mb-4 p-4"><h2 className="font-bold">Add prospect</h2><p className="text-sm text-mid">Enroll an existing directory contact into the Prospect stage.</p><div className="mt-3 flex flex-wrap gap-2"><Select aria-label="Prospect contact" value={prospectId} onChange={e=>setProspectId(e.target.value)}>{contacts.map(c=><option key={c.id} value={c.id}>{c.name} · {c.email}</option>)}</Select><Button disabled={!prospectId} onClick={async()=>{try{await api.crmMoveStage(prospectId,"prospect");toast("Contact enrolled as prospect");load()}catch(e:any){toast(e.message||"Could not enroll prospect","danger")}}}>Add prospect</Button></div></Card>
       <div className="flex gap-3 overflow-x-auto pb-4">
         {columns.map((col) => (
-          <div key={col.id} className="w-64 shrink-0 rounded-[18px] border border-line bg-soft p-3">
+          <div
+            key={col.id}
+            data-testid={`pipeline-column-${col.id}`}
+            aria-dropeffect={dragging ? (canDrop(col.id) ? "move" : "none") : undefined}
+            onDragOver={(e) => {
+              // Only a valid transition accepts the drop; preventDefault enables it.
+              if (!canDrop(col.id)) return;
+              e.preventDefault();
+              if (dropTarget !== col.id) setDropTarget(col.id);
+            }}
+            onDragLeave={() => setDropTarget((current) => (current === col.id ? "" : current))}
+            onDrop={(e) => {
+              e.preventDefault();
+              setDropTarget("");
+              const id = e.dataTransfer.getData("text/cue-contact") || dragging?.id || "";
+              const from = e.dataTransfer.getData("text/cue-stage") || dragging?.from || "";
+              setDragging(null);
+              if (id && from && canDrop(col.id)) void moveCard(id, col.id, from);
+            }}
+            className={cn(
+              "w-64 shrink-0 rounded-[18px] border border-line bg-soft p-3 transition",
+              dragging && !canDrop(col.id) && "opacity-40",
+              dropTarget === col.id && canDrop(col.id) && "border-ink bg-canvas ring-2 ring-ink",
+            )}
+          >
             <div className="mb-2 flex items-center justify-between">
               <h3 className="text-sm font-bold">{col.label}</h3>
               <Badge tone="muted">{col.contacts?.length || 0}</Badge>
             </div>
+            {dragging && !canDrop(col.id) ? (
+              <p className="mb-2 text-[10px] uppercase tracking-wide text-mid">Not allowed from {dragging.from}</p>
+            ) : null}
             <div className="space-y-2">
               {(col.contacts || []).map((c: any) => (
-                <Card key={c.id} className="p-3 shadow-sm">
+                <Card
+                  key={c.id}
+                  draggable
+                  data-testid={`pipeline-card-${c.id}`}
+                  onDragStart={(e: any) => {
+                    e.dataTransfer.effectAllowed = "move";
+                    e.dataTransfer.setData("text/cue-contact", c.id);
+                    e.dataTransfer.setData("text/cue-stage", col.id);
+                    setDragging({ id: c.id, from: col.id, name: c.name });
+                  }}
+                  onDragEnd={() => { setDragging(null); setDropTarget(""); }}
+                  className={cn(
+                    "cursor-grab p-3 shadow-sm transition active:cursor-grabbing",
+                    dragging?.id === c.id && "opacity-50",
+                    justMoved === c.id && "ring-2 ring-ink",
+                  )}
+                >
                   <Link to={`/app/crm/contacts/${c.id}`} className="font-semibold text-ink hover:underline">
                     {c.name}
                   </Link>
@@ -902,14 +994,18 @@ export function CrmPipelinePage() {
                     ))}
                   </div>
                   <div className="mt-2 flex flex-wrap gap-1">
+                    {/* Retained as the accessible / agent path: drag is primary, these
+                        always work without a pointer. Only valid transitions are offered. */}
                     {["prospect", "contacted", "invited", "confirmed", "alumni", "declined"]
-                      .filter((s) => s !== c.stage)
+                      .filter((s) => s !== c.stage && (CRM_STAGE_TRANSITIONS as any)[c.stage]?.includes(s))
                       .slice(0, 3)
                       .map((s) => (
                         <button
                           key={s}
                           type="button"
-                          className="rounded bg-white px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-mid ring-1 ring-line hover:bg-canvas"
+                          data-testid={`stage-button-${c.id}-${s}`}
+                          aria-label={`Move ${c.name} to ${s}`}
+                          className="rounded bg-white px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-mid ring-1 ring-line hover:bg-canvas hover:text-ink"
                           onClick={async () => {
                             try {
                               await api.crmMoveStage(c.id, s);

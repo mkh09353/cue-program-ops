@@ -30,6 +30,7 @@ import {
 import { restorePersonaFromSession } from "./lib/api";
 import { AssignmentsPage, EvaluationPlanPage, ResultsPage, ReviewProgressPage } from "./pages/ReviewManagementPages";
 import { ContentPage } from "./pages/ContentPages";
+import { MarketingLandingPage } from "./pages/MarketingLandingPage";
 import {
   CrmCampaignsPage,
   CrmContactPage,
@@ -46,7 +47,7 @@ function App() {
     <BrowserRouter>
       <ToastViewport />
       <Routes>
-        <Route path="/" element={<DemoLandingPage />} />
+        <Route path="/" element={<MarketingLandingPage />} />
         <Route path="/demo" element={<DemoLandingPage />} />
 
         <Route path="/app" element={<OrganizerShell />}>
