@@ -7,12 +7,13 @@
  * product mock sidebar.
  */
 
-const INK = "#1E1B2E";
-const VIOLET = "#7C3AED";
+const INK = "#02162E";           // sampled from the logo artwork
+const VIOLET = "#7120DF";        // sampled from the logo artwork
+const VIOLET_BADGE = "#3F1090";  // darker badge so the purple bill reads
 const VIOLET_DEEP = "#6D28D9";
 const VIOLET_DARK = "#5B21B6";
 const VIOLET_SOFT = "#A78BFA";
-const BILL = "#FBBF24";
+const BILL = VIOLET;             // the logo's bill is purple, not amber
 
 export function RuckusMascot({
   className = "h-40 w-40",
@@ -66,9 +67,10 @@ export function RuckusMascot({
       {/* Bill */}
       <path d="M78 76H56a10 10 0 0 0 0 20h22z" fill={BILL} />
       <path d="M58 86h16" strokeWidth={4} />
-      {/* Eye */}
-      <circle cx="96" cy="74" r="6" fill={INK} stroke="none" />
-      <circle cx="98.5" cy="71.5" r="2" fill="#FFFFFF" stroke="none" />
+      {/* Raised brow + eye */}
+      <path d="M88 60c5-4 13-4 18-1" strokeWidth={5} />
+      <ellipse cx="97" cy="75" rx="7" ry="8" fill={INK} stroke="none" />
+      <circle cx="99.5" cy="72" r="2.4" fill="#FFFFFF" stroke="none" />
 
       {/* Arm + megaphone, raised on the same side as the bill */}
       <path d="M104 150l-12-10" strokeWidth={9} />
@@ -93,17 +95,23 @@ export function RuckusDuckMark({ className = "h-9 w-9", title = "Ruckus" }: { cl
       {...(title ? { role: "img", "aria-label": title } : { "aria-hidden": true })}
       fill="none"
       stroke={INK}
-      strokeWidth={2.4}
+      strokeWidth={1.8}
       strokeLinecap="round"
       strokeLinejoin="round"
     >
-      <circle cx="24" cy="24" r="24" fill={VIOLET} stroke="none" />
-      <circle cx="26" cy="25" r="13" fill="#FFFFFF" />
-      <path d="M22 10c1-4 4-5 7-4-2 2-3 3-2 5" strokeWidth={2.2} />
-      <path d="M13 22H7a4 4 0 0 0 0 8h6z" fill={BILL} />
-      <circle cx="21" cy="21" r="2.6" fill={INK} stroke="none" />
-      <circle cx="22" cy="20" r="0.9" fill="#FFFFFF" stroke="none" />
-      <path d="M36 12l1.6 4L42 17.6l-4.4 1.6L36 23l-1.6-3.8L30 17.6 34.4 16z" fill="#FFFFFF" stroke="none" opacity={0.9} />
+      <circle cx="24" cy="24" r="24" fill={VIOLET_BADGE} stroke="none" />
+      {/* crest feather */}
+      <path d="M29.6 8c0.2-4.8 3.4-6.7 6.5-5.3-2.6 2-3.6 4.1-2.6 6.5z" fill="#FFFFFF" />
+      {/* head */}
+      <circle cx="27.6" cy="20" r="12.2" fill="#FFFFFF" />
+      {/* open bill: thin mouth cavity between two chunky purple mandibles */}
+      <path d="M23 27.6 10.4 31.4 12.8 34.4 23 31.8Z" fill={INK} />
+      <path d="M22.6 20.4C16.4 22.6 11 25.8 7.7 28.6c-1.1 1-0.4 2.8 1 2.9l14.1-3.2z" fill={VIOLET} />
+      <path d="M23 30.6 11.4 35.2c-1.3 0.5-0.9 2.5 0.5 2.7 4.6 0.5 8.9-1.1 12.4-3.9z" fill={VIOLET} />
+      {/* raised brow + big eye */}
+      <path d="M28 14c1.7-1.4 4.5-1.5 6.2-0.2" strokeWidth={2.2} />
+      <ellipse cx="31" cy="20.2" rx="3.4" ry="4" fill={INK} stroke="none" />
+      <circle cx="32.2" cy="18.7" r="1.4" fill="#FFFFFF" stroke="none" />
     </svg>
   );
 }
