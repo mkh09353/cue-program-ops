@@ -4,7 +4,7 @@ import type { Repository } from "./domain.js";
 import { MemoryRepository } from "./repository.js";
 import { activateEvent, activeEventId, createBlankStore, createEvent, findEventBySlug, getEventStore, hasEvent, listEvents, recordFromStore, registerRestoredEvent } from "./events.js";
 import { SyncService } from "./sync.js";
-import {
+import { SEED_ORGANIZER_PERSONAS,
   EVENT_ID,
   EVENT_SLUG,
   advisoryAi,
@@ -1351,7 +1351,7 @@ export async function restoreSnapshot(deps: { repo: Repository; persistence: Sna
     // they existed must still expose them, and runtime personas (reviewer invites
     // issued on the live site) must survive untouched. Match on id so a person who
     // holds both an organizer and a reviewer persona keeps both.
-    const seededOrganizers = seededStore.personas.filter((p) => p.role === "organizer");
+    const seededOrganizers = SEED_ORGANIZER_PERSONAS;
     for (const seeded of seededOrganizers) {
       const existing = into.personas.find((p) => p.id === seeded.id);
       if (!existing) into.personas.push(structuredClone(seeded));

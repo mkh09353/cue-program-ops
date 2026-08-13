@@ -341,6 +341,15 @@ export const RUBRIC_CRITERIA = ["relevance", "novelty", "clarity", "depth"] as c
  * demo (the Durable Object serializes requests and state is in-memory), but
  * it is NOT safe under true request concurrency within one isolate.
  */
+/** Pristine seed organizer personas, captured at module init BEFORE any snapshot
+ * restore mutates the store in place. Restore merges these authoritatively. */
+export const SEED_ORGANIZER_PERSONAS: { id: string; role: "organizer"; name: string; email: string }[] = [
+  { id: "org-swyx", role: "organizer", name: "swyx", email: "swyx@ai.engineer" },
+  { id: "org-sydney", role: "organizer", name: "Sydney", email: "sydney@ai.engineer" },
+  { id: "org-phlo", role: "organizer", name: "Phlo", email: "phlo@ai.engineer" },
+  { id: "org-kelsey", role: "organizer", name: "Kelsey", email: "kelsey@ai.engineer" },
+  { id: "org-jordan", role: "organizer", name: "Jordan Alvarez", email: "jordan@ai.engineer" },
+];
 export let store: LifecycleStore = {
   reviewerInvites: [],
   speakerInvites: [],
