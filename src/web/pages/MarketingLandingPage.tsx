@@ -464,12 +464,16 @@ export function MarketingLandingPage() {
             <a href="#widgets" className="transition hover:text-navy">Widgets</a>
           </nav>
           <div className="flex items-center gap-2">
+            <span className="hidden items-center gap-1.5 rounded-full bg-ruckus-50 px-3 py-1.5 font-mono text-[11px] font-semibold uppercase tracking-[0.06em] text-ruckus-700 ring-1 ring-ruckus-200 lg:inline-flex">
+              <span className="h-1.5 w-1.5 rounded-full bg-ruckus-500" />
+              CFP closes in 41 days
+            </span>
             <Link to="/demo" className="rounded-full px-3 py-2 text-[13px] text-mid transition hover:text-navy">
               Log in
             </Link>
             <Link
               to="/demo"
-              className="rounded-full bg-ruckus-600 px-4 py-2 text-[13px] font-semibold text-white shadow-sm transition hover:bg-ruckus-700"
+              className="ruckus-press rounded-full bg-ruckus-600 px-4 py-2 text-[13px] font-semibold text-white shadow-sm transition hover:bg-ruckus-700"
             >
               Explore the live demo
             </Link>
@@ -498,7 +502,7 @@ export function MarketingLandingPage() {
               className="mt-5 font-display text-4xl font-extrabold leading-[1.03] tracking-tight sm:text-6xl"
               style={{ letterSpacing: "-0.03em" }}
             >
-              Make some noise about your CFPs, speakers, sessions and content
+              Make some <span className="ruckus-noise">noise</span> about your CFPs, speakers, sessions and content
             </h1>
             <p className="mx-auto mt-5 max-w-2xl text-base text-neutral-600 sm:text-lg">
               Ruckus runs the whole program loop out loud — call for papers, abstract review, speaker
@@ -508,7 +512,7 @@ export function MarketingLandingPage() {
             <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
               <Link
                 to="/app"
-                className="w-full rounded-full bg-ruckus-600 px-6 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-ruckus-700 sm:w-auto"
+                className="ruckus-press w-full rounded-full bg-ruckus-600 px-6 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-ruckus-700 sm:w-auto"
               >
                 Explore the platform
               </Link>
@@ -593,8 +597,15 @@ export function MarketingLandingPage() {
           <div className="mt-10 grid gap-px overflow-hidden rounded-3xl bg-line sm:grid-cols-2 lg:grid-cols-3">
             {features.map((f) => {
               const IconEl = f.icon;
+              const nested = f.title === "Public widgets";
               return (
-                <div key={f.title} className="bg-white p-6">
+                <div key={f.title} className={`relative overflow-hidden bg-white p-6 ${nested ? "pb-10" : ""}`}>
+                  {nested ? (
+                    <RuckusDuckMark
+                      className="pointer-events-none absolute -bottom-6 -right-5 h-20 w-20 rotate-12 opacity-90"
+                      title=""
+                    />
+                  ) : null}
                   <span className="grid h-10 w-10 place-items-center rounded-2xl bg-ruckus-600 text-white">
                     <IconEl className="h-5 w-5" />
                   </span>
@@ -641,7 +652,7 @@ export function MarketingLandingPage() {
             <div className="mt-6 flex flex-wrap gap-3">
               <a
                 href={widgetsHref}
-                className="rounded-full bg-ruckus-600 px-5 py-2.5 text-[13px] font-semibold text-white shadow-sm transition hover:bg-ruckus-700"
+                className="ruckus-press rounded-full bg-ruckus-600 px-5 py-2.5 text-[13px] font-semibold text-white shadow-sm transition hover:bg-ruckus-700"
               >
                 Browse the widgets
               </a>
@@ -686,7 +697,10 @@ export function MarketingLandingPage() {
             }}
           />
           <RuckusMascot className="relative mx-auto mb-6 h-24 w-24" title="" />
-          <h2 className="relative mx-auto max-w-2xl font-display text-3xl font-extrabold tracking-tight sm:text-4xl" style={{ letterSpacing: "-0.03em" }}>
+          <div className="relative text-[12px] font-semibold uppercase tracking-[0.18em] text-ruckus-200">
+            Free as in flock.
+          </div>
+          <h2 className="relative mx-auto mt-2 max-w-2xl font-display text-3xl font-extrabold tracking-tight sm:text-4xl" style={{ letterSpacing: "-0.03em" }}>
             Ready to make a ruckus?
           </h2>
           <p className="relative mx-auto mt-3 max-w-xl text-[15px] text-ruckus-100">
@@ -696,7 +710,7 @@ export function MarketingLandingPage() {
           <div className="relative mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
             <Link
               to="/app"
-              className="w-full rounded-full bg-white px-6 py-3 text-sm font-semibold text-navy transition hover:bg-ruckus-100 sm:w-auto"
+              className="ruckus-press w-full rounded-full bg-white px-6 py-3 text-sm font-semibold text-navy shadow-sm transition hover:bg-ruckus-100 sm:w-auto"
             >
               Explore the platform
             </Link>
