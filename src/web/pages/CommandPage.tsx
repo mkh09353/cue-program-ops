@@ -107,14 +107,13 @@ export function CommandPage() {
               {blockers.map((b: any) => (
                 <li key={b.id} className="flex flex-wrap items-center justify-between gap-2 py-3">
                   <div className="flex items-center gap-3">
-                    {/* Fixed-width badge column so the labels align vertically. */}
-                    <span className="inline-flex w-24 shrink-0 justify-center">
-                      <Badge
-                        tone={b.severity === "danger" ? "danger" : b.severity === "warn" ? "warn" : "info"}
-                      >
-                        {b.severity === "danger" ? "Urgent" : b.severity === "warn" ? "Attention" : "Info"}
-                      </Badge>
-                    </span>
+                    {/* Uniform pill width (widest label) with the word centered inside. */}
+                    <Badge
+                      className="w-24 shrink-0 justify-center"
+                      tone={b.severity === "danger" ? "danger" : b.severity === "warn" ? "warn" : "info"}
+                    >
+                      {b.severity === "danger" ? "Urgent" : b.severity === "warn" ? "Attention" : "Info"}
+                    </Badge>
                     <span className="text-sm font-medium">{b.label}</span>
                   </div>
                   <div className="flex gap-2">
