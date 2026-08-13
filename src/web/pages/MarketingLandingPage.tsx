@@ -466,7 +466,7 @@ export function MarketingLandingPage() {
           <div className="flex items-center gap-2">
             <span className="hidden items-center gap-1.5 rounded-full bg-ruckus-50 px-3 py-1.5 font-mono text-[11px] font-semibold uppercase tracking-[0.06em] text-ruckus-700 ring-1 ring-ruckus-200 lg:inline-flex">
               <span className="h-1.5 w-1.5 rounded-full bg-ruckus-500" />
-              CFP closes in 41 days
+              Call for Papers closes in 41 days
             </span>
             <Link to="/demo" className="rounded-full px-3 py-2 text-[13px] text-mid transition hover:text-navy">
               Log in
@@ -502,10 +502,10 @@ export function MarketingLandingPage() {
               className="mt-5 font-display text-4xl font-extrabold leading-[1.03] tracking-tight sm:text-6xl"
               style={{ letterSpacing: "-0.03em" }}
             >
-              Make some <span className="ruckus-noise">noise</span> about your CFPs, speakers, sessions and content
+              Make some <span className="ruckus-noise">noise</span> about your Call for Papers, speakers, sessions and content
             </h1>
             <p className="mx-auto mt-5 max-w-2xl text-base text-neutral-600 sm:text-lg">
-              Ruckus runs the whole program loop out loud — call for papers, abstract review, speaker
+              Ruckus runs the whole program loop out loud — Call for Papers (CFP), abstract review, speaker
               onboarding, a conflict-aware agenda and public widgets — on canonical data you own. Open
               source, free to run, fork and inspect.
             </p>
