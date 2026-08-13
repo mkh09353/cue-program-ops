@@ -410,3 +410,229 @@ export function Dialog({
     document.body,
   );
 }
+
+/** One selectable row in a {@link ChipCombobox}. */
+export type ComboOption = { id: string; label: string; sublabel?: string };
+
+/**
+ * Compact combobox that stays one row high at rest.
+ *
+ * Multi mode renders the selection as removable chips inline with the text input
+ * (Backspace removes the last chip); single mode shows the current value in the
+ * input. Typing opens a floating listbox of matches; ArrowUp/ArrowDown move the
+ * active option, Enter selects it, Escape and blur close. An optional onCreate
+ * offers "Create …" when the query matches nothing.
+ *
+ * Replaces both a native <select multiple> (cramped, ctrl-click only) and a tall
+ * checkbox-card list, which made the New session card enormous.
+ */
+export function ChipCombobox({
+  options,
+  value,
+  onChange,
+  multiple = false,
+  idPrefix,
+  label,
+  placeholder,
+  onCreate,
+  createLabel = (query: string) => `Create "${query}"`,
+  emptyLabel = "No matches",
+  invalid = false,
+}: {
+  options: ComboOption[];
+  /** Multi mode: selected ids. Single mode: the selected id (or ""). */
+  value: string[] | string;
+  onChange: (next: any) => void;
+  multiple?: boolean;
+  idPrefix: string;
+  label: string;
+  placeholder?: string;
+  onCreate?: (query: string) => void | Promise<void>;
+  createLabel?: (query: string) => string;
+  emptyLabel?: string;
+  invalid?: boolean;
+}) {
+  const selectedIds = React.useMemo(
+    () => (multiple ? ((value as string[]) || []) : value ? [value as string] : []),
+    [multiple, value],
+  );
+  const [query, setQuery] = React.useState("");
+  const [open, setOpen] = React.useState(false);
+  const [active, setActive] = React.useState(0);
+  const rootRef = React.useRef<HTMLDivElement>(null);
+  const listId = `${idPrefix}-listbox`;
+
+  const needle = query.trim().toLowerCase();
+  const matches = React.useMemo(() => {
+    const pool = multiple ? options.filter((o) => !selectedIds.includes(o.id)) : options;
+    if (!needle) return pool;
+    return pool.filter((o) => `${o.label} ${o.sublabel || ""}`.toLowerCase().includes(needle));
+  }, [options, multiple, selectedIds, needle]);
+
+  const exact = options.some((o) => o.label.trim().toLowerCase() === needle);
+  const canCreate = Boolean(onCreate && needle && !exact);
+  const rowCount = matches.length + (canCreate ? 1 : 0);
+
+  React.useEffect(() => setActive(0), [needle, open]);
+  // Close when focus or a click leaves the component.
+  React.useEffect(() => {
+    if (!open) return;
+    const away = (event: Event) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", away);
+    return () => document.removeEventListener("mousedown", away);
+  }, [open]);
+
+  const select = (option: ComboOption) => {
+    if (multiple) {
+      onChange([...new Set([...selectedIds, option.id])]);
+      setQuery("");
+      setOpen(true); // stay open so several can be added in a row
+    } else {
+      onChange(option.id);
+      setQuery("");
+      setOpen(false);
+    }
+  };
+
+  const create = async () => {
+    if (!onCreate) return;
+    await onCreate(query.trim());
+    setQuery("");
+    setOpen(false);
+  };
+
+  const commitActive = () => {
+    if (canCreate && active === matches.length) return void create();
+    const option = matches[active];
+    if (option) select(option);
+  };
+
+  const singleLabel = !multiple && value ? options.find((o) => o.id === value)?.label || "" : "";
+
+  return (
+    <div ref={rootRef} className="relative" data-testid={`${idPrefix}-combobox`}>
+      <div
+        className={cn(
+          "flex min-h-10 flex-wrap items-center gap-1 rounded-[18px] border bg-paper px-2 py-1",
+          invalid ? "border-rose-400" : "border-line",
+        )}
+        onClick={() => rootRef.current?.querySelector("input")?.focus()}
+      >
+        {multiple
+          ? selectedIds.map((id) => {
+              const option = options.find((o) => o.id === id);
+              return (
+                <span
+                  key={id}
+                  data-testid={`${idPrefix}-chip-${id}`}
+                  className="inline-flex items-center gap-1 rounded-[14px] bg-soft px-2 py-0.5 text-xs font-medium text-ink"
+                >
+                  {option?.label || id}
+                  <button
+                    type="button"
+                    aria-label={`Remove ${option?.label || id}`}
+                    data-testid={`${idPrefix}-remove-${id}`}
+                    className="text-mid hover:text-ink"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onChange(selectedIds.filter((x) => x !== id));
+                    }}
+                  >
+                    ×
+                  </button>
+                </span>
+              );
+            })
+          : null}
+        <input
+          role="combobox"
+          aria-expanded={open}
+          aria-controls={listId}
+          aria-autocomplete="list"
+          aria-label={label}
+          data-testid={`${idPrefix}-input`}
+          className="min-w-24 flex-1 border-0 bg-transparent px-1 py-1 text-sm outline-none"
+          placeholder={multiple ? (selectedIds.length ? "" : placeholder) : singleLabel || placeholder}
+          value={query}
+          onFocus={() => setOpen(true)}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setOpen(true);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "ArrowDown") {
+              e.preventDefault();
+              // Opening with ArrowDown should land on the FIRST row, not the second.
+              if (!open) {
+                setOpen(true);
+                setActive(0);
+                return;
+              }
+              setActive((i) => (rowCount ? (i + 1) % rowCount : 0));
+            } else if (e.key === "ArrowUp") {
+              e.preventDefault();
+              setActive((i) => (rowCount ? (i - 1 + rowCount) % rowCount : 0));
+            } else if (e.key === "Enter") {
+              if (!open) return;
+              e.preventDefault();
+              commitActive();
+            } else if (e.key === "Escape") {
+              setOpen(false);
+            } else if (e.key === "Backspace" && !query && multiple && selectedIds.length) {
+              onChange(selectedIds.slice(0, -1));
+            }
+          }}
+        />
+      </div>
+      {open ? (
+        <ul
+          id={listId}
+          role="listbox"
+          aria-label={label}
+          data-testid={`${idPrefix}-listbox`}
+          className="absolute left-0 right-0 z-40 mt-1 max-h-60 overflow-y-auto rounded-[18px] border border-line bg-paper py-1 shadow-card"
+        >
+          {matches.map((option, index) => (
+            <li
+              key={option.id}
+              role="option"
+              aria-selected={selectedIds.includes(option.id)}
+              data-testid={`${idPrefix}-option-${option.id}`}
+              className={cn("cursor-pointer px-3 py-1.5 text-sm", index === active ? "bg-soft" : "")}
+              onMouseEnter={() => setActive(index)}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                select(option);
+              }}
+            >
+              <b className="block truncate font-medium">{option.label}</b>
+              {option.sublabel ? <span className="block truncate text-xs text-mid">{option.sublabel}</span> : null}
+            </li>
+          ))}
+          {canCreate ? (
+            <li
+              role="option"
+              aria-selected={false}
+              data-testid={`${idPrefix}-create`}
+              className={cn("cursor-pointer px-3 py-1.5 text-sm", active === matches.length ? "bg-soft" : "")}
+              onMouseEnter={() => setActive(matches.length)}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                void create();
+              }}
+            >
+              {createLabel(query.trim())}
+            </li>
+          ) : null}
+          {!rowCount ? (
+            <li className="px-3 py-1.5 text-sm text-mid" data-testid={`${idPrefix}-empty`}>
+              {emptyLabel}
+            </li>
+          ) : null}
+        </ul>
+      ) : null}
+    </div>
+  );
+}

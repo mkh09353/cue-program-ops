@@ -16,6 +16,7 @@ import {
   PageHeader,
   Spinner,
   toast,
+  ChipCombobox,
 } from "../components/ui";
 
 type View = "list" | "day" | "week" | "track" | "room";
@@ -87,6 +88,7 @@ export function capacityWarning(
   return capacityWarningMessage(session.capacity, room.name || "this room", room.capacity);
 }
 
+
 export function SchedulePage() {
   const [d, setD] = useState<any>(null);
   const [view, setView] = useState<View>(defaultView);
@@ -119,6 +121,7 @@ export function SchedulePage() {
   const [justPlaced, setJustPlaced] = useState<string>("");
   const [publishBusy, setPublishBusy] = useState(false);
   const [publishBanner, setPublishBanner] = useState("");
+  const [speakersTouched, setSpeakersTouched] = useState(false);
   const [newSession,setNewSession]=useState({title:"",speakerIds:[] as string[],trackId:"",durationMinutes:45});
   const [place, setPlace] = useState<PlaceTarget | null>(null);
   const [placeError, setPlaceError] = useState("");
@@ -418,7 +421,7 @@ export function SchedulePage() {
           {err}
         </Notice>
       ) : null}
-      <Card className="mb-4 p-4"><h2 className="font-bold">New session</h2><p className="text-sm text-mid">Create directly in the canonical schedule, then place it to test conflicts.</p><div className="mt-3 grid gap-3 md:grid-cols-4"><Field label="Title"><Input value={newSession.title} onChange={e=>setNewSession({...newSession,title:e.target.value})}/></Field><Field label="Speakers"><select multiple aria-label="Session speakers" className="min-h-24 rounded-[18px] border border-line p-2" value={newSession.speakerIds} onChange={e=>setNewSession({...newSession,speakerIds:Array.from(e.target.selectedOptions).map(x=>x.value)})}>{(d?.speakers||[]).map((s:any)=><option key={s.id} value={s.id}>{s.name}</option>)}</select></Field><Field label="Track"><select className="h-10 rounded-[18px] border border-line px-3" value={newSession.trackId} onChange={e=>setNewSession({...newSession,trackId:e.target.value})}><option value="">General</option>{(d?.tracks||[]).map((t:any)=><option key={t.id} value={t.id}>{t.name}</option>)}</select></Field><Field label="Duration"><Input type="number" value={newSession.durationMinutes} onChange={e=>setNewSession({...newSession,durationMinutes:Number(e.target.value)})}/></Field></div><Button className="mt-3" disabled={!newSession.title||!newSession.speakerIds.length} onClick={async()=>{await api.createScheduleSession(newSession);toast("Session created");setNewSession({title:"",speakerIds:[],trackId:"",durationMinutes:45});load()}}>Create session</Button></Card>
+      <Card className="mb-4 p-4"><h2 className="font-bold">New session</h2><p className="text-sm text-mid">Create directly in the canonical schedule, then place it to test conflicts.</p><div className="mt-3 grid gap-3 md:grid-cols-4"><Field label="Title"><Input placeholder="e.g. Scaling Inference Pipelines" value={newSession.title} onChange={e=>setNewSession({...newSession,title:e.target.value})}/></Field><Field label="Speakers"><ChipCombobox multiple idPrefix="new-session-speaker" label="Session speakers" placeholder="Search speakers…" invalid={speakersTouched&&!newSession.speakerIds.length} options={(d?.speakers||[]).map((sp:any)=>({id:sp.id,label:sp.name,sublabel:sp.email}))} value={newSession.speakerIds} onChange={(ids:string[])=>{setSpeakersTouched(true);setNewSession({...newSession,speakerIds:ids})}}/>{speakersTouched&&!newSession.speakerIds.length?<p className="mt-1 text-xs text-rose-600" data-testid="new-session-speaker-hint">Select at least one speaker.</p>:null}</Field><Field label="Track"><ChipCombobox idPrefix="new-session-track" label="Session track" placeholder="General" options={(d?.tracks||[]).map((t:any)=>({id:t.id,label:t.name}))} value={newSession.trackId} onChange={(id:string)=>setNewSession({...newSession,trackId:id})} createLabel={(q:string)=>`Create track "${q}"`} onCreate={async(name:string)=>{const made:any=await api.createAgendaTrack({name});toast(`Track "${name}" created`);const id=made?.data?.id;if(id)setNewSession((prev:any)=>({...prev,trackId:id}));load()}}/></Field><Field label="Duration"><Input type="number" value={newSession.durationMinutes} onChange={e=>setNewSession({...newSession,durationMinutes:Number(e.target.value)})}/></Field></div><Button className="mt-3" disabled={!newSession.title||!newSession.speakerIds.length} onClick={async()=>{await api.createScheduleSession(newSession);toast("Session created");setNewSession({title:"",speakerIds:[],trackId:"",durationMinutes:45});load()}}>Create session</Button></Card>
 
       {(d?.lastPlacements || []).length ? (
         <Card className="mb-4 p-4" data-testid="recent-placements">
@@ -654,7 +657,7 @@ export function SchedulePage() {
                 <div className="text-xs text-mid">
                   {x.speakerIds?.map((i: string) => d.speakers.find((q: any) => q.id === i)?.name).join(", ")}
                 </div>
-                <details className="mt-2 text-xs"><summary className="cursor-pointer font-semibold">Edit session speakers</summary><p className="mt-2"><a className="font-semibold text-ink underline" href={`/app/content?session=${encodeURIComponent(x.id)}`} aria-label={`Open full editor for ${x.title}`}>Full editor · title, abstract &amp; approval ↗</a></p><select multiple aria-label={`Edit speakers for ${x.title}`} className="mt-2 min-h-20 w-full rounded-[12px] border border-line p-2" value={x.speakerIds||[]} onChange={async e=>{await api.updateScheduleSession(x.id,{speakerIds:Array.from(e.target.selectedOptions).map(o=>o.value)});toast("Session speakers updated");load()}}>{(d.speakers||[]).map((s:any)=><option key={s.id} value={s.id}>{s.name}</option>)}</select></details>
+                <details className="mt-2 text-xs"><summary className="cursor-pointer font-semibold">Edit session speakers</summary><p className="mt-2"><a className="font-semibold text-ink underline" href={`/app/content?session=${encodeURIComponent(x.id)}`} aria-label={`Open full editor for ${x.title}`}>Full editor · title, abstract &amp; approval ↗</a></p><div className="mt-2"><ChipCombobox multiple idPrefix={`edit-speakers-${x.id}`} label={`Edit speakers for ${x.title}`} placeholder="Search speakers…" options={(d.speakers||[]).map((sp:any)=>({id:sp.id,label:sp.name,sublabel:sp.email}))} value={x.speakerIds||[]} onChange={async(ids:string[])=>{await api.updateScheduleSession(x.id,{speakerIds:ids});toast("Session speakers updated");load()}}/></div></details>
                 <div className="mt-2 flex flex-wrap gap-1">
                   <Button
                     size="sm"
