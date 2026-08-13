@@ -45,7 +45,7 @@ Known personas resolve server-side. `Organizer`, `Reviewer` and `Speaker` below 
 | GET | `/demo` | Public/demo | Current canonical demo data |
 | GET | `/api/events/:eventId/bootstrap` | Shared/demo | Event, actor, personas and lifecycle bootstrap |
 | GET | `/api/events/:eventId/command` | Shared/demo | Organizer command projection and canonical schedule KPIs |
-| PUT | `/api/events/:eventId/settings` | Organizer | Update event basics, including the persisted `speakerConfirmation` toggle (defaults true) |
+| PUT | `/api/events/:eventId/settings` | Organizer | Update event basics; `speakerConfirmation` defaults true, and false auto-completes confirmation during acceptance handoff |
 | GET | `/api/events/:eventId/lifecycle` | Organizer | Derived program lifecycle checklist with progress details and organizer links |
 | GET | `/api/events/:eventId/dashboard` | Shared/demo | Speaker readiness plus schedule metrics |
 
@@ -57,7 +57,7 @@ Known personas resolve server-side. `Organizer`, `Reviewer` and `Speaker` below 
 | GET | `/api/events/:eventId/forms/:id` | Shared/demo | Read form schema |
 | PUT | `/api/events/:eventId/forms/:id` | Organizer | Save validated fields, conditions, routing and window |
 | GET | `/api/public/events/:slug/cfp` | Public | Public form/event schema and open/closed state |
-| POST | `/api/public/events/:slug/submissions` | Public | Create title-only draft or validated final submission; submissions expose stable event-local `code` values such as `SESS-01` |
+| POST | `/api/public/events/:slug/submissions` | Public | Create title-only draft or validated final submission; `code` is a stable, sequential event-local reference such as `SESS-01` |
 | GET | `/api/public/events/:slug/submissions/:id?token=` | Edit-token holder | Resume/view one submission |
 | PUT | `/api/public/events/:slug/submissions/:id` | Edit-token holder | Edit/submit while CFP is open |
 | PUT | `/api/speaker/events/:eventId/submissions/:id` | Owning speaker | Edit owned submission while open |
@@ -204,7 +204,7 @@ Organizer-provided embed URLs are projected through the server allowlist; arbitr
 
 | Method | Path | Role | Description |
 |---|---|---|---|
-| GET | `/api/events/:eventId/sessions` | Organizer | Canonical sessions merged with submission codes, speakers, placements and summary counts |
+| GET | `/api/events/:eventId/sessions` | Organizer | All canonical sessions with source submission code, speakers, placement, `publishStatus`, CFP/manual source and summary counts |
 | GET | `/api/events/:eventId/sessions-list` | Organizer | All CFP/manual sessions with publication, cancellation, placement and approved/draft/cancelled metadata |
 | POST | `/api/events/:eventId/sessions/:sessionId/cancel` | Organizer | Cancel a session, with optional `{reason}` |
 | POST | `/api/events/:eventId/sessions/:sessionId/uncancel` | Organizer | Restore a cancelled session and conflict participation |
@@ -215,7 +215,9 @@ Organizer-provided embed URLs are projected through the server allowlist; arbitr
 | PATCH | `/api/events/:eventId/embed-configs/:id` | Organizer | Persist `enabled`, `snippetFormat`, and sanitized `customCss` preferences |
 | DELETE | `/api/events/:eventId/embed-configs/:id` | Organizer | Delete a saved embed configuration |
 
-Custom embed CSS is capped at 5,000 characters and rejects `@import` and `</style` server-side.
+Cancelled or unapproved sessions are excluded from every public widget, feed and ICS projection. Cancelling also removes the session's occupied slots from conflict checks; uncancelling restores normal conflict behavior.
+
+Embed `snippetFormat` accepts `iframe`, `script` or `link`. Custom CSS is trimmed, capped at 2,000 characters, and rejects `<script` and `</style` server-side. Saved preferences use the same demo snapshot persistence caveats described elsewhere in this document.
 
 ## Public program HTML and feeds
 
