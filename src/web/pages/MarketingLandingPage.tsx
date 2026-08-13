@@ -1,5 +1,6 @@
 import type { ReactElement, ReactNode } from "react";
 import { Link } from "react-router-dom";
+import { RuckusWordmark } from "../components/RuckusMascot";
 import { EVENT_SLUG } from "../lib/utils";
 
 /**
@@ -146,18 +147,6 @@ const IconCalendar = (p: IconProps) => (
   />
 );
 
-function Wordmark() {
-  return (
-    <span className="inline-flex items-center gap-2">
-      <span className="grid h-7 w-7 place-items-center rounded-lg bg-ink text-[11px] font-semibold tracking-tight text-white">
-        C
-      </span>
-      <span className="text-[15px] font-semibold tracking-tight text-ink">CUE</span>
-      <span className="hidden text-[13px] text-mid sm:inline">Conference Ops</span>
-    </span>
-  );
-}
-
 const roleDemos: {
   title: string;
   blurb: string;
@@ -220,7 +209,7 @@ const features: { title: string; blurb: string; icon: (p: IconProps) => ReactEle
   {
     title: "Speaker management",
     blurb:
-      "Accepted submissions become canonical sessions and speakers — onboarding tasks, deadlines and comms without re-entry.",
+      "Accepted submissions become canonical sessions and speakers: onboarding tasks, deadlines and comms without re-entry.",
     icon: IconUsers,
   },
   {
@@ -268,7 +257,7 @@ function ModuleTile({
   return (
     <div className={`min-w-0 rounded-xl border border-line bg-white p-3 ${wide ? "sm:col-span-2" : ""}`}>
       <div className="flex items-center gap-2">
-        <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-soft text-ink ring-1 ring-line">
+        <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-soft text-navy ring-1 ring-line">
           <IconEl className="h-3.5 w-3.5" />
         </span>
         <span className="truncate text-[11px] font-medium uppercase tracking-wide text-mid">{title}</span>
@@ -288,29 +277,29 @@ function MockScreenshot() {
   ];
   const statusTone: Record<string, string> = {
     Accepted: "bg-emerald-50 text-emerald-700 ring-emerald-200",
-    "Under review": "bg-indigo-50 text-indigo-700 ring-indigo-200",
+    "Under review": "bg-ruckus-50 text-ruckus-700 ring-ruckus-200",
     "Needs 2nd review": "bg-amber-50 text-amber-700 ring-amber-200",
   };
   const initials = ["DO", "MF", "PR", "TH", "AK"];
   return (
-    <div className="overflow-hidden rounded-2xl bg-white shadow-[0_20px_60px_-25px_rgba(15,23,42,0.35)] ring-1 ring-black/10">
+    <div className="overflow-hidden rounded-3xl bg-white shadow-[0_24px_70px_-30px_rgba(30,27,46,0.45)] ring-1 ring-navy/10">
       <div className="flex items-center gap-2 border-b border-line bg-soft px-4 py-2.5">
         <span className="h-2.5 w-2.5 rounded-full bg-neutral-300" />
         <span className="h-2.5 w-2.5 rounded-full bg-neutral-300" />
         <span className="h-2.5 w-2.5 rounded-full bg-neutral-300" />
         <span className="ml-3 truncate rounded-md bg-white px-2 py-1 text-[11px] text-mid ring-1 ring-line">
-          cue.app/app
+          ruckus.to/app
         </span>
       </div>
       <div className="flex">
         <aside className="hidden w-52 shrink-0 border-r border-line bg-soft p-3 sm:block">
           <div className="mb-3 px-2">
-            <Wordmark />
+            <RuckusWordmark compact />
           </div>
           {["Command center", "Submissions", "Review", "Speakers", "Schedule", "Content", "Publish"].map((item, i) => (
             <div
               key={item}
-              className={`mb-1 rounded-lg px-2 py-1.5 text-[12px] ${i === 0 ? "bg-ink text-white" : "text-mid"}`}
+              className={`mb-1 rounded-lg px-2 py-1.5 text-[12px] ${i === 0 ? "bg-ruckus-600 font-medium text-white" : "text-mid"}`}
             >
               {item}
             </div>
@@ -324,7 +313,7 @@ function MockScreenshot() {
             </div>
             <div className="flex gap-2">
               <span className="rounded-lg px-2.5 py-1 text-[11px] text-mid ring-1 ring-line">Round 2</span>
-              <span className="rounded-lg bg-ink px-2.5 py-1 text-[11px] text-white">Assign reviewers</span>
+              <span className="rounded-lg bg-ruckus-600 px-2.5 py-1 text-[11px] font-medium text-white">Assign reviewers</span>
             </div>
           </div>
 
@@ -347,7 +336,7 @@ function MockScreenshot() {
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
             <ModuleTile icon={IconDoc} title="Call for papers" value="Open" support="184 submissions · closes Mar 14">
               <div className="mt-2 flex flex-wrap gap-1">
-                <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] text-indigo-700 ring-1 ring-indigo-200">
+                <span className="rounded-full bg-ruckus-50 px-2 py-0.5 text-[10px] text-ruckus-700 ring-1 ring-ruckus-200">
                   3 forms live
                 </span>
                 <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] text-neutral-600 ring-1 ring-neutral-200">
@@ -358,7 +347,7 @@ function MockScreenshot() {
 
             <ModuleTile icon={IconScale} title="Review" value="121 / 184" support="Round 2 · 14 reviewers active">
               <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-neutral-100">
-                <div className="h-full rounded-full bg-indigo-500" style={{ width: "66%" }} />
+                <div className="h-full rounded-full bg-ruckus-500" style={{ width: "66%" }} />
               </div>
             </ModuleTile>
 
@@ -372,7 +361,7 @@ function MockScreenshot() {
                     {n}
                   </span>
                 ))}
-                <span className="grid h-6 w-6 place-items-center rounded-full bg-ink text-[9px] font-medium text-white ring-1 ring-ink">
+                <span className="grid h-6 w-6 place-items-center rounded-full bg-ruckus-600 text-[9px] font-medium text-white ring-1 ring-ruckus-600">
                   +29
                 </span>
               </div>
@@ -383,7 +372,7 @@ function MockScreenshot() {
                 {[3, 5, 4, 6, 5, 4, 2].map((n, i) => (
                   <span
                     key={i}
-                    className={`h-6 flex-1 rounded-sm ${i === 3 ? "bg-indigo-500" : "bg-neutral-200"}`}
+                    className={`h-6 flex-1 rounded-sm ${i === 3 ? "bg-ruckus-500" : "bg-neutral-200"}`}
                     style={{ opacity: 0.4 + n / 10 }}
                   />
                 ))}
@@ -403,7 +392,7 @@ function MockScreenshot() {
 
             <ModuleTile icon={IconMail} title="Communications" value="Acceptances sent" support="38 recipients · 0 failures">
               <div className="mt-2 flex flex-wrap gap-1">
-                <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] text-indigo-700 ring-1 ring-indigo-200">
+                <span className="rounded-full bg-ruckus-50 px-2 py-0.5 text-[10px] text-ruckus-700 ring-1 ring-ruckus-200">
                   2 reminders scheduled
                 </span>
               </div>
@@ -428,7 +417,7 @@ function MockScreenshot() {
             {/* Recent submissions, compact */}
             <div className="min-w-0 rounded-xl border border-line bg-white p-3 sm:col-span-2">
               <div className="flex items-center gap-2">
-                <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-soft text-ink ring-1 ring-line">
+                <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-soft text-navy ring-1 ring-line">
                   <IconGrid className="h-3.5 w-3.5" />
                 </span>
                 <span className="truncate text-[11px] font-medium uppercase tracking-wide text-mid">
@@ -439,7 +428,7 @@ function MockScreenshot() {
                 <tbody>
                   {rows.map((r) => (
                     <tr key={r.title} className="border-t border-line first:border-t-0">
-                      <td className="truncate py-2 pr-2 font-medium text-ink">{r.title}</td>
+                      <td className="truncate py-2 pr-2 font-medium text-navy">{r.title}</td>
                       <td className="hidden w-28 truncate py-2 pr-2 text-mid md:table-cell">{r.track}</td>
                       <td className="w-32 py-2 text-right">
                         <span
@@ -462,26 +451,30 @@ function MockScreenshot() {
 
 export function MarketingLandingPage() {
   return (
-    <div className="min-h-screen bg-white text-ink">
+    <div className="ruckus-brand min-h-screen bg-white text-navy">
       {/* Nav */}
       <header className="sticky top-0 z-20 border-b border-line/80 bg-white/85 backdrop-blur">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-5">
-          <Link to="/" className="shrink-0">
-            <Wordmark />
+          <Link to="/" className="shrink-0" aria-label="Ruckus home">
+            <RuckusWordmark />
           </Link>
           <nav className="hidden items-center gap-7 text-[13px] text-mid md:flex">
-            <a href="#platform" className="transition hover:text-ink">Platform</a>
-            <a href="#workflow" className="transition hover:text-ink">Workflow</a>
-            <a href="#widgets" className="transition hover:text-ink">Widgets</a>
+            <a href="#platform" className="transition hover:text-navy">Platform</a>
+            <a href="#workflow" className="transition hover:text-navy">Workflow</a>
+            <a href="#widgets" className="transition hover:text-navy">Widgets</a>
           </nav>
           <div className="flex items-center gap-2">
+            <span className="hidden items-center gap-1.5 rounded-full bg-ruckus-50 px-3 py-1.5 font-mono text-[11px] font-semibold uppercase tracking-[0.06em] text-ruckus-700 ring-1 ring-ruckus-200 lg:inline-flex">
+              <span className="h-1.5 w-1.5 rounded-full bg-ruckus-500" />
+              Call for Papers closes in 41 days
+            </span>
             {/* Real cookie-session sign-in (with one-click demo entry on that page). */}
-            <Link to="/login" className="rounded-full px-3 py-2 text-[13px] text-mid transition hover:text-ink">
+            <Link to="/login" className="rounded-full px-3 py-2 text-[13px] text-mid transition hover:text-navy">
               Log in
             </Link>
             <Link
               to="/demo"
-              className="rounded-full bg-ink px-4 py-2 text-[13px] font-medium text-white transition hover:bg-ink-soft"
+              className="ruckus-press rounded-full bg-ruckus-600 px-4 py-2 text-[13px] font-semibold text-white shadow-sm transition hover:bg-ruckus-700"
             >
               Explore the live demo
             </Link>
@@ -492,40 +485,44 @@ export function MarketingLandingPage() {
       {/* Hero + product mock inside a tinted panel */}
       <section className="px-4 pt-6 sm:px-5">
         <div
-          className="relative mx-auto max-w-6xl overflow-hidden rounded-[28px] bg-indigo-50/70 px-5 pb-10 pt-14 sm:px-10 sm:pb-14 sm:pt-20"
+          className="relative mx-auto max-w-6xl overflow-hidden rounded-[32px] bg-ruckus-50/70 px-5 pb-10 pt-10 sm:px-10 sm:pb-14 sm:pt-14"
           style={{
             backgroundImage:
-              "radial-gradient(rgba(79,70,229,0.16) 1px, transparent 1px)",
+              "radial-gradient(rgba(124,58,237,0.18) 1px, transparent 1px)",
             backgroundSize: "18px 18px",
           }}
         >
           <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/50 via-transparent to-white/70" />
           <div className="relative mx-auto max-w-3xl text-center">
-            <span className="inline-flex items-center gap-2 rounded-full bg-white/80 px-3 py-1 text-[12px] font-medium text-indigo-700 ring-1 ring-indigo-200">
-              <span className="h-1.5 w-1.5 rounded-full bg-indigo-500" />
-              Open-source conference program operations
+            <img src="/ruckus-logo.webp" alt="Ruckus logo: a duck with a megaphone and a clipboard" className="mx-auto mb-5 h-36 w-auto drop-shadow-sm sm:h-48" width={880} height={913} />
+            <span className="inline-flex items-center gap-2 rounded-full bg-white/85 px-3.5 py-1.5 text-[12px] font-semibold text-ruckus-700 shadow-sm ring-1 ring-ruckus-200">
+              <span className="h-1.5 w-1.5 rounded-full bg-ruckus-500" />
+              Open-source conference management
             </span>
             <h1
-              className="mt-6 text-4xl font-semibold leading-[1.05] tracking-tight sm:text-6xl"
-              style={{ letterSpacing: "-0.04em" }}
+              className="mt-5 font-display text-4xl font-extrabold leading-[1.03] tracking-tight sm:text-6xl"
+              style={{ letterSpacing: "-0.03em" }}
             >
-              One platform for CFPs, speakers, sessions and content
+              Make some <span className="ruckus-noise">noise</span> about your Call for Papers, speakers, sessions and content
             </h1>
             <p className="mx-auto mt-5 max-w-2xl text-base text-neutral-600 sm:text-lg">
-              CUE runs the whole program loop — call for papers, abstract review, speaker onboarding,
-              a conflict-aware agenda and public widgets — on canonical data you own. An open-source
-              alternative to Sessionboard, free to run and inspect.
+              Ruckus runs the whole program loop out loud: Call for Papers (CFP), abstract review, speaker
+              onboarding, a conflict-aware agenda and public widgets, all on canonical data you own.
+              Open source, free to run, fork and inspect.
+            </p>
+            <p className="mx-auto mt-3 max-w-2xl font-mono text-[13px] text-ruckus-700 sm:text-sm">
+              Oh, and there’s a CLI. Your agent can run the whole thing for you.
             </p>
             <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
               <Link
                 to="/app"
-                className="w-full rounded-full bg-ink px-6 py-3 text-sm font-medium text-white shadow-sm transition hover:bg-ink-soft sm:w-auto"
+                className="ruckus-press w-full rounded-full bg-ruckus-600 px-6 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-ruckus-700 sm:w-auto"
               >
                 Explore the platform
               </Link>
               <a
                 href="#demos"
-                className="w-full rounded-full bg-white px-6 py-3 text-sm font-medium text-ink ring-1 ring-line transition hover:ring-neutral-300 sm:w-auto"
+                className="w-full rounded-full bg-white px-6 py-3 text-sm font-semibold text-navy ring-1 ring-ruckus-200 transition hover:ring-ruckus-400 sm:w-auto"
               >
                 See demos by role
               </a>
@@ -535,7 +532,7 @@ export function MarketingLandingPage() {
             </p>
           </div>
 
-          <div className="relative mx-auto mt-12 max-w-5xl">
+          <div className="relative mx-auto mt-10 max-w-5xl">
             <MockScreenshot />
           </div>
         </div>
@@ -545,7 +542,7 @@ export function MarketingLandingPage() {
       <section id="demos" className="mx-auto max-w-6xl px-5 py-16 sm:py-24">
         <div className="max-w-2xl">
           <div className="text-[12px] font-medium uppercase tracking-[0.18em] text-mid">Demos by type</div>
-          <h2 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl" style={{ letterSpacing: "-0.03em" }}>
+          <h2 className="mt-3 font-display text-3xl font-extrabold tracking-tight sm:text-4xl" style={{ letterSpacing: "-0.03em" }}>
             Every role, running on the same seeded event
           </h2>
           <p className="mt-3 text-neutral-600">
@@ -558,18 +555,18 @@ export function MarketingLandingPage() {
             const IconEl = d.icon;
             const body = (
               <>
-                <span className="grid h-10 w-10 place-items-center rounded-xl bg-indigo-50 text-indigo-600 ring-1 ring-indigo-100">
+                <span className="grid h-10 w-10 place-items-center rounded-2xl bg-ruckus-100 text-ruckus-700 ring-1 ring-ruckus-200">
                   <IconEl className="h-5 w-5" />
                 </span>
                 <h3 className="mt-4 text-base font-semibold tracking-tight">{d.title}</h3>
                 <p className="mt-1.5 text-[13px] leading-relaxed text-neutral-600">{d.blurb}</p>
-                <span className="mt-4 inline-flex items-center gap-1 text-[13px] font-medium text-ink">
+                <span className="mt-4 inline-flex items-center gap-1 text-[13px] font-medium text-navy">
                   Open demo <span aria-hidden="true">→</span>
                 </span>
               </>
             );
             const cls =
-              "group flex flex-col rounded-2xl border border-line bg-white p-5 transition hover:-translate-y-0.5 hover:border-neutral-300 hover:shadow-card";
+              "group flex flex-col rounded-3xl border border-line bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-ruckus-200 hover:shadow-card";
             return d.external ? (
               <a key={d.title} href={d.href} className={cls}>
                 {body}
@@ -588,19 +585,20 @@ export function MarketingLandingPage() {
         <div className="mx-auto max-w-6xl px-5 py-16 sm:py-24">
           <div className="max-w-2xl">
             <div className="text-[12px] font-medium uppercase tracking-[0.18em] text-mid">Platform</div>
-            <h2 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl" style={{ letterSpacing: "-0.03em" }}>
+            <h2 className="mt-3 font-display text-3xl font-extrabold tracking-tight sm:text-4xl" style={{ letterSpacing: "-0.03em" }}>
               The modules a program team actually runs
             </h2>
             <p className="mt-3 text-neutral-600">
-              Each module is implemented in the demo — rules are enforced on the server, not just in the UI.
+              Every module below is implemented in the demo, and rules are enforced on the server, not just
+              in the UI.
             </p>
           </div>
-          <div className="mt-10 grid gap-px overflow-hidden rounded-2xl bg-line sm:grid-cols-2 lg:grid-cols-3">
+          <div className="mt-10 grid gap-px overflow-hidden rounded-3xl bg-line sm:grid-cols-2 lg:grid-cols-3">
             {features.map((f) => {
               const IconEl = f.icon;
               return (
-                <div key={f.title} className="bg-white p-6">
-                  <span className="grid h-10 w-10 place-items-center rounded-xl bg-ink text-white">
+                <div key={f.title} className="relative overflow-hidden bg-white p-6">
+                  <span className="grid h-10 w-10 place-items-center rounded-2xl bg-ruckus-600 text-white">
                     <IconEl className="h-5 w-5" />
                   </span>
                   <h3 className="mt-4 text-base font-semibold tracking-tight">{f.title}</h3>
@@ -616,14 +614,14 @@ export function MarketingLandingPage() {
       <section id="workflow" className="mx-auto max-w-6xl px-5 py-16 sm:py-24">
         <div className="max-w-2xl">
           <div className="text-[12px] font-medium uppercase tracking-[0.18em] text-mid">Workflow</div>
-          <h2 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl" style={{ letterSpacing: "-0.03em" }}>
+          <h2 className="mt-3 font-display text-3xl font-extrabold tracking-tight sm:text-4xl" style={{ letterSpacing: "-0.03em" }}>
             One loop, no re-entry between steps
           </h2>
         </div>
         <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {workflow.map((w) => (
-            <div key={w.step} className="rounded-2xl border border-line bg-white p-5">
-              <div className="text-[12px] font-semibold tabular-nums text-indigo-600">{w.step}</div>
+            <div key={w.step} className="rounded-3xl border border-line bg-white p-5 shadow-sm">
+              <div className="text-[12px] font-semibold tabular-nums text-ruckus-600">{w.step}</div>
               <h3 className="mt-2 text-base font-semibold tracking-tight">{w.title}</h3>
               <p className="mt-1.5 text-[13px] leading-relaxed text-neutral-600">{w.blurb}</p>
             </div>
@@ -636,23 +634,23 @@ export function MarketingLandingPage() {
         <div className="mx-auto grid max-w-6xl gap-10 px-5 py-16 sm:py-24 lg:grid-cols-2 lg:items-center">
           <div>
             <div className="text-[12px] font-medium uppercase tracking-[0.18em] text-mid">Public widgets</div>
-            <h2 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl" style={{ letterSpacing: "-0.03em" }}>
+            <h2 className="mt-3 font-display text-3xl font-extrabold tracking-tight sm:text-4xl" style={{ letterSpacing: "-0.03em" }}>
               Publish the program anywhere
             </h2>
             <p className="mt-3 text-neutral-600">
               Responsive, iframe-ready pages for sessions, speakers, agenda, itinerary and the speaker
-              gallery — plus JSON and iCal feeds. All of them read published records only.
+              gallery, plus JSON and iCal feeds. All of them read published records only.
             </p>
             <div className="mt-6 flex flex-wrap gap-3">
               <a
                 href={widgetsHref}
-                className="rounded-full bg-ink px-5 py-2.5 text-[13px] font-medium text-white transition hover:bg-ink-soft"
+                className="ruckus-press rounded-full bg-ruckus-600 px-5 py-2.5 text-[13px] font-semibold text-white shadow-sm transition hover:bg-ruckus-700"
               >
                 Browse the widgets
               </a>
               <a
                 href={cfpHref}
-                className="rounded-full bg-white px-5 py-2.5 text-[13px] font-medium text-ink ring-1 ring-line transition hover:ring-neutral-300"
+                className="rounded-full bg-white px-5 py-2.5 text-[13px] font-medium text-navy ring-1 ring-line transition hover:ring-neutral-300"
               >
                 Open the public CFP
               </a>
@@ -670,7 +668,7 @@ export function MarketingLandingPage() {
               <a
                 key={w.label}
                 href={w.href}
-                className="rounded-2xl border border-line bg-white p-4 transition hover:-translate-y-0.5 hover:border-neutral-300 hover:shadow-card"
+                className="rounded-3xl border border-line bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-ruckus-200 hover:shadow-card"
               >
                 <div className="text-[13px] font-semibold tracking-tight">{w.label}</div>
                 <div className="mt-1 text-[12px] text-neutral-600">{w.blurb}</div>
@@ -682,18 +680,29 @@ export function MarketingLandingPage() {
 
       {/* Closing CTA */}
       <section className="mx-auto max-w-6xl px-5 py-16 sm:py-24">
-        <div className="rounded-[28px] bg-ink px-6 py-12 text-center text-white sm:px-12 sm:py-16">
-          <h2 className="mx-auto max-w-2xl text-3xl font-semibold tracking-tight sm:text-4xl" style={{ letterSpacing: "-0.03em" }}>
-            Run the whole program loop yourself
+        <div className="relative overflow-hidden rounded-[32px] bg-navy px-6 py-12 text-center text-white sm:px-12 sm:py-16">
+          <div
+            className="pointer-events-none absolute inset-0 opacity-30"
+            style={{
+              backgroundImage: "radial-gradient(rgba(167,139,250,0.35) 1px, transparent 1px)",
+              backgroundSize: "20px 20px",
+            }}
+          />
+          <img src="/ruckus-logo-sm.webp" alt="" aria-hidden="true" className="relative mx-auto mb-6 h-28 w-auto" width={320} height={332} />
+          <div className="relative text-[12px] font-semibold uppercase tracking-[0.18em] text-ruckus-200">
+            Free as in flock.
+          </div>
+          <h2 className="relative mx-auto mt-2 max-w-2xl font-display text-3xl font-extrabold tracking-tight sm:text-4xl" style={{ letterSpacing: "-0.03em" }}>
+            Ready to make a ruckus?
           </h2>
-          <p className="mx-auto mt-3 max-w-xl text-[15px] text-neutral-300">
-            The demo is open and writable — submit to the CFP, score an abstract, accept it and watch the
-            session, speaker and widgets update.
+          <p className="relative mx-auto mt-3 max-w-xl text-[15px] text-ruckus-100">
+            The demo is open and writable: submit to the CFP, score an abstract, accept it, and watch
+            the session, speaker and public widgets update in step.
           </p>
-          <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
+          <div className="relative mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
             <Link
               to="/app"
-              className="w-full rounded-full bg-white px-6 py-3 text-sm font-medium text-ink transition hover:bg-neutral-200 sm:w-auto"
+              className="ruckus-press w-full rounded-full bg-white px-6 py-3 text-sm font-semibold text-navy shadow-sm transition hover:bg-ruckus-100 sm:w-auto"
             >
               Explore the platform
             </Link>
@@ -711,17 +720,17 @@ export function MarketingLandingPage() {
       <footer className="border-t border-line">
         <div className="mx-auto flex max-w-6xl flex-col gap-4 px-5 py-10 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <Wordmark />
-            <p className="mt-2 max-w-md text-[12px] text-mid">
-              Open-source conference program operations, MIT licensed. This site is a public demo running
-              on seeded data — no accounts, no billing, no customer data.
+            <RuckusWordmark showTagline />
+            <p className="mt-3 max-w-md text-[12px] text-mid">
+              Ruckus is open-source conference management, MIT licensed. This site is a public demo
+              running on seeded data. No accounts, no billing, no customer data.
             </p>
           </div>
           <div className="flex flex-wrap gap-5 text-[13px] text-mid">
-            <Link to="/demo" className="transition hover:text-ink">Demo launcher</Link>
-            <Link to="/app" className="transition hover:text-ink">Organizer</Link>
-            <a href={cfpHref} className="transition hover:text-ink">Public CFP</a>
-            <a href={widgetsHref} className="transition hover:text-ink">Widgets</a>
+            <Link to="/demo" className="transition hover:text-navy">Demo launcher</Link>
+            <Link to="/app" className="transition hover:text-navy">Organizer</Link>
+            <a href={cfpHref} className="transition hover:text-navy">Public CFP</a>
+            <a href={widgetsHref} className="transition hover:text-navy">Widgets</a>
           </div>
         </div>
       </footer>

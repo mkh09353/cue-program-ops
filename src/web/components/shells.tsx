@@ -376,11 +376,11 @@ function Brand({ subtitle = "Conference ops", compact = false }: { subtitle?: st
         className="grid h-9 w-9 place-items-center rounded-[18px] bg-ink text-sm font-semibold text-soft"
         aria-hidden
       >
-        C
+        R
       </div>
       {!compact ? (
         <div>
-          <div className="text-sm font-semibold tracking-tight text-ink">CUE</div>
+          <div className="text-sm font-semibold tracking-tight text-ink">Ruckus</div>
           <div className="text-[10px] font-medium uppercase tracking-wider text-mid">{subtitle}</div>
         </div>
       ) : null}
