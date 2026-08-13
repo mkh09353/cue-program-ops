@@ -1,6 +1,6 @@
 import type { ReactElement, ReactNode } from "react";
 import { Link } from "react-router-dom";
-import { RuckusDuckMark, RuckusMascot, RuckusWordmark } from "../components/RuckusMascot";
+import { RuckusDuckMark, RuckusWordmark } from "../components/RuckusMascot";
 import { EVENT_SLUG } from "../lib/utils";
 
 /**
@@ -493,7 +493,7 @@ export function MarketingLandingPage() {
         >
           <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/50 via-transparent to-white/70" />
           <div className="relative mx-auto max-w-3xl text-center">
-            <RuckusMascot className="mx-auto mb-4 h-24 w-24 drop-shadow-sm sm:h-32 sm:w-32" />
+            <img src="/ruckus-logo.webp" alt="Ruckus logo: a duck with a megaphone and a clipboard" className="mx-auto mb-5 h-36 w-auto drop-shadow-sm sm:h-48" width={880} height={913} />
             <span className="inline-flex items-center gap-2 rounded-full bg-white/85 px-3.5 py-1.5 text-[12px] font-semibold text-ruckus-700 shadow-sm ring-1 ring-ruckus-200">
               <span className="h-1.5 w-1.5 rounded-full bg-ruckus-500" />
               Open-source conference management
@@ -696,7 +696,7 @@ export function MarketingLandingPage() {
               backgroundSize: "20px 20px",
             }}
           />
-          <RuckusMascot className="relative mx-auto mb-6 h-24 w-24" title="" />
+          <img src="/ruckus-logo-sm.webp" alt="" aria-hidden="true" className="relative mx-auto mb-6 h-28 w-auto" width={320} height={332} />
           <div className="relative text-[12px] font-semibold uppercase tracking-[0.18em] text-ruckus-200">
             Free as in flock.
           </div>
