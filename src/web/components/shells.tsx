@@ -458,16 +458,16 @@ export function OrganizerShell() {
       <SkipLink />
       <div className="mx-auto flex min-h-screen max-w-[1500px]">
         <aside className="sticky top-0 hidden h-screen w-60 shrink-0 border-r border-line bg-soft md:block">
-          <div className="border-b border-line p-4">
+          <div className="flex h-16 items-center border-b border-line px-4">
             <Brand />
           </div>
           {nav}
           <div className="absolute bottom-0 left-0 right-0 border-t border-line p-3 text-[11px] text-mid">
-            {EVENT_NAME} · in-memory demo
+            {EVENT_NAME} · durable demo (D1 + Airtable)
           </div>
         </aside>
         <div className="flex min-w-0 flex-1 flex-col">
-          <header className="sticky top-0 z-20 flex items-center justify-between gap-3 border-b border-line bg-canvas/90 px-4 py-3 backdrop-blur">
+          <header className="sticky top-0 z-20 flex h-16 items-center justify-between gap-3 border-b border-line bg-canvas/90 px-4 backdrop-blur">
             <div className="flex items-center gap-2">
               <Button
                 variant="ghost"
