@@ -1,6 +1,6 @@
 import type { ReactElement, ReactNode } from "react";
 import { Link } from "react-router-dom";
-import { RuckusDuckMark, RuckusWordmark } from "../components/RuckusMascot";
+import { RuckusWordmark } from "../components/RuckusMascot";
 import { EVENT_SLUG } from "../lib/utils";
 
 /**
@@ -532,11 +532,6 @@ export function MarketingLandingPage() {
           </div>
 
           <div className="relative mx-auto mt-10 max-w-5xl">
-            {/* Duck mark peeking over the corner of the product mock */}
-            <RuckusDuckMark
-              className="absolute -top-7 right-6 z-10 hidden h-16 w-16 -rotate-6 drop-shadow-md sm:block"
-              title=""
-            />
             <MockScreenshot />
           </div>
         </div>
@@ -600,15 +595,8 @@ export function MarketingLandingPage() {
           <div className="mt-10 grid gap-px overflow-hidden rounded-3xl bg-line sm:grid-cols-2 lg:grid-cols-3">
             {features.map((f) => {
               const IconEl = f.icon;
-              const nested = f.title === "Public widgets";
               return (
-                <div key={f.title} className={`relative overflow-hidden bg-white p-6 ${nested ? "pb-10" : ""}`}>
-                  {nested ? (
-                    <RuckusDuckMark
-                      className="pointer-events-none absolute -bottom-6 -right-5 h-20 w-20 rotate-12 opacity-90"
-                      title=""
-                    />
-                  ) : null}
+                <div key={f.title} className="relative overflow-hidden bg-white p-6">
                   <span className="grid h-10 w-10 place-items-center rounded-2xl bg-ruckus-600 text-white">
                     <IconEl className="h-5 w-5" />
                   </span>
