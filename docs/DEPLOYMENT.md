@@ -22,7 +22,7 @@ Vite proxies `/api`, `/public`, `/embed`, `/health` and `/sync` to the API. With
 | Setting | Value |
 |---|---|
 | Config | `wrangler.toml` |
-| Worker | `cue-program-ops` |
+| Worker | `ruckus` |
 | Entry | `src/index.ts` → single named `CueState` Durable Object for API traffic |
 | Static binding | `ASSETS` → `dist/` |
 | SPA fallback | `dist/index.html` |
@@ -144,9 +144,9 @@ Do not enable this against production until Accelevents confirms authentication,
 A future deployment can bind D1 after implementing and testing the full repository:
 
 ```sh
-npx wrangler d1 create cue-program-ops
-npx wrangler d1 migrations apply cue-program-ops --local
-npx wrangler d1 migrations apply cue-program-ops --remote
+npx wrangler d1 create cue-snapshots
+npx wrangler d1 migrations apply cue-snapshots --local
+npx wrangler d1 migrations apply cue-snapshots --remote
 ```
 
 ## API and smoke test

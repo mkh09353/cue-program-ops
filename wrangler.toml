@@ -1,4 +1,4 @@
-name = "cue-program-ops"
+name = "ruckus"
 main = "src/index.ts"
 compatibility_date = "2026-08-09"
 workers_dev = true
@@ -24,7 +24,7 @@ binding = "AI"
 [[durable_objects.bindings]]
 name = "CUE_STATE"
 class_name = "CueState"
-script_name = "cue-program-ops"
+script_name = "ruckus"
 
 [[migrations]]
 tag = "v1"
