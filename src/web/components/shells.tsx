@@ -438,6 +438,16 @@ export function OrganizerShell() {
       </div>
     );
   }
+  // NavLink ignores URL hashes when matching, so hash-anchored items (AI Agenda
+  // → /app/schedule#ai-agenda) would light up together with their base route.
+  // Resolve active state hash-aware: a hash item is active only when its hash
+  // matches; its base route is active only when NO sibling hash item matches.
+  const hashSiblings = orgNav.filter((i) => i.to.includes("#"));
+  const hashAwareActive = (item: (typeof orgNav)[number], isActive: boolean) => {
+    const [base, hash] = item.to.split("#");
+    if (hash) return location.pathname === base && location.hash === `#${hash}`;
+    return isActive && !hashSiblings.some((s) => s.to.startsWith(item.to + "#") && location.hash === `#${s.to.split("#")[1]}`);
+  };
   const nav = (
     <nav className="flex flex-col gap-0.5 p-3" aria-label="Organizer">
       {orgNav.map((item) => (
@@ -449,7 +459,7 @@ export function OrganizerShell() {
           className={({ isActive }) =>
             cn(
               "flex items-center gap-2 rounded-[18px] px-3 py-2 text-sm font-medium text-mid hover:bg-canvas hover:text-ink",
-              isActive && "bg-ink text-soft hover:bg-ink hover:text-soft",
+              hashAwareActive(item, isActive) && "bg-ink text-soft hover:bg-ink hover:text-soft",
             )
           }
         >

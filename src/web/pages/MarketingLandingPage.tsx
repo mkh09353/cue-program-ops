@@ -250,20 +250,48 @@ const workflow = [
   { step: "04", title: "Schedule & publish", blurb: "Conflict-aware agenda, widgets, feeds and calendar files." },
 ];
 
+function ModuleTile({
+  icon: IconEl,
+  title,
+  value,
+  support,
+  children,
+  wide,
+}: {
+  icon: (p: IconProps) => ReactElement;
+  title: string;
+  value?: string;
+  support?: string;
+  children?: ReactNode;
+  wide?: boolean;
+}) {
+  return (
+    <div className={`min-w-0 rounded-xl border border-line bg-white p-3 ${wide ? "sm:col-span-2" : ""}`}>
+      <div className="flex items-center gap-2">
+        <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-soft text-ink ring-1 ring-line">
+          <IconEl className="h-3.5 w-3.5" />
+        </span>
+        <span className="truncate text-[11px] font-medium uppercase tracking-wide text-mid">{title}</span>
+      </div>
+      {value ? <div className="mt-2 truncate text-lg font-semibold tracking-tight">{value}</div> : null}
+      {children}
+      {support ? <div className="mt-1 truncate text-[11px] text-mid">{support}</div> : null}
+    </div>
+  );
+}
+
 function MockScreenshot() {
   const rows = [
-    { title: "Evaluating agent frameworks in production", speaker: "Dana Osei", track: "AI Engineering", status: "Under review", score: "4.2" },
-    { title: "Shipping RAG that survives real users", speaker: "Miguel Ferrer", track: "Applied AI", status: "Accepted", score: "4.6" },
-    { title: "Cost controls for inference-heavy apps", speaker: "Priya Raman", track: "Platform", status: "Under review", score: "3.9" },
-    { title: "Observability for LLM pipelines", speaker: "Tom Halvorsen", track: "Platform", status: "Needs 2nd review", score: "3.4" },
-    { title: "Fine-tuning as a product decision", speaker: "Ayesha Khan", track: "Applied AI", status: "Declined", score: "2.8" },
+    { title: "Evaluating agent frameworks in production", track: "AI Engineering", status: "Under review" },
+    { title: "Shipping RAG that survives real users", track: "Applied AI", status: "Accepted" },
+    { title: "Observability for LLM pipelines", track: "Platform", status: "Needs 2nd review" },
   ];
   const statusTone: Record<string, string> = {
     Accepted: "bg-emerald-50 text-emerald-700 ring-emerald-200",
     "Under review": "bg-indigo-50 text-indigo-700 ring-indigo-200",
     "Needs 2nd review": "bg-amber-50 text-amber-700 ring-amber-200",
-    Declined: "bg-neutral-100 text-neutral-600 ring-neutral-200",
   };
+  const initials = ["DO", "MF", "PR", "TH", "AK"];
   return (
     <div className="overflow-hidden rounded-2xl bg-white shadow-[0_20px_60px_-25px_rgba(15,23,42,0.35)] ring-1 ring-black/10">
       <div className="flex items-center gap-2 border-b border-line bg-soft px-4 py-2.5">
@@ -271,7 +299,7 @@ function MockScreenshot() {
         <span className="h-2.5 w-2.5 rounded-full bg-neutral-300" />
         <span className="h-2.5 w-2.5 rounded-full bg-neutral-300" />
         <span className="ml-3 truncate rounded-md bg-white px-2 py-1 text-[11px] text-mid ring-1 ring-line">
-          cue.app/app/submissions
+          cue.app/app
         </span>
       </div>
       <div className="flex">
@@ -282,9 +310,7 @@ function MockScreenshot() {
           {["Command center", "Submissions", "Review", "Speakers", "Schedule", "Content", "Publish"].map((item, i) => (
             <div
               key={item}
-              className={`mb-1 rounded-lg px-2 py-1.5 text-[12px] ${
-                i === 1 ? "bg-ink text-white" : "text-mid"
-              }`}
+              className={`mb-1 rounded-lg px-2 py-1.5 text-[12px] ${i === 0 ? "bg-ink text-white" : "text-mid"}`}
             >
               {item}
             </div>
@@ -292,57 +318,141 @@ function MockScreenshot() {
         </aside>
         <div className="min-w-0 flex-1 p-4 sm:p-5">
           <div className="mb-4 flex flex-wrap items-end justify-between gap-2">
-            <div>
-              <h3 className="text-base font-semibold tracking-tight">All submissions</h3>
-              <p className="text-[12px] text-mid">AI Engineer Summit · Round 2</p>
+            <div className="min-w-0">
+              <h3 className="truncate text-base font-semibold tracking-tight">Command center</h3>
+              <p className="truncate text-[12px] text-mid">AI Engineer Summit · Round 2 · 41 days out</p>
             </div>
             <div className="flex gap-2">
-              <span className="rounded-lg px-2.5 py-1 text-[11px] text-mid ring-1 ring-line">Filter</span>
+              <span className="rounded-lg px-2.5 py-1 text-[11px] text-mid ring-1 ring-line">Round 2</span>
               <span className="rounded-lg bg-ink px-2.5 py-1 text-[11px] text-white">Assign reviewers</span>
             </div>
           </div>
-          <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+
+          {/* Stat cards */}
+          <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
             {[
               { label: "Submitted", value: "184" },
               { label: "Reviewed", value: "121" },
               { label: "Accepted", value: "38" },
               { label: "Avg score", value: "3.9" },
             ].map((s) => (
-              <div key={s.label} className="rounded-xl border border-line bg-white p-3">
-                <div className="text-[11px] uppercase tracking-wide text-mid">{s.label}</div>
+              <div key={s.label} className="min-w-0 rounded-xl border border-line bg-white p-3">
+                <div className="truncate text-[11px] uppercase tracking-wide text-mid">{s.label}</div>
                 <div className="mt-1 text-xl font-semibold tracking-tight">{s.value}</div>
               </div>
             ))}
           </div>
-          <div className="overflow-hidden rounded-xl border border-line">
-            <table className="w-full table-fixed text-left text-[12px]">
-              <thead className="bg-soft text-[11px] uppercase tracking-wide text-mid">
-                <tr>
-                  <th className="px-3 py-2 font-medium">Title</th>
-                  <th className="hidden px-3 py-2 font-medium sm:table-cell">Speaker</th>
-                  <th className="hidden px-3 py-2 font-medium md:table-cell">Track</th>
-                  <th className="px-3 py-2 font-medium">Status</th>
-                  <th className="hidden px-3 py-2 text-right font-medium sm:table-cell">Score</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((r) => (
-                  <tr key={r.title} className="border-t border-line">
-                    <td className="truncate px-3 py-2.5 font-medium text-ink">{r.title}</td>
-                    <td className="hidden truncate px-3 py-2.5 text-mid sm:table-cell">{r.speaker}</td>
-                    <td className="hidden truncate px-3 py-2.5 text-mid md:table-cell">{r.track}</td>
-                    <td className="px-3 py-2.5">
-                      <span
-                        className={`inline-block truncate rounded-full px-2 py-0.5 text-[10px] ring-1 ${statusTone[r.status]}`}
-                      >
-                        {r.status}
-                      </span>
-                    </td>
-                    <td className="hidden px-3 py-2.5 text-right tabular-nums text-mid sm:table-cell">{r.score}</td>
-                  </tr>
+
+          {/* Module tiles */}
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            <ModuleTile icon={IconDoc} title="Call for papers" value="Open" support="184 submissions · closes Mar 14">
+              <div className="mt-2 flex flex-wrap gap-1">
+                <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] text-indigo-700 ring-1 ring-indigo-200">
+                  3 forms live
+                </span>
+                <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] text-neutral-600 ring-1 ring-neutral-200">
+                  2 boards routed
+                </span>
+              </div>
+            </ModuleTile>
+
+            <ModuleTile icon={IconScale} title="Review" value="121 / 184" support="Round 2 · 14 reviewers active">
+              <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-neutral-100">
+                <div className="h-full rounded-full bg-indigo-500" style={{ width: "66%" }} />
+              </div>
+            </ModuleTile>
+
+            <ModuleTile icon={IconUsers} title="Speakers" value="34 confirmed" support="41 invited · 7 awaiting reply">
+              <div className="mt-2 flex -space-x-1.5">
+                {initials.map((n) => (
+                  <span
+                    key={n}
+                    className="grid h-6 w-6 place-items-center rounded-full bg-soft text-[9px] font-medium text-mid ring-1 ring-line"
+                  >
+                    {n}
+                  </span>
                 ))}
-              </tbody>
-            </table>
+                <span className="grid h-6 w-6 place-items-center rounded-full bg-ink text-[9px] font-medium text-white ring-1 ring-ink">
+                  +29
+                </span>
+              </div>
+            </ModuleTile>
+
+            <ModuleTile icon={IconCalendar} title="Schedule" value="38 sessions placed" support="4 rooms · 2 days · 2 conflicts resolved">
+              <div className="mt-2 flex gap-1">
+                {[3, 5, 4, 6, 5, 4, 2].map((n, i) => (
+                  <span
+                    key={i}
+                    className={`h-6 flex-1 rounded-sm ${i === 3 ? "bg-indigo-500" : "bg-neutral-200"}`}
+                    style={{ opacity: 0.4 + n / 10 }}
+                  />
+                ))}
+              </div>
+            </ModuleTile>
+
+            <ModuleTile icon={IconUpload} title="Content" value="12 awaiting approval" support="Slides v3 · headshots 31 / 34 received">
+              <div className="mt-2 flex flex-wrap gap-1">
+                <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] text-amber-700 ring-1 ring-amber-200">
+                  9 slide decks
+                </span>
+                <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] text-neutral-600 ring-1 ring-neutral-200">
+                  3 bios
+                </span>
+              </div>
+            </ModuleTile>
+
+            <ModuleTile icon={IconMail} title="Communications" value="Acceptances sent" support="38 recipients · 0 failures">
+              <div className="mt-2 flex flex-wrap gap-1">
+                <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] text-indigo-700 ring-1 ring-indigo-200">
+                  2 reminders scheduled
+                </span>
+              </div>
+            </ModuleTile>
+
+            <ModuleTile
+              icon={IconGlobe}
+              title="Publish & widgets"
+              value="26 / 38 published"
+              support="Sessions, speakers, agenda, itinerary, gallery"
+            >
+              <div className="mt-2 flex flex-wrap gap-1">
+                <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] text-emerald-700 ring-1 ring-emerald-200">
+                  Widgets live
+                </span>
+                <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] text-neutral-600 ring-1 ring-neutral-200">
+                  Synced to Accelevents
+                </span>
+              </div>
+            </ModuleTile>
+
+            {/* Recent submissions, compact */}
+            <div className="min-w-0 rounded-xl border border-line bg-white p-3 sm:col-span-2">
+              <div className="flex items-center gap-2">
+                <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-soft text-ink ring-1 ring-line">
+                  <IconGrid className="h-3.5 w-3.5" />
+                </span>
+                <span className="truncate text-[11px] font-medium uppercase tracking-wide text-mid">
+                  Recent submissions
+                </span>
+              </div>
+              <table className="mt-2 w-full table-fixed text-left text-[12px]">
+                <tbody>
+                  {rows.map((r) => (
+                    <tr key={r.title} className="border-t border-line first:border-t-0">
+                      <td className="truncate py-2 pr-2 font-medium text-ink">{r.title}</td>
+                      <td className="hidden w-28 truncate py-2 pr-2 text-mid md:table-cell">{r.track}</td>
+                      <td className="w-32 py-2 text-right">
+                        <span
+                          className={`inline-block max-w-full truncate rounded-full px-2 py-0.5 text-[10px] ring-1 ${statusTone[r.status]}`}
+                        >
+                          {r.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       </div>
