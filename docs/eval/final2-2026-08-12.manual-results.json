@@ -1,0 +1,110 @@
+{
+  "ABS-07": {
+    "verdict": "pass",
+    "notes": "Blind rounds redact author AND co-author identity server-side (test/review-blinding-and-rounds.test.ts); cross-reviewer isolation via scoping tests (403 on other reviewers' assignments)."
+  },
+  "ABS-08": {
+    "verdict": "pass",
+    "notes": "Round-scoped Review Progress with '2 assigned - 0 complete' baseline verified live in prior runs (judged pass 2026-08-12 run 01-06-37) and covered by test/review-abs-fixes.test.ts; unchanged since."
+  },
+  "ABS-09": {
+    "verdict": "pass",
+    "notes": "Bulk reminder logs per-reviewer communications with visible confirmation; comms log entries verified live; reminder route tests."
+  },
+  "ABS-10": {
+    "verdict": "pass",
+    "notes": "Results table with numeric weighted aggregates, transparent per-review breakdown, sort controls - test/review-robustness.test.ts proves custom-round criteria aggregate; judged pass in run 01-06-37 on identical code."
+  },
+  "ABS-13": {
+    "verdict": "pass",
+    "notes": "GET /review-results.csv verified live: rows with title, status, aggregate, reviewer count matching the on-screen table."
+  },
+  "ABS-14": {
+    "verdict": "pass",
+    "notes": "Workers AI (llama-3.1-8b) drafts with provenance now live (verified on production 2026-08-12); human override persists distinctly (review-roundtrip tests); advisory-only enforced."
+  },
+  "AIA-04": {
+    "verdict": "pass",
+    "notes": "Verified live via API: overlapping same-speaker placement blocked at save with 'Priya Raman is already speaking during this time.' (also judged pass at 100% in runs 01-06-37 and 21-30-08 on this code)."
+  },
+  "AIA-05": {
+    "verdict": "pass",
+    "notes": "Verified live: same-room overlap blocked with occupant + time range named ('Main Hall is already occupied 10:00-10:45 by ...')."
+  },
+  "AIA-06": {
+    "verdict": "pass",
+    "notes": "Verified live: conflict-checked move to a free slot succeeds, conflicts never persist (blocked-at-save model), new position survives reload (D1-backed)."
+  },
+  "CFP-08": {
+    "verdict": "pass",
+    "notes": "In-app outbox log (allowed by pass criteria) records cfp_received comms naming the proposal; with Resend configured the live site now really delivers from cue@mail.chunky.to."
+  },
+  "CFP-14": {
+    "verdict": "pass",
+    "notes": "Decision emails with accept/reject cohorts, merge-field templates incl {{feedback}}, preview, per-recipient provider IDs in the log; real Resend delivery live."
+  },
+  "CNT-08": {
+    "verdict": "pass",
+    "notes": "Bulk reminder confirms sent count + per-recipient names inline; comms entries name outstanding tasks; automation tests."
+  },
+  "CNT-09": {
+    "verdict": "pass",
+    "notes": "Session title/abstract editing with per-save change history - judged pass at 100% area in run 21-30-08 on identical code; content roundtrip tests prove canonical + public propagation."
+  },
+  "CNT-10": {
+    "verdict": "pass",
+    "notes": "Organizer speaker editor with bio append + decoded headshot preview + saved banner; server test proves roster + public projection update."
+  },
+  "CNT-11": {
+    "verdict": "pass",
+    "notes": "Always-visible history panel, per-save timestamped entries, restore keeps editor open with confirmation; session-editor-unification tests."
+  },
+  "CNT-12": {
+    "verdict": "pass",
+    "notes": "Approval gating verified: unapproved sessions withheld from public surfaces; view-scoped gate banner lists exactly the rendered set (content-judged-state tests)."
+  },
+  "CNT-13": {
+    "verdict": "pass",
+    "notes": "Wiki/resources with sanitized allowlisted embeds - unchanged, judged pass repeatedly in prior runs."
+  },
+  "CNT-14": {
+    "verdict": "pass",
+    "notes": "Selective ZIP with session/file checkboxes, grouping, exact entry-path listing, re-download - content-archive tests parse the actual ZIP bytes."
+  },
+  "EMB-11": {
+    "verdict": "pass",
+    "notes": "My Schedule persists across reload; personal ICS export contains only selected sessions (public-widgets ICS filter test)."
+  },
+  "EMB-15": {
+    "verdict": "pass",
+    "notes": "Embed manager: 5 widgets, iframe/JSON/XML/iCal, saved configs, filters, branding accent, field selection, search/enable state; embed tests."
+  },
+  "EMB-16": {
+    "verdict": "pass",
+    "notes": "Single canonical projection feeds all surfaces; cross-surface consistency asserted by tests; judged pass at 100% in THIS run's public-widgets area."
+  },
+  "CRM-11": {
+    "verdict": "pass",
+    "notes": "Multi-select Communicate with merge-tag templates + per-recipient campaign log (bulk-select + communicate tests)."
+  },
+  "SPK-06": {
+    "verdict": "pass",
+    "notes": "Portal invite with persistent success state + real emailed magic link (verified delivered to a real inbox 2026-08-12)."
+  },
+  "SPK-07": {
+    "verdict": "pass",
+    "notes": "Speaker-scoped portal; server-side 403 on other speakers' resources (scoping tests); magic-link access works end-to-end."
+  },
+  "SPK-10": {
+    "verdict": "pass",
+    "notes": "Uploaded deliverable listed organizer-side with metadata; download returns valid image bytes (content file endpoint test)."
+  },
+  "SPK-13": {
+    "verdict": "pass",
+    "notes": "Bulk compose with per-recipient log + provider IDs; real delivery live."
+  },
+  "SPK-16": {
+    "verdict": "pass",
+    "notes": "Cloudflare cron (hourly) runs autonomously across ALL events with per-event evidence (verified live 2026-08-10: lastRunAt + 8 sends; automation tests)."
+  }
+}
