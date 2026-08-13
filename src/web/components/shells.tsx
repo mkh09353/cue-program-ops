@@ -33,6 +33,7 @@ import {
 import { cn, EVENT_NAME, type Persona, type Role } from "../lib/utils";
 import { Button } from "./ui";
 import { CommandPalette, CommandPaletteButton } from "./CommandPalette";
+import { signOut, useSession } from "../lib/auth";
 import {
   getActiveEvent,
   getEventCatalog,
@@ -319,6 +320,55 @@ function PersonaSwitcher({ lockRole }: { lockRole?: Role }) {
   );
 }
 
+/**
+ * Signed-in identity for the shell headers.
+ *
+ * Session identity (real `cue_session` cookie) is shown when it exists and is
+ * preferred over the demo persona label; the persona switcher stays mounted
+ * beside it because header-based demo simulation still works with no session.
+ */
+function SessionBadge({ compact = false }: { compact?: boolean }) {
+  const { session, status } = useSession();
+  const navigate = useNavigate();
+  const [busy, setBusy] = useState(false);
+
+  if (status === "unknown" || status === "loading") return null;
+  if (!session) {
+    return (
+      <Button asChild size="sm" variant="outline" data-testid="sign-in-link">
+        <a href="/login">Sign in</a>
+      </Button>
+    );
+  }
+  return (
+    <div className="flex min-w-0 items-center gap-2" data-testid="session-user">
+      <div className="min-w-0 text-right">
+        <div className="truncate text-xs font-semibold text-ink" title={`${session.user.name} · ${session.user.email}`}>
+          {session.user.name}
+        </div>
+        {compact ? null : <div className="truncate text-[11px] text-mid">{session.user.email}</div>}
+      </div>
+      <Button
+        size="sm"
+        variant="ghost"
+        data-testid="sign-out"
+        disabled={busy}
+        onClick={async () => {
+          setBusy(true);
+          try {
+            await signOut();
+            navigate("/login");
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        {busy ? "Signing out…" : "Sign out"}
+      </Button>
+    </div>
+  );
+}
+
 function Brand({ subtitle = "Conference ops", compact = false }: { subtitle?: string; compact?: boolean }) {
   return (
     <div className="flex items-center gap-2">
@@ -518,6 +568,7 @@ export function OrganizerShell() {
             <div className="flex items-center gap-2">
               <CommandPaletteButton onClick={() => setPaletteOpen(true)} />
               <PersonaSwitcher />
+              <SessionBadge />
             </div>
           </header>
           <main id="main" className="flex-1 p-4 sm:p-6"><div className="mx-auto w-full max-w-[1400px]">
@@ -642,6 +693,7 @@ export function ReviewerShell() {
         <div className="flex items-center gap-2">
           <EventSwitcher readOnly />
           <PersonaSwitcher lockRole="reviewer" />
+          <SessionBadge compact />
         </div>
       </header>
       <main id="main" className="mx-auto max-w-5xl p-4 sm:p-6" key={personaKey}>
@@ -748,6 +800,7 @@ export function PortalShell() {
           <div className="flex items-center gap-2">
             <EventSwitcher readOnly />
             <PersonaSwitcher lockRole="speaker" />
+            <SessionBadge compact />
           </div>
         </div>
       </header>

@@ -28,6 +28,8 @@ import {
   ReviewerSubmissionPage,
 } from "./pages/PublicReviewerPages";
 import { restorePersonaFromSession } from "./lib/api";
+import { refreshSession } from "./lib/auth";
+import { LoginPage, SignupPage } from "./pages/AuthPages";
 import { AssignmentsPage, EvaluationPlanPage, ResultsPage, ReviewProgressPage } from "./pages/ReviewManagementPages";
 import { ContentPage } from "./pages/ContentPages";
 import { MarketingLandingPage } from "./pages/MarketingLandingPage";
@@ -41,6 +43,9 @@ import {
 } from "./pages/CrmPages";
 
 restorePersonaFromSession();
+// Resolve the real session cookie once at boot; shells and /login read the cache.
+// A missing session is the normal demo case and resolves to "anonymous".
+void refreshSession();
 
 function App() {
   return (
@@ -49,6 +54,8 @@ function App() {
       <Routes>
         <Route path="/" element={<MarketingLandingPage />} />
         <Route path="/demo" element={<DemoLandingPage />} />
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/signup" element={<SignupPage />} />
 
         <Route path="/app" element={<OrganizerShell />}>
           <Route index element={<CommandPage />} />

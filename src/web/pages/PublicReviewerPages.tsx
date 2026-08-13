@@ -81,9 +81,15 @@ export function DemoLandingPage() {
         </div>
 
         <section className="mt-10">
-          <h2 className="text-xs font-medium uppercase tracking-wide text-mid">Enter a role shell</h2>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-xs font-medium uppercase tracking-wide text-mid">Enter a role shell</h2>
+            <Link className="text-sm font-semibold text-ink underline" to="/login" data-testid="demo-sign-in-link">
+              Sign in with a real session →
+            </Link>
+          </div>
           <p className="mt-1 text-sm text-mid">
-            Persona headers simulate identity. Pick a card to land in the matching shell with seed data loaded.
+            Persona headers simulate identity — that is not authentication. Pick a card to land in the matching shell
+            with seed data loaded, or use <b>Sign in as …</b> for a real server session (cookie-backed).
           </p>
           <div className="mt-4 grid gap-4 lg:grid-cols-3">
             {(
@@ -132,6 +138,13 @@ export function DemoLandingPage() {
                       </Button>
                     ) : null}
                   </div>
+                  <Link
+                    className="mt-3 block rounded-[18px] border border-line bg-canvas px-3 py-2 text-center text-sm font-semibold text-ink hover:border-ink/20"
+                    to={`/login?demo=${shell.role}`}
+                    data-testid={`demo-session-${shell.role}`}
+                  >
+                    Sign in as {shell.title.toLowerCase()} (real session)
+                  </Link>
                 </Card>
               );
             })}

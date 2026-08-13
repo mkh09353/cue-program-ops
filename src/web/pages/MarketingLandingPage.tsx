@@ -475,7 +475,8 @@ export function MarketingLandingPage() {
             <a href="#widgets" className="transition hover:text-ink">Widgets</a>
           </nav>
           <div className="flex items-center gap-2">
-            <Link to="/demo" className="rounded-full px-3 py-2 text-[13px] text-mid transition hover:text-ink">
+            {/* Real cookie-session sign-in (with one-click demo entry on that page). */}
+            <Link to="/login" className="rounded-full px-3 py-2 text-[13px] text-mid transition hover:text-ink">
               Log in
             </Link>
             <Link
