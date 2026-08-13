@@ -209,7 +209,7 @@ const features: { title: string; blurb: string; icon: (p: IconProps) => ReactEle
   {
     title: "Speaker management",
     blurb:
-      "Accepted submissions become canonical sessions and speakers — onboarding tasks, deadlines and comms without re-entry.",
+      "Accepted submissions become canonical sessions and speakers: onboarding tasks, deadlines and comms without re-entry.",
     icon: IconUsers,
   },
   {
@@ -505,12 +505,12 @@ export function MarketingLandingPage() {
               Make some <span className="ruckus-noise">noise</span> about your Call for Papers, speakers, sessions and content
             </h1>
             <p className="mx-auto mt-5 max-w-2xl text-base text-neutral-600 sm:text-lg">
-              Ruckus runs the whole program loop out loud — Call for Papers (CFP), abstract review, speaker
-              onboarding, a conflict-aware agenda and public widgets — on canonical data you own. Open
-              source, free to run, fork and inspect.
+              Ruckus runs the whole program loop out loud: Call for Papers (CFP), abstract review, speaker
+              onboarding, a conflict-aware agenda and public widgets, all on canonical data you own.
+              Open source, free to run, fork and inspect.
             </p>
             <p className="mx-auto mt-3 max-w-2xl font-mono text-[13px] text-ruckus-700 sm:text-sm">
-              Oh — and there’s a CLI, so your agent can run the whole thing for you.
+              Oh, and there’s a CLI. Your agent can run the whole thing for you.
             </p>
             <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
               <Link
@@ -593,7 +593,7 @@ export function MarketingLandingPage() {
               The modules a program team actually runs
             </h2>
             <p className="mt-3 text-neutral-600">
-              Every module below is implemented in the demo — rules are enforced on the server, not just
+              Every module below is implemented in the demo, and rules are enforced on the server, not just
               in the UI.
             </p>
           </div>
@@ -650,7 +650,7 @@ export function MarketingLandingPage() {
             </h2>
             <p className="mt-3 text-neutral-600">
               Responsive, iframe-ready pages for sessions, speakers, agenda, itinerary and the speaker
-              gallery — plus JSON and iCal feeds. All of them read published records only.
+              gallery, plus JSON and iCal feeds. All of them read published records only.
             </p>
             <div className="mt-6 flex flex-wrap gap-3">
               <a
@@ -707,7 +707,7 @@ export function MarketingLandingPage() {
             Ready to make a ruckus?
           </h2>
           <p className="relative mx-auto mt-3 max-w-xl text-[15px] text-ruckus-100">
-            The demo is open and writable — submit to the CFP, score an abstract, accept it, and watch
+            The demo is open and writable: submit to the CFP, score an abstract, accept it, and watch
             the session, speaker and public widgets update in step.
           </p>
           <div className="relative mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
@@ -734,7 +734,7 @@ export function MarketingLandingPage() {
             <RuckusWordmark showTagline />
             <p className="mt-3 max-w-md text-[12px] text-mid">
               Ruckus is open-source conference management, MIT licensed. This site is a public demo
-              running on seeded data — no accounts, no billing, no customer data.
+              running on seeded data. No accounts, no billing, no customer data.
             </p>
           </div>
           <div className="flex flex-wrap gap-5 text-[13px] text-mid">
