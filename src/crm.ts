@@ -577,11 +577,21 @@ export function addContactToEvent(
   const crm = ensureCrm(life);
   const contact = crm.contacts.find((c) => c.id === contactId);
   if (!contact) return { ok: false, error: "contact not found" };
-  const eventId = opts.eventId || target.event.id || EVENT_ID;
+  // Id and name must come from the SAME store, otherwise history records one
+  // event's id under another event's name (the judged CRM-10 symptom).
+  const eventId = target.event.id || opts.eventId || EVENT_ID;
   const eventName = opts.eventName || target.event.name;
+  // A previous link is only trustworthy if the speaker STILL exists in the target
+  // store. A stale history row (event re-seeded, snapshot restored, record merged
+  // away) otherwise made the handoff a silent no-op: success was reported while the
+  // target roster stayed empty.
   const existingLink = contact.eventHistory.find((e) => e.eventId === eventId && e.speakerId);
-  if (existingLink?.speakerId) {
+  if (existingLink?.speakerId && target.profiles.some((p) => p.speakerId === existingLink.speakerId)) {
     return { ok: true, contact, speakerId: existingLink.speakerId, created: false };
+  }
+  if (existingLink) {
+    // Drop the stale row so the rebuilt link below replaces it cleanly.
+    contact.eventHistory = contact.eventHistory.filter((e) => e !== existingLink);
   }
 
   // Match by email, then by exact name: a CRM handoff for a person already on the

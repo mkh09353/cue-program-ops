@@ -141,7 +141,15 @@ export function createCrmRoutes(deps: {
     const b = await c.req.json().catch(() => ({}));
     // The CRM is org-level, so a handoff may target ANY event. Resolve the
     // destination event's own lifecycle store; contacts stay org-level.
-    const target: LifecycleStore = (b.eventId ? getEventStore(String(b.eventId)) : undefined) || deps.store;
+    //
+    // A requested event that cannot be resolved must FAIL, never fall back to the
+    // active store: the silent fallback created the speaker in AI Engineer Summit
+    // while reporting success for DevFlow, so the target roster stayed empty and
+    // the contact history recorded the wrong event name.
+    const requestedEventId = b.eventId ? String(b.eventId) : "";
+    const resolved = requestedEventId ? getEventStore(requestedEventId) : undefined;
+    if (requestedEventId && !resolved) return fail(c, `event not found: ${requestedEventId}`, 404);
+    const target: LifecycleStore = resolved || deps.store;
     const targetId = target.event.id;
     // Snapshot the event that actually changed, then restore the caller's context.
     const persistTarget = async () => {
