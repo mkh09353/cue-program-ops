@@ -1,3 +1,6 @@
+// `React` is imported by name (as in components/ui.tsx) so exported components in
+// this file also render under the classic JSX runtime used by the node tests.
+import * as React from "react";
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api, subscribeData } from "../lib/api";
@@ -14,16 +17,74 @@ import {
   toast,
 } from "../components/ui";
 
+/**
+ * The lifecycle endpoint links to organizer paths that predate the current SPA
+ * route names (/app/agenda, /app/cfp, /app/reviews). Map them onto the routes
+ * that actually exist so no checklist step is a dead end. Unknown hrefs pass
+ * through unchanged.
+ */
+const LIFECYCLE_HREFS: Record<string, string> = {
+  "/app/agenda": "/app/schedule",
+  "/app/cfp": "/app/forms",
+  "/app/reviews": "/app/review-progress",
+};
+export const lifecycleHref = (href: string) => LIFECYCLE_HREFS[href] || href || "/app";
+
+/** Program lifecycle checklist: ordered, server-derived steps with "N of 7 complete". */
+export function LifecycleChecklistCard({ steps }: { steps: any[] }) {
+  const done = steps.filter((s) => s.done).length;
+  return (
+    <Card className="p-5" data-testid="lifecycle-checklist">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-xs font-bold uppercase tracking-wider text-mid">Program lifecycle</h2>
+        <Badge tone={done === steps.length ? "ok" : "muted"} data-testid="lifecycle-progress">
+          {done} of {steps.length} complete
+        </Badge>
+      </div>
+      <ol className="mt-3 divide-y divide-line">
+        {steps.map((step: any) => (
+          <li key={step.id} className="flex items-start justify-between gap-3 py-3" data-testid={`lifecycle-step-${step.id}`}>
+            <div className="flex min-w-0 items-start gap-3">
+              <span
+                aria-hidden
+                className={
+                  step.done
+                    ? "mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full bg-ink text-[11px] font-bold text-soft"
+                    : "mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full border border-line text-[11px] text-mid"
+                }
+              >
+                {step.done ? "✓" : ""}
+              </span>
+              <div className="min-w-0">
+                <div className="text-sm font-medium text-ink">
+                  {step.title}
+                  <span className="sr-only">{step.done ? " — complete" : " — not complete"}</span>
+                </div>
+                <div className="text-xs text-mid">{step.detail}</div>
+              </div>
+            </div>
+            <Link className="shrink-0 text-xs font-semibold text-ink underline" to={lifecycleHref(step.href)}>
+              Open
+            </Link>
+          </li>
+        ))}
+      </ol>
+    </Card>
+  );
+}
+
 export function CommandPage() {
   const [data, setData] = useState<any>(null);
   const [err, setErr] = useState("");
   const [scheduleUnscheduled, setScheduleUnscheduled] = useState<number | null>(null);
+  const [lifecycle, setLifecycle] = useState<any[] | null>(null);
   const nav = useNavigate();
 
   const load = () =>
-    Promise.all([api.command(), api.schedule().catch(() => null)])
-      .then(([cmd, sched]) => {
+    Promise.all([api.command(), api.schedule().catch(() => null), api.lifecycle().catch(() => null)])
+      .then(([cmd, sched, life]) => {
         setData(cmd.data);
+        if (life) setLifecycle(life.data || []);
         if (sched) {
           const scheduled = new Set((sched.slots || []).map((x: any) => x.sessionId));
           const n = (sched.sessions || []).filter(
@@ -146,6 +207,7 @@ export function CommandPage() {
         </Card>
 
         <div className="space-y-4">
+          {lifecycle?.length ? <LifecycleChecklistCard steps={lifecycle} /> : null}
           <Card className="p-5">
             <h2 className="text-xs font-bold uppercase tracking-wider text-mid">Onboarding funnel</h2>
             <div className="mt-4 space-y-2 text-sm">

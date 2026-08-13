@@ -22,15 +22,24 @@ import {
   toast,
 } from "../components/ui";
 
-/** Where saved-embed presentation preferences live (see the note in the manager). */
-export const EMBED_PREFS_KEY = "cue-embed-prefs";
+/** Snippet formats persisted on the server embed config record. */
+export type EmbedSnippetFormat = "iframe" | "script" | "link";
+/** Legacy local names kept so existing callers/snapshots keep working. */
+export type EmbedSnippetFormatInput = EmbedSnippetFormat | "basic" | "styled";
+
+/** Normalize the historical basic/styled wording onto the server's enum. */
+export const normalizeSnippetFormat = (format?: string): EmbedSnippetFormat =>
+  format === "script" || format === "styled" ? "script" : format === "link" ? "link" : "iframe";
 
 /** Build the copyable snippet for a saved embed.
- * Basic = a bare iframe. Styled = iframe plus a scoped <style> block carrying the
- * organizer's custom CSS, so the format choice produces genuinely different output. */
-export function embedSnippet(input: { url: string; name: string; format: "basic" | "styled"; css?: string }) {
+ * iframe ("basic") = a bare iframe. script ("styled") = iframe plus a scoped <style>
+ * block carrying the organizer's custom CSS. link = the plain public URL, for tools
+ * that only accept a link. So the format choice produces genuinely different output. */
+export function embedSnippet(input: { url: string; name: string; format: EmbedSnippetFormatInput; css?: string }) {
   const iframe = `<iframe src="${input.url}" title="${input.name}" style="width:100%;min-height:640px;border:0"></iframe>`;
-  if (input.format !== "styled") return iframe;
+  const format = normalizeSnippetFormat(input.format);
+  if (format === "link") return input.url;
+  if (format !== "script") return iframe;
   const css = (input.css || "").trim() || ".cue-embed{border-radius:18px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.1)}";
   return `<style>\n${css}\n</style>\n<div class="cue-embed">\n  ${iframe}\n</div>`;
 }
@@ -45,18 +54,28 @@ export function PublishPage() {
   const [configSaved,setConfigSaved]=useState("");
   const [configBusy,setConfigBusy]=useState(false);
   const [configQuery,setConfigQuery]=useState("");
-  const [embedFormat,setEmbedFormat]=useState<"basic"|"styled">("basic");
+  const [embedFormat,setEmbedFormat]=useState<EmbedSnippetFormat>("iframe");
   const [customCss,setCustomCss]=useState("");
-  /** Presentation state for saved embeds (enabled flag, snippet format, custom CSS).
-   * The server's embed-config record does not carry these fields, so they are kept
-   * in this browser under EMBED_PREFS_KEY. See the note rendered next to the toggle. */
-  const [prefs,setPrefs]=useState<Record<string,{enabled:boolean;format:"basic"|"styled";css:string}>>(()=>{
-    try{return JSON.parse(localStorage.getItem(EMBED_PREFS_KEY)||"{}")}catch{return {}}
+  const [cssDrafts,setCssDrafts]=useState<Record<string,string>>({});
+  const [prefBusy,setPrefBusy]=useState("");
+  /** Presentation state (enabled flag, snippet format, custom CSS) now lives on the
+   * server embed-config record and is read straight off it — no browser storage, so
+   * every organizer of this event sees the same saved presentation. */
+  const prefFor=(c:any)=>({
+    enabled:c?.enabled!==false,
+    format:normalizeSnippetFormat(c?.snippetFormat),
+    css:String(c?.customCss||""),
   });
-  const prefFor=(id:string)=>prefs[id]||{enabled:true,format:"basic" as const,css:""};
-  const savePrefs=(next:Record<string,{enabled:boolean;format:"basic"|"styled";css:string}>)=>{
-    setPrefs(next);
-    try{localStorage.setItem(EMBED_PREFS_KEY,JSON.stringify(next))}catch{/* storage unavailable */}
+  /** Persist one presentation field, then adopt the server's normalized row. */
+  const savePref=async(id:string,patch:{enabled?:boolean;snippetFormat?:EmbedSnippetFormat;customCss?:string})=>{
+    setPrefBusy(id);
+    try{
+      const r=await api.patchEmbedConfig(id,patch);
+      setConfigs(prev=>prev.map(x=>x.id===id?r.data:x));
+    }catch(e:any){
+      toast(e?.message||"The server rejected that embed change","danger");
+      await loadConfigs();
+    }finally{setPrefBusy("")}
   };
   const loadConfigs=()=>api.embedConfigs().then(r=>setConfigs(r.data)).catch(()=>{});
   const configMatches=(c:any,q:string)=>{
@@ -66,7 +85,7 @@ export function PublishPage() {
     return [c.name,c.widget,filters].join(" ").toLowerCase().includes(needle);
   };
   const visibleConfigs=configs.filter(c=>configMatches(c,configQuery));
-  const enabledCount=configs.filter(c=>prefFor(c.id).enabled).length;
+  const enabledCount=configs.filter(c=>prefFor(c).enabled).length;
   const [facets,setFacets]=useState<{tracks:string[];formats:string[];rooms:string[];days:string[]}>({tracks:[],formats:[],rooms:[],days:[]});
   const origin = typeof window !== "undefined" ? window.location.origin : "";
 
@@ -165,9 +184,11 @@ export function PublishPage() {
                   // visible immediately on the first click, not after a later interaction.
                   setConfigs((prev:any[])=>prev.some(x=>x.id===r.data.id)?prev:[...prev,r.data]);
                   await loadConfigs();
-                  savePrefs({ ...prefs, [r.data.id]: { enabled: true, format: embedFormat, css: customCss } });
+                  // Presentation choices are persisted on the record itself, so the
+                  // new config carries them for every organizer, not just this browser.
+                  await savePref(r.data.id,{enabled:true,snippetFormat:embedFormat,customCss:customCss.trim()});
                   setConfigName("");
-                  setConfigSaved(`Saved "${r.data.name}" · ${r.data.widget} · ${embedFormat === "styled" ? "styled" : "basic"} snippet ready below`);
+                  setConfigSaved(`Saved "${r.data.name}" · ${r.data.widget} · ${embedFormat === "script" ? "styled" : embedFormat === "link" ? "link" : "basic"} snippet ready below`);
                   toast("Embed configuration saved");
                 }catch(e:any){setConfigErr(e?.message||"Save failed");toast(e?.message||"Save failed","danger")}
                 finally{setConfigBusy(false)}
@@ -176,9 +197,10 @@ export function PublishPage() {
           </div>
           <div className="mt-3 grid gap-2 md:grid-cols-2">
             <Field label="Snippet format" hint="Basic emits a bare iframe. Styled wraps it and applies your CSS.">
-              <Select aria-label="Embed snippet format" data-testid="embed-format" value={embedFormat} onChange={e=>setEmbedFormat(e.target.value as "basic"|"styled")}>
-                <option value="basic">Basic HTML (plain iframe)</option>
-                <option value="styled">Styled HTML (wrapper + custom CSS)</option>
+              <Select aria-label="Embed snippet format" data-testid="embed-format" value={embedFormat} onChange={e=>setEmbedFormat(e.target.value as EmbedSnippetFormat)}>
+                <option value="iframe">Basic HTML (plain iframe)</option>
+                <option value="script">Styled HTML (wrapper + custom CSS)</option>
+                <option value="link">Link only (plain public URL)</option>
               </Select>
             </Field>
             <Field label="Custom CSS" hint="Applied to the styled snippet only; scope rules to .cue-embed.">
@@ -207,7 +229,8 @@ export function PublishPage() {
           {configSaved?<Notice tone="ok" onClose={()=>setConfigSaved("")}>{configSaved}</Notice>:null}
           {configErr?<Notice tone="danger" onClose={()=>setConfigErr("")}>{configErr}</Notice>:null}
           <p className="mt-3 text-xs text-mid" data-testid="embed-prefs-note">
-            Enabled/disabled, snippet format and custom CSS are stored in this browser — the shared event record keeps name, widget, filters, branding and fields.
+            Enabled/disabled, snippet format and custom CSS are saved on the shared event record alongside name, widget,
+            filters, branding and fields — nothing is stored in this browser, so every organizer sees the same embeds.
           </p>
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <Input aria-label="Search saved embeds" data-testid="embed-search" placeholder="Search saved embeds by name, widget or filter" value={configQuery} onChange={e=>setConfigQuery(e.target.value)}/>
@@ -217,8 +240,9 @@ export function PublishPage() {
           {!configs.length?<p className="mt-2 text-sm text-mid" data-testid="embed-none-saved">No saved embeds yet — configure one above and click Save config.</p>:null}
           {visibleConfigs.map(c=>{
             const url=`${origin}/e/${EVENT_SLUG}/public/${c.widget}?config=${c.id}`;
-            const pref=prefFor(c.id);
+            const pref=prefFor(c);
             const snippet=embedSnippet({url,name:c.name,format:pref.format,css:pref.css});
+            const cssDraft=cssDrafts[c.id]??pref.css;
             const filterBits=[c.filters?.track&&`track: ${c.filters.track}`,c.filters?.format&&`format: ${c.filters.format}`,c.filters?.day&&`day: ${c.filters.day}`].filter(Boolean);
             return <div key={c.id} className="mt-3 rounded-[18px] bg-soft p-3 text-sm">
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -229,13 +253,28 @@ export function PublishPage() {
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge tone={pref.enabled?"ok":"muted"} data-testid={`embed-status-${c.id}`}>{pref.enabled?"Enabled":"Disabled"}</Badge>
-                  <Badge tone="muted">{pref.format==="styled"?"Styled HTML":"Basic HTML"}</Badge>
-                  <Button size="sm" variant="outline" data-testid={`embed-toggle-${c.id}`} onClick={()=>savePrefs({...prefs,[c.id]:{...pref,enabled:!pref.enabled}})}>{pref.enabled?"Disable":"Enable"}</Button>
+                  <Badge tone="muted">{pref.format==="script"?"Styled HTML":pref.format==="link"?"Link only":"Basic HTML"}</Badge>
+                  <Button size="sm" variant="outline" disabled={prefBusy===c.id} data-testid={`embed-toggle-${c.id}`} onClick={()=>void savePref(c.id,{enabled:!pref.enabled})}>{prefBusy===c.id?"Saving…":pref.enabled?"Disable":"Enable"}</Button>
                   <Button asChild size="sm" variant="ghost"><a href={url} target="_blank" rel="noreferrer">Open</a></Button>
                   <Button size="sm" variant="outline" onClick={async()=>{await api.deleteEmbedConfig(c.id);setConfigs(configs.filter(x=>x.id!==c.id))}}>Delete</Button>
                 </div>
               </div>
               <p className="mt-1 text-xs text-mid">{filterBits.length?filterBits.join(" · "):"No filters — full published program"}</p>
+              <div className="mt-2 grid gap-2 md:grid-cols-[220px_1fr_auto]">
+                <Field label="Snippet format">
+                  <Select aria-label={`Snippet format for ${c.name}`} data-testid={`embed-format-${c.id}`} value={pref.format} onChange={e=>void savePref(c.id,{snippetFormat:e.target.value as EmbedSnippetFormat})}>
+                    <option value="iframe">Basic HTML (plain iframe)</option>
+                    <option value="script">Styled HTML (wrapper + custom CSS)</option>
+                    <option value="link">Link only (plain public URL)</option>
+                  </Select>
+                </Field>
+                <Field label="Custom CSS">
+                  <Input aria-label={`Custom CSS for ${c.name}`} data-testid={`embed-css-${c.id}`} placeholder=".cue-embed{border-radius:18px}" value={cssDraft} onChange={e=>setCssDrafts(prev=>({...prev,[c.id]:e.target.value}))}/>
+                </Field>
+                <div className="flex items-center">
+                  <Button size="sm" variant="outline" disabled={prefBusy===c.id||cssDraft===pref.css} data-testid={`embed-css-save-${c.id}`} onClick={()=>void savePref(c.id,{customCss:cssDraft})}>Save CSS</Button>
+                </div>
+              </div>
               {c.fields?<p className="text-xs text-mid">Fields: {Object.entries(c.fields).filter(([,v])=>v).map(([k])=>k).join(", ")||"title only"}</p>:null}
               {pref.enabled
                 ? <code className="mt-1 block whitespace-pre-wrap break-all text-xs" data-testid={`embed-snippet-${c.id}`}>{snippet}</code>
@@ -1397,7 +1436,14 @@ export function SettingsPage() {
         api.schedule().catch(() => null),
         api.reviewRounds().catch(() => ({ data: [] as any[] })),
       ]);
-      return { event: b.data.event, schedule: s, rounds: rr?.data || [] };
+      return {
+        event: b.data.event,
+        // The server exposes the toggle both on the event record and in settings;
+        // settings wins because it applies the documented default (on).
+        speakerConfirmation: b.data.settings?.speakerConfirmation !== false,
+        schedule: s,
+        rounds: rr?.data || [],
+      };
     },
     [],
   );
@@ -1405,7 +1451,7 @@ export function SettingsPage() {
   useEffect(() => {
     const data = settings.data;
     if (!data) return;
-    setEvent(data.event);
+    setEvent({ ...data.event, speakerConfirmation: data.speakerConfirmation });
     if (data.schedule) {
       setRooms(data.schedule.rooms || []);
       setTracks(data.schedule.tracks || []);
@@ -1452,11 +1498,32 @@ export function SettingsPage() {
           <Field label="Timezone">
             <Input value={event.timezone} onChange={(e) => setEvent({ ...event, timezone: e.target.value })} />
           </Field>
+          <div className="mb-3 rounded-[18px] border border-line bg-soft p-3">
+            <label htmlFor="speaker-confirmation" className="flex cursor-pointer items-start gap-3">
+              <input
+                id="speaker-confirmation"
+                type="checkbox"
+                className="mt-1"
+                data-testid="speaker-confirmation-toggle"
+                checked={event.speakerConfirmation !== false}
+                onChange={(e) => setEvent({ ...event, speakerConfirmation: e.target.checked })}
+              />
+              <span>
+                <b className="text-sm">Require speaker confirmation</b>
+                <span className="mt-1 block text-xs text-mid">
+                  On: an accepted speaker must confirm participation before they count as confirmed. Off: accepted
+                  speakers are auto-confirmed and skip that step. Saved on the event record with <b>Save</b>.
+                </span>
+              </span>
+            </label>
+          </div>
           <Button
             onClick={async () => {
               const r = await api.saveSettings(event);
-              setEvent(r.data);
-              toast("Settings saved");
+              setEvent({ ...r.data, speakerConfirmation: r.data?.speakerConfirmation !== false });
+              toast(
+                `Settings saved · speaker confirmation ${event.speakerConfirmation !== false ? "required" : "off (auto-confirm)"}`,
+              );
             }}
           >
             Save

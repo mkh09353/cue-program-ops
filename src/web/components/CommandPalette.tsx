@@ -35,6 +35,7 @@ export const ORGANIZER_PAGES: PaletteItem[] = [
   { id: "page-results", label: "Results", sublabel: "Scores and decisions", group: "Pages", to: "/app/results", keywords: "scores decisions accept reject export" },
   { id: "page-schedule", label: "Schedule", sublabel: "Agenda builder", group: "Pages", to: "/app/schedule", keywords: "agenda rooms tracks conflicts" },
   { id: "page-ai-agenda", label: "AI Agenda Builder", sublabel: "Advisory draft agenda", group: "Pages", to: "/app/schedule#ai-agenda", keywords: "ai agenda draft suggestions" },
+  { id: "page-sessions", label: "Sessions", sublabel: "Program roster, approvals, cancellations", group: "Pages", to: "/app/sessions", keywords: "sessions talks program approve cancel publication draft" },
   { id: "page-speakers", label: "Speakers", sublabel: "Roster and onboarding", group: "Pages", to: "/app/speakers", keywords: "roster onboarding readiness tasks" },
   { id: "page-crm", label: "Speaker CRM", sublabel: "Pipeline and outreach", group: "Pages", to: "/app/crm", keywords: "crm contacts pipeline segments campaigns" },
   { id: "page-content", label: "Content", sublabel: "Slides, headshots, approvals", group: "Pages", to: "/app/content", keywords: "files uploads slides headshots approvals" },

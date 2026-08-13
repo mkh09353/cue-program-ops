@@ -279,6 +279,7 @@ export function SubmissionsListPage() {
             <table className="w-full min-w-[720px] text-left text-sm">
               <thead className="border-b bg-soft text-[11px] uppercase tracking-wide text-mid">
                 <tr>
+                  <th className="px-4 py-3">Code</th>
                   <th className="px-4 py-3">Title</th>
                   <th className="px-4 py-3">Speaker</th>
                   <th className="px-4 py-3">Track</th>
@@ -291,6 +292,9 @@ export function SubmissionsListPage() {
               <tbody>
                 {enriched.map((s) => (
                   <tr key={s.id} className="border-b last:border-0 hover:bg-soft">
+                    <td className="px-4 py-3 font-mono text-xs" data-testid={`submission-code-${s.id}`}>
+                      {s.code || "—"}
+                    </td>
                     <td className="px-4 py-3">
                       <Link className="font-semibold text-ink hover:text-ink" to={`/app/submissions/${s.id}`}>
                         {s.title}
@@ -445,7 +449,7 @@ export function ReviewStudioPage() {
   return (
     <div>
       <PageHeader
-        title="Review Studio"
+        title={data.code ? `Review Studio · ${data.code}` : "Review Studio"}
         description="Human-only decisions. AI is advisory and never accepts a talk."
         actions={
           <Button variant="outline" onClick={() => nav("/app/submissions")}>
@@ -457,6 +461,11 @@ export function ReviewStudioPage() {
       <div className="grid gap-4 lg:grid-cols-2">
         <Card className="p-5">
           <div className="mb-3 flex flex-wrap items-center gap-2">
+            {data.code ? (
+              <Badge tone="muted" data-testid="submission-code">
+                {data.code}
+              </Badge>
+            ) : null}
             <StatusBadge status={data.status} />
             <Badge tone="primary">{data.category}</Badge>
             <Badge tone="muted">{data.format}</Badge>

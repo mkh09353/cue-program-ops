@@ -515,6 +515,13 @@ export const api = {
       slot: data?.slot,
     };
   },
+  /** Operational sessions roster: code, speakers, placement, publication + cancellation state. */
+  sessionsList: () => req<{data:any[];meta:{approved:number;draft:number;cancelled:number}}>(`/api/events/${EVENT_ID}/sessions-list`),
+  /** approve/unapprove flip publication eligibility; cancel takes an optional reason. */
+  setSessionState: (id:string,action:"approve"|"unapprove"|"cancel"|"uncancel",body?:{reason?:string}) =>
+    mut<{data:any}>(`/api/events/${EVENT_ID}/sessions/${id}/${action}`,{method:"POST",body:JSON.stringify(body||{})}),
+  /** Derived program lifecycle checklist (7 ordered steps with done + detail + href). */
+  lifecycle: () => req<{data:{id:string;title:string;done:boolean;detail:string;href:string}[]}>(`/api/events/${EVENT_ID}/lifecycle`),
   createScheduleSession:(body:any)=>mut<{data:any}>(`/api/events/${EVENT_ID}/schedule/sessions`,{method:"POST",body:JSON.stringify(body)}),
   updateScheduleSession:(id:string,body:any)=>mut<{data:any}>(`/api/events/${EVENT_ID}/schedule/sessions/${id}`,{method:"PATCH",body:JSON.stringify(body)}),
   agendaProposals: () => req<{data:any[]}>(`/api/events/${EVENT_ID}/agenda/proposals`),
@@ -528,6 +535,9 @@ export const api = {
     mut(`/api/events/${EVENT_ID}/settings`, { method: "PUT", body: JSON.stringify(body) }),
   embedConfigs:()=>req<{data:any[]}>(`/api/events/${EVENT_ID}/embed-configs`),
   createEmbedConfig:(body:any)=>mut<{data:any}>(`/api/events/${EVENT_ID}/embed-configs`,{method:"POST",body:JSON.stringify(body)}),
+  /** Server-persisted embed presentation: enabled, snippetFormat, sanitized customCss. */
+  patchEmbedConfig:(id:string,body:{enabled?:boolean;snippetFormat?:"iframe"|"script"|"link";customCss?:string;name?:string})=>
+    mut<{data:any}>(`/api/events/${EVENT_ID}/embed-configs/${id}`,{method:"PATCH",body:JSON.stringify(body)}),
   deleteEmbedConfig:(id:string)=>mut(`/api/events/${EVENT_ID}/embed-configs/${id}`,{method:"DELETE"}),
   syncPreview: () =>
     mut(`/sync/preview`, { method: "POST", body: JSON.stringify({ eventId: EVENT_ID }) }),

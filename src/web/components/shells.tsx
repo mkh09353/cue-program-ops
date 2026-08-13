@@ -450,6 +450,7 @@ const orgNav = [
   { to: "/app/results", label: "Results", icon: FileText },
   { to: "/app/schedule", label: "Schedule", icon: CalendarDays },
   { to: "/app/schedule#ai-agenda", label: "AI Agenda", icon: CalendarDays },
+  { to: "/app/sessions", label: "Sessions", icon: LayoutGrid },
   { to: "/app/speakers", label: "Speakers", icon: Users },
   { to: "/app/crm", label: "Speaker CRM", icon: ContactRound },
   { to: "/app/content", label: "Content", icon: FileText },
