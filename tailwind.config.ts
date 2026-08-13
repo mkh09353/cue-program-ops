@@ -23,8 +23,30 @@ const config: Config = {
         warn: "#171717",
         info: "#737373",
         ai: "#171717",
+        // Ruckus brand (marketing surfaces)
+        navy: {
+          DEFAULT: "#1E1B2E",
+          soft: "#2A2540",
+        },
+        ruckus: {
+          50: "#F5F3FF",
+          100: "#EDE9FE",
+          200: "#DDD6FE",
+          400: "#A78BFA",
+          500: "#8B5CF6",
+          600: "#7C3AED",
+          700: "#6D28D9",
+        },
       },
       fontFamily: {
+        display: [
+          '"Baloo 2"',
+          "ui-rounded",
+          '"SF Pro Rounded"',
+          "Geist",
+          "system-ui",
+          "sans-serif",
+        ],
         sans: [
           "Geist",
           "ui-sans-serif",
