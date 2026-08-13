@@ -1353,7 +1353,11 @@ export async function restoreSnapshot(deps: { repo: Repository; persistence: Sna
     // holds both an organizer and a reviewer persona keeps both.
     const seededOrganizers = seededStore.personas.filter((p) => p.role === "organizer");
     for (const seeded of seededOrganizers) {
-      if (!into.personas.some((p) => p.id === seeded.id)) into.personas.push(structuredClone(seeded));
+      const existing = into.personas.find((p) => p.id === seeded.id);
+      if (!existing) into.personas.push(structuredClone(seeded));
+      // Seed-owned org-* ids always carry the seed's identity: an older snapshot may
+      // hold a pre-rename copy (e.g. org-swyx as "Jordan Alvarez") that must update.
+      else { existing.name = seeded.name; existing.email = seeded.email; existing.role = seeded.role; }
     }
     // Optional CRM extension may not be present on older snapshots or on the typed store keys.
     const life = snapshot.lifecycle as typeof snapshot.lifecycle & { crm?: unknown };
