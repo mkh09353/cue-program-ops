@@ -3,6 +3,13 @@ import { upsertDeliverable } from "./content.js";
 
 export const EVENT_ID = "evt-ai-summit-2026";
 export const EVENT_SLUG = "ai-engineer-summit";
+/** Stable authentication-to-lifecycle links for one-click demo sessions. Passwords
+ * and tokens are deliberately not seed data; auth.ts creates only hashed secrets. */
+export const SEED_AUTH_IDENTITIES = [
+  { id: "user-demo-dana", email: "dana@demo.cue.dev", name: "Dana", role: "organizer", personaId: "org-swyx" },
+  { id: "user-demo-rey", email: "rey@demo.cue.dev", name: "Rey", role: "reviewer", personaId: "rev-ada" },
+  { id: "user-demo-maya", email: "maya@demo.cue.dev", name: "Maya", role: "speaker", personaId: "spk-sam", speakerId: "spk-sam" },
+] as const;
 
 export type Role = "organizer" | "reviewer" | "speaker";
 export type SubmissionStatus =

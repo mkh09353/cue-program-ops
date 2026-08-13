@@ -4,9 +4,31 @@ Base URLs: live `https://cue-program-ops.headley-max.workers.dev`; local `http:/
 
 The API is implemented with Hono in `src/app.ts` and `src/*Routes.ts`. JSON bodies use `Content-Type: application/json` unless noted. Event-scoped APIs support the seeded event `evt-ai-summit-2026`; unknown event IDs return 404 where enforced.
 
-## Identity and role labels
+## Authentication and identity
 
-This is a **demo identity system**, not production authentication:
+CUE has cookie-backed API authentication in addition to its legacy demo persona headers. Sessions use the `cue_session` HttpOnly, SameSite=Lax cookie; session identity takes precedence whenever that cookie is present. A bogus or expired cookie does not fall through to persona headers.
+
+| Method | Path | Description |
+|---|---|---|
+| POST | `/api/auth/signup` | Create a user, organization, owner membership and session from `{name,email,password}` |
+| POST | `/api/auth/login` | Verify email/password and create a session |
+| POST | `/api/auth/logout` | Revoke the current session and clear its cookie |
+| POST | `/api/auth/magic-link` | Issue and mail a short-lived sign-in link; the safe default `MockMailer` also returns an explicitly demo-only URL |
+| POST | `/api/auth/magic-link/consume` | Consume a one-time token and create a session |
+| GET | `/api/auth/me` | Return the authenticated user, organization memberships and event roles |
+| POST | `/api/auth/invitations` | Organization/event admin creates and mails an invitation |
+| POST | `/api/auth/invitations/accept` | Accept an invitation, creating a user if necessary, membership and session |
+| GET | `/api/auth/demo/:persona` | One-click session for `organizer`, `reviewer` or `speaker`; returns `/app`, `/r` or `/p` target |
+
+Seeded one-click identities are `dana@demo.cue.dev` (organizer), `rey@demo.cue.dev` (reviewer) and `maya@demo.cue.dev` (speaker). They intentionally have no seeded passwords; use the demo endpoints to create their sessions.
+
+`DEMO_PERSONA_HEADERS` controls the legacy `x-demo-persona` / `x-demo-role` escape hatch. It defaults to enabled so credential-free evaluator and existing test workflows continue to work. Headers are considered only when there is no session cookie. Set `DEMO_PERSONA_HEADERS=false` to ignore them; requests without a cookie retain the application's credential-free default-persona behavior.
+
+This is **not production-grade authentication or tenant isolation**. Passwords and opaque capabilities are cryptographically hashed, but auth records live in process memory and whole-event snapshots. Memory may reset or differ across Worker isolates, snapshot storage is not a normalized/concurrency-safe identity database, and organization/event records do not provide complete tenant isolation. The default-enabled demo persona headers are spoofable and must not be treated as an authorization boundary.
+
+## Role labels
+
+Legacy demo identity headers remain available by default:
 
 ```http
 x-demo-persona: org-swyx

@@ -13,6 +13,7 @@ export interface CueEnv {
   AIRTABLE_BASE_ID?: string;
   MAILER_API_KEY?: string;
   MAILER_FROM?: string;
+  DEMO_PERSONA_HEADERS?: string;
   DB?: D1Database;
   AI?: { run(model: string, input: Record<string, unknown>): Promise<unknown> };
 }
@@ -33,6 +34,7 @@ export class CueState extends DurableObject<CueEnv> {
         AIRTABLE_BASE_ID: env.AIRTABLE_BASE_ID,
         MAILER_API_KEY: env.MAILER_API_KEY,
         MAILER_FROM: env.MAILER_FROM,
+        DEMO_PERSONA_HEADERS: env.DEMO_PERSONA_HEADERS,
       };
       const repo = new MemoryRepository();
       const secondary = configuredPersistence(variables);
@@ -44,6 +46,7 @@ export class CueState extends DurableObject<CueEnv> {
         persistence,
         mailer: configuredMailer(variables),
         ai: env.AI,
+        demoPersonaHeaders: env.DEMO_PERSONA_HEADERS !== "false",
       });
       await restoreSnapshot({ repo, persistence }).catch((error) =>
         console.error("CUE Durable Object snapshot restore failed", error instanceof Error ? error.message : "unknown error"),

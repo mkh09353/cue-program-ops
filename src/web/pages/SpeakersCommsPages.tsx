@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { api, subscribeData } from "../lib/api";
-import { cn, formatStatus, humanizeMissing, taskTypeLabel } from "../lib/utils";
+import { api, getActiveEvent, subscribeData } from "../lib/api";
+import { cn, EVENT_SLUG, formatStatus, humanizeMissing, taskTypeLabel } from "../lib/utils";
+import { csvFilename, downloadCsv, toCsv } from "../lib/csv";
 import {
   Badge,
   Button,
@@ -90,6 +91,45 @@ const duplicateSuggestions = (rows: any[]) => {
       return ranked.slice(1).map((entry) => ({ primary: ranked[0]!.row, duplicate: entry.row }));
     });
 };
+
+/** CSV of the speakers currently listed (after search / status / readiness filters). */
+export function speakersCsv(rows: any[]): string {
+  return toCsv(
+    [
+      "speaker id",
+      "name",
+      "email",
+      "title",
+      "company",
+      "workflow status",
+      "readiness",
+      "readiness %",
+      "tasks completed",
+      "tasks total",
+      "files",
+      "sessions",
+      "missing",
+    ],
+    rows.map((s) => {
+      const tasks: any[] = s.tasks || [];
+      return [
+        s.speakerId,
+        s.name,
+        s.email,
+        s.title,
+        s.company,
+        formatStatus(s.workflowStatus || "accepted"),
+        formatStatus(s.readiness?.state || "not_ready"),
+        s.readiness?.pct ?? 0,
+        tasks.filter((t) => t.status === "completed").length,
+        tasks.length,
+        s.files?.length || 0,
+        s.sessions?.length || 0,
+        ((s.readiness?.missing || []) as string[]).map(humanizeMissing).join("; "),
+      ];
+    }),
+  );
+}
 
 export function SpeakersPage() {
   const [rows, setRows] = useState<any[]>([]);
@@ -204,6 +244,17 @@ export function SpeakersPage() {
         description="Event roster, onboarding progress, invitations, and task assignment."
         actions={
           <div className="flex flex-wrap gap-2">
+            <Button
+              variant="secondary"
+              data-testid="export-speakers-csv"
+              disabled={!rows.length}
+              onClick={() => {
+                downloadCsv(csvFilename("speakers", getActiveEvent().slug || EVENT_SLUG), speakersCsv(rows));
+                toast(`Exported ${rows.length} speaker${rows.length === 1 ? "" : "s"} to CSV`);
+              }}
+            >
+              Export CSV
+            </Button>
             <Button variant="secondary" onClick={() => setShowImport(true)}>
               Import CSV
             </Button>

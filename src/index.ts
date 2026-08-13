@@ -11,6 +11,7 @@ export interface Env extends CueEnv {
   AIRTABLE_BASE_ID?: string;
   MAILER_API_KEY?: string;
   MAILER_FROM?: string;
+  DEMO_PERSONA_HEADERS?: string;
   ASSETS: { fetch(request: Request): Promise<Response> };
   CUE_STATE: DurableObjectNamespace;
 }

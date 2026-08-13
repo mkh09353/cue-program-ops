@@ -56,6 +56,7 @@ import { createSpeakerRoutes } from "./speakerRoutes.js";
 import { blindSubmission } from "./review.js";
 import { createAgendaRoutes } from "./agendaRoutes.js";
 import { OPENAPI_CONTENT_TYPE, OPENAPI_PATH, OPENAPI_YAML } from "./openapi.js";
+import { authStore, createAuthRoutes, ensureSeededAuth, hydrateAuthState, renewalCookie, resolveSession, type AuthPrincipal } from "./auth.js";
 
 export interface AppDeps {
   repo?: Repository;
@@ -63,6 +64,7 @@ export interface AppDeps {
   persistence?: SnapshotPersistence;
   mailer?: Mailer;
   ai?: WorkersAiRunner;
+  demoPersonaHeaders?: boolean;
 }
 
 /** Narrow structural seam implemented by Cloudflare's AI binding and simple test stubs. */
@@ -131,8 +133,22 @@ async function workersAiDraft(ai: WorkersAiRunner | undefined, submission: Submi
 const fail = (c: any, message: string, status = 400) =>
   c.json({ error: { code: status === 404 ? "NOT_FOUND" : status === 403 ? "FORBIDDEN" : "VALIDATION_ERROR", message } }, status);
 
-/** Demo-only identity: a known persona id wins; legacy role header is retained for existing judge flows. */
-const personaOf = (c: any) => {
+/** A session cookie, including an invalid one, takes precedence over demo headers. */
+const personaOf = (c: any): (typeof store.personas)[number] => {
+  const principal = c.get("auth") as AuthPrincipal | undefined;
+  if (principal) {
+    const hint = principal.user.roleHints?.find((entry) => entry.personaId);
+    if (hint?.personaId) {
+      const linked = store.personas.find((persona) => persona.id === hint.personaId);
+      if (linked) return linked;
+    }
+    const eventRole = authStore.eventRoles.find((entry) => entry.userId === principal.user.id && entry.eventId === store.event.id)?.role;
+    const admin = authStore.orgMemberships.some((entry) => entry.userId === principal.user.id && (entry.role === "owner" || entry.role === "admin"));
+    const role = admin ? "organizer" : eventRole;
+    return { id: principal.user.id, role: role || "speaker", name: principal.user.name, email: principal.user.email, speakerId: hint?.speakerId };
+  }
+  if (c.get("authCookiePresent")) return { id: "anonymous", role: "speaker", name: "Anonymous", email: "" };
+  if (c.get("demoPersonaHeaders") === false) return resolveDemoPersona();
   const id = c.req.header("x-demo-persona");
   if (id) return resolveDemoPersona(id);
   const role = c.req.header("x-demo-role") as Role | undefined;
@@ -179,6 +195,7 @@ export function createApp(deps: AppDeps = {}) {
   const mailer = deps.mailer ?? new MockMailer();
   const sync = new SyncService(repo, client);
   const app = new Hono();
+  ensureSeededAuth();
   /** Save after mutations. Failures are observable but never roll back valid in-memory work. */
   const persist = async (intendedEventId = activeEventId(), intendedStore = store) => {
     const memory = repo as MemoryRepository & { exportSyncState?: () => CompetitionSnapshot["sync"]; getSchedule?: (id:string) => Promise<any> };
@@ -190,7 +207,7 @@ export function createApp(deps: AppDeps = {}) {
       // event pass their resolved pair so another request cannot redirect this save.
       const eventId = intendedEventId;
       const lifecycle = structuredClone(intendedStore);
-      await persistence.save({version:1,eventId,savedAt:new Date().toISOString(),lifecycle,schedule:await memory.getSchedule?.(eventId),sync:syncState || {links:[],runs:[],items:[]}});
+      await persistence.save({version:1,eventId,savedAt:new Date().toISOString(),lifecycle,schedule:await memory.getSchedule?.(eventId),sync:syncState || {links:[],runs:[],items:[]},auth:structuredClone(authStore)});
     } catch (error) { console.error("CUE snapshot persistence failed", error instanceof Error ? error.message : "unknown error"); }
   };
   const deliver = async (row: ReturnType<typeof sendTemplate>, life = store) => {
@@ -216,6 +233,18 @@ export function createApp(deps: AppDeps = {}) {
   // communications, calendar) are scoped by this header from the web client.
   // Path-based resolvers below run afterwards and always win.
   app.use("/api/*", async (c, next) => {
+    const hasSessionCookie = c.req.header("cookie")?.split(";").some((part) => part.trim().startsWith("cue_session=")) || false;
+    (c as any).set("authCookiePresent", hasSessionCookie);
+    (c as any).set("demoPersonaHeaders", deps.demoPersonaHeaders !== false);
+    const principal = await resolveSession(c.req.raw);
+    if (principal) {
+      (c as any).set("auth", principal);
+      if (principal.renewed) {
+        const cookie = renewalCookie(c.req.raw);
+        if (cookie) c.header("set-cookie", cookie);
+        await persist(EVENT_ID, getEventStore(EVENT_ID)!);
+      }
+    }
     const header = c.req.header("x-cue-event");
     if (header && hasEvent(header)) activateEvent(header);
     return next();
@@ -250,6 +279,7 @@ export function createApp(deps: AppDeps = {}) {
 
   // One deps object whose `store` getter resolves the ACTIVE event per request.
   const routeDeps = { get store() { return store; }, persist, persona: personaOf, mailer, repo };
+  app.route("/", createAuthRoutes({ mailer, persist: () => persist(EVENT_ID, getEventStore(EVENT_ID)!) }));
   app.route("/", createSpeakerRoutes(routeDeps));
   app.route("/api/events", createReviewRoutes(routeDeps));
   app.route("/", createContentRoutes(routeDeps));
@@ -1378,6 +1408,8 @@ export async function restoreSnapshot(deps: { repo: Repository; persistence: Sna
     if (eventId === EVENT_ID) {
       // Keep the exported singleton identity so existing lifecycle helpers continue to reference it.
       hydrate(store, snapshot);
+      hydrateAuthState(snapshot.auth);
+      ensureSeededAuth();
     } else {
       const record = recordFromStore(snapshot.lifecycle);
       const into = getEventStore(eventId) ?? createBlankStore(record);

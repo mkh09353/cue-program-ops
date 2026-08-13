@@ -32,6 +32,7 @@ import {
 } from "../lib/api";
 import { cn, EVENT_NAME, type Persona, type Role } from "../lib/utils";
 import { Button } from "./ui";
+import { CommandPalette, CommandPaletteButton } from "./CommandPalette";
 import {
   getActiveEvent,
   getEventCatalog,
@@ -412,6 +413,19 @@ export function OrganizerShell() {
   const currentPersona = usePersona();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  // Only ⌘/Ctrl+K is intercepted globally, so plain typing in any input while the
+  // palette is closed keeps its focus and its keystrokes.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key.toLowerCase() === "k" && (e.metaKey || e.ctrlKey) && !e.altKey) {
+        e.preventDefault();
+        setPaletteOpen((v) => !v);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
   if (currentPersona.role !== "organizer") {
     return (
       <div className="grid min-h-screen place-items-center bg-canvas p-6">
@@ -501,7 +515,10 @@ export function OrganizerShell() {
               <div className="hidden text-sm text-mid sm:block">Organizer workspace</div>
               <EventSwitcher />
             </div>
-            <PersonaSwitcher />
+            <div className="flex items-center gap-2">
+              <CommandPaletteButton onClick={() => setPaletteOpen(true)} />
+              <PersonaSwitcher />
+            </div>
           </header>
           <main id="main" className="flex-1 p-4 sm:p-6"><div className="mx-auto w-full max-w-[1400px]">
             <Outlet />
@@ -522,6 +539,7 @@ export function OrganizerShell() {
           </div>
         </div>
       ) : null}
+      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
     </div>
   );
 }

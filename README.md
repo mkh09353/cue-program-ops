@@ -71,9 +71,13 @@ Detailed clicks and expected states: **[docs/WALKTHROUGH.md](docs/WALKTHROUGH.md
 | Public program | `/e/:slug/public/{sessions,speakers,agenda,itinerary,gallery}` | Five responsive attendee/widget surfaces |
 | Public feeds | `/e/:slug/public/{feed.json,sessions.json,speakers.json,agenda.json,ics}` | Machine-readable and calendar output |
 
-## Demo personas—not production authentication
+## Authentication and demo personas
 
-The UI sends `x-demo-persona` / `x-demo-role` headers. Deep links align the persona with the shell. Server routes enforce the simulated role and speaker/reviewer scope, but headers are spoofable: this is **not authentication, authorization for untrusted users, or tenant isolation**.
+CUE exposes cookie-backed `/api/auth` endpoints for signup, login/logout, magic-link issue/consume, organization/event invitations and `/api/auth/me`. `GET /api/auth/demo/:persona` creates one-click organizer, reviewer or speaker sessions targeting `/app`, `/r` or `/p`. Seeded demo identities are **dana@demo.cue.dev**, **rey@demo.cue.dev**, and **maya@demo.cue.dev**; they have no seeded passwords and are entered through the one-click endpoints.
+
+Sessions use an HttpOnly `cue_session` cookie and take precedence over legacy `x-demo-persona` / `x-demo-role` headers whenever the cookie is present—even when it is invalid or expired. `DEMO_PERSONA_HEADERS` defaults to enabled for credential-free evaluator and existing test flows; set it to `false` to ignore those headers. No-cookie requests retain the existing default-persona demo behavior.
+
+This is **not production-grade authentication, authorization for untrusted tenants, or tenant isolation**. Password/session/link material is hashed, but auth state is process-memory state included in whole-event snapshots, not a normalized or concurrency-safe identity store. It may reset or diverge across Worker isolates. Demo persona headers are spoofable and enabled by default, so they are not an authorization boundary.
 
 Useful seeded personas include organizer **Swyx**, reviewer **Ada Reviewer**, and speakers **Sam Rivera** and **Ada Lovelace**.
 
@@ -121,7 +125,7 @@ npm run typecheck  # API + React TypeScript projects
 npm run build      # API compile + Vite production bundle
 ```
 
-Current verified run in this working tree: **230 tests passing**. Coverage includes CFP drafts/deadlines/conditional routing, review scoping and rounds, speaker management, versioned content, CRM, AI agenda persistence and canonical acceptance, schedule conflicts, public widgets, providers, sync, and end-to-end round trips. Run `npm test` for the authoritative current count.
+Current verified run in this working tree: **455 tests passing**. Coverage includes authentication/session persistence, CFP drafts/deadlines/conditional routing, review scoping and rounds, speaker management, versioned content, CRM, AI agenda persistence and canonical acceptance, schedule conflicts, public widgets, providers, sync, and end-to-end round trips. Run `npm test` for the authoritative current count.
 
 ## Bonus points, deliberately visible
 

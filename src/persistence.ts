@@ -2,13 +2,14 @@ import { AirtableTransport } from "./airtable.js";
 import { syncNormalizedAirtableRows } from "./airtableRows.js";
 import type { ScheduleProjection, SyncLink, SyncRun, SyncRunItem } from "./domain.js";
 import type { LifecycleStore } from "./lifecycle.js";
+import type { AuthState } from "./auth.js";
 
 /** One JSON record per event is intentionally a practical hackathon snapshot, not normalized production storage. */
 export const AIRTABLE_SNAPSHOT_SCHEMA = {
   table: "CUE Snapshots",
   fields: { externalId: "External ID", eventId: "Event ID", snapshot: "Snapshot", updatedAt: "Updated At" },
 } as const;
-export interface CompetitionSnapshot { version: 1; eventId: string; savedAt: string; lifecycle: LifecycleStore; schedule?: ScheduleProjection; sync: { links: SyncLink[]; runs: SyncRun[]; items: SyncRunItem[] }; }
+export interface CompetitionSnapshot { version: 1; eventId: string; savedAt: string; lifecycle: LifecycleStore; schedule?: ScheduleProjection; sync: { links: SyncLink[]; runs: SyncRun[]; items: SyncRunItem[] }; auth?: AuthState; }
 /** `listEventIds` is OPTIONAL so pre-multi-event implementations stay valid;
  * boot restores every event it reports, and falls back to the default id. */
 export interface SnapshotPersistence { load(eventId: string): Promise<CompetitionSnapshot | undefined>; save(snapshot: CompetitionSnapshot): Promise<void>; listEventIds?(): Promise<string[]>; }

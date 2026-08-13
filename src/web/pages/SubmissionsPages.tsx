@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api, getActiveEvent, setActiveEventId, subscribeData, subscribeEvent } from "../lib/api";
-import { averageScores } from "../lib/utils";
+import { averageScores, EVENT_SLUG, formatStatus } from "../lib/utils";
+import { csvFilename, downloadCsv, toCsv } from "../lib/csv";
 import {
   Badge,
   Button,
@@ -52,6 +53,51 @@ function inboxScore(s: any): string {
   const mean = Math.round((avgs.reduce((a, b) => a + b, 0) / avgs.length) * 10) / 10;
   const draftOnly = withScores.every((r) => r.status !== "submitted");
   return draftOnly ? `${mean} (draft)` : String(mean);
+}
+
+/** CSV of the rows currently visible in the inbox (after filter + form tabs). */
+export function submissionsCsv(rows: any[]): string {
+  return toCsv(
+    [
+      "id",
+      "code",
+      "title",
+      "status",
+      "track",
+      "review board",
+      "round",
+      "submitter",
+      "submitter email",
+      "co-presenters",
+      "average score",
+      "reviews submitted",
+      "decision email",
+      "decision email sent at",
+    ],
+    rows.map((s) => {
+      const participants: any[] =
+        s.participants || [{ name: s.name, role: "lead" }, ...(s.additionalSpeakers || [])];
+      const lead = participants.find((p) => p.role === "lead") || participants[0] || {};
+      const others = participants.filter((p) => p !== lead).map((p) => `${p.name} (${p.role})`);
+      const reviews: any[] = s.reviews || [];
+      return [
+        s.id,
+        s.code || s.id,
+        s.title,
+        formatStatus(s.status),
+        s.category,
+        s.reviewBoard,
+        s.round,
+        lead.name || s.name,
+        lead.email || s.email,
+        others.join("; "),
+        inboxScore(s),
+        reviews.filter((r) => r.status === "submitted").length,
+        s.decisionEmailAt ? "sent" : "not sent",
+        s.decisionEmailAt || "",
+      ];
+    }),
+  );
 }
 
 export function SubmissionsListPage() {
@@ -167,6 +213,20 @@ export function SubmissionsListPage() {
       <PageHeader
         title="Submissions"
         description="Inbox for CFP proposals. Open Review Studio to score, accept, or decline."
+        actions={
+          <Button
+            variant="secondary"
+            data-testid="export-submissions-csv"
+            disabled={!enriched.length}
+            onClick={() => {
+              const csv = submissionsCsv(enriched);
+              downloadCsv(csvFilename("submissions", getActiveEvent().slug || EVENT_SLUG), csv);
+              toast(`Exported ${enriched.length} submission${enriched.length === 1 ? "" : "s"} to CSV`);
+            }}
+          >
+            Export CSV
+          </Button>
+        }
       />
       {err ? (
         <Notice tone="danger">
