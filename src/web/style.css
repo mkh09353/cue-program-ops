@@ -95,3 +95,15 @@ a {
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+
+/* Ruckus brand accents */
+::selection {
+  background-color: #ddd6fe;
+  color: #1e1b2e;
+}
+
+.ruckus-brand :focus-visible {
+  outline: 2px solid #7c3aed;
+  outline-offset: 2px;
+  border-radius: 4px;
+}

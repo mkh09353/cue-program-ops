@@ -1,6 +1,6 @@
 import type { ReactElement, ReactNode } from "react";
 import { Link } from "react-router-dom";
-import { RuckusMascot, RuckusWordmark } from "../components/RuckusMascot";
+import { RuckusDuckMark, RuckusMascot, RuckusWordmark } from "../components/RuckusMascot";
 import { EVENT_SLUG } from "../lib/utils";
 
 /**
@@ -282,7 +282,7 @@ function MockScreenshot() {
   };
   const initials = ["DO", "MF", "PR", "TH", "AK"];
   return (
-    <div className="overflow-hidden rounded-2xl bg-white shadow-[0_20px_60px_-25px_rgba(15,23,42,0.35)] ring-1 ring-black/10">
+    <div className="overflow-hidden rounded-3xl bg-white shadow-[0_24px_70px_-30px_rgba(30,27,46,0.45)] ring-1 ring-navy/10">
       <div className="flex items-center gap-2 border-b border-line bg-soft px-4 py-2.5">
         <span className="h-2.5 w-2.5 rounded-full bg-neutral-300" />
         <span className="h-2.5 w-2.5 rounded-full bg-neutral-300" />
@@ -451,7 +451,7 @@ function MockScreenshot() {
 
 export function MarketingLandingPage() {
   return (
-    <div className="min-h-screen bg-white text-navy">
+    <div className="ruckus-brand min-h-screen bg-white text-navy">
       {/* Nav */}
       <header className="sticky top-0 z-20 border-b border-line/80 bg-white/85 backdrop-blur">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-5">
@@ -480,7 +480,7 @@ export function MarketingLandingPage() {
       {/* Hero + product mock inside a tinted panel */}
       <section className="px-4 pt-6 sm:px-5">
         <div
-          className="relative mx-auto max-w-6xl overflow-hidden rounded-[32px] bg-ruckus-50/70 px-5 pb-10 pt-14 sm:px-10 sm:pb-14 sm:pt-20"
+          className="relative mx-auto max-w-6xl overflow-hidden rounded-[32px] bg-ruckus-50/70 px-5 pb-10 pt-10 sm:px-10 sm:pb-14 sm:pt-14"
           style={{
             backgroundImage:
               "radial-gradient(rgba(124,58,237,0.18) 1px, transparent 1px)",
@@ -489,13 +489,13 @@ export function MarketingLandingPage() {
         >
           <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/50 via-transparent to-white/70" />
           <div className="relative mx-auto max-w-3xl text-center">
-            <RuckusMascot className="mx-auto mb-6 h-28 w-28 drop-shadow-sm sm:h-36 sm:w-36" />
+            <RuckusMascot className="mx-auto mb-4 h-24 w-24 drop-shadow-sm sm:h-32 sm:w-32" />
             <span className="inline-flex items-center gap-2 rounded-full bg-white/85 px-3.5 py-1.5 text-[12px] font-semibold text-ruckus-700 shadow-sm ring-1 ring-ruckus-200">
               <span className="h-1.5 w-1.5 rounded-full bg-ruckus-500" />
               Open-source conference management
             </span>
             <h1
-              className="mt-6 font-display text-4xl font-extrabold leading-[1.03] tracking-tight sm:text-6xl"
+              className="mt-5 font-display text-4xl font-extrabold leading-[1.03] tracking-tight sm:text-6xl"
               style={{ letterSpacing: "-0.03em" }}
             >
               Make some noise about your CFPs, speakers, sessions and content
@@ -524,10 +524,10 @@ export function MarketingLandingPage() {
             </p>
           </div>
 
-          <div className="relative mx-auto mt-12 max-w-5xl">
-            {/* Mascot peeking over the corner of the product mock */}
-            <RuckusMascot
-              className="absolute -top-10 right-2 z-10 hidden h-24 w-24 rotate-6 drop-shadow-md sm:block"
+          <div className="relative mx-auto mt-10 max-w-5xl">
+            {/* Duck mark peeking over the corner of the product mock */}
+            <RuckusDuckMark
+              className="absolute -top-7 right-6 z-10 hidden h-16 w-16 -rotate-6 drop-shadow-md sm:block"
               title=""
             />
             <MockScreenshot />
@@ -563,7 +563,7 @@ export function MarketingLandingPage() {
               </>
             );
             const cls =
-              "group flex flex-col rounded-3xl border border-line bg-white p-5 transition hover:-translate-y-0.5 hover:border-neutral-300 hover:shadow-card";
+              "group flex flex-col rounded-3xl border border-line bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-ruckus-200 hover:shadow-card";
             return d.external ? (
               <a key={d.title} href={d.href} className={cls}>
                 {body}
@@ -617,7 +617,7 @@ export function MarketingLandingPage() {
         </div>
         <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {workflow.map((w) => (
-            <div key={w.step} className="rounded-3xl border border-line bg-white p-5">
+            <div key={w.step} className="rounded-3xl border border-line bg-white p-5 shadow-sm">
               <div className="text-[12px] font-semibold tabular-nums text-ruckus-600">{w.step}</div>
               <h3 className="mt-2 text-base font-semibold tracking-tight">{w.title}</h3>
               <p className="mt-1.5 text-[13px] leading-relaxed text-neutral-600">{w.blurb}</p>
@@ -665,7 +665,7 @@ export function MarketingLandingPage() {
               <a
                 key={w.label}
                 href={w.href}
-                className="rounded-3xl border border-line bg-white p-4 transition hover:-translate-y-0.5 hover:border-neutral-300 hover:shadow-card"
+                className="rounded-3xl border border-line bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-ruckus-200 hover:shadow-card"
               >
                 <div className="text-[13px] font-semibold tracking-tight">{w.label}</div>
                 <div className="mt-1 text-[12px] text-neutral-600">{w.blurb}</div>
@@ -686,14 +686,14 @@ export function MarketingLandingPage() {
             }}
           />
           <RuckusMascot className="relative mx-auto mb-6 h-24 w-24" title="" />
-          <h2 className="mx-auto max-w-2xl font-display text-3xl font-extrabold tracking-tight sm:text-4xl" style={{ letterSpacing: "-0.03em" }}>
+          <h2 className="relative mx-auto max-w-2xl font-display text-3xl font-extrabold tracking-tight sm:text-4xl" style={{ letterSpacing: "-0.03em" }}>
             Ready to make a ruckus?
           </h2>
-          <p className="mx-auto mt-3 max-w-xl text-[15px] text-neutral-300">
+          <p className="relative mx-auto mt-3 max-w-xl text-[15px] text-ruckus-100">
             The demo is open and writable — submit to the CFP, score an abstract, accept it, and watch
             the session, speaker and public widgets update in step.
           </p>
-          <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
+          <div className="relative mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
             <Link
               to="/app"
               className="w-full rounded-full bg-white px-6 py-3 text-sm font-semibold text-navy transition hover:bg-ruckus-100 sm:w-auto"

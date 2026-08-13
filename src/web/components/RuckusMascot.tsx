@@ -10,6 +10,7 @@
 const INK = "#1E1B2E";
 const VIOLET = "#7C3AED";
 const VIOLET_DEEP = "#6D28D9";
+const VIOLET_DARK = "#5B21B6";
 const VIOLET_SOFT = "#A78BFA";
 const BILL = "#FBBF24";
 
@@ -36,47 +37,50 @@ export function RuckusMascot({
       <circle cx="120" cy="120" r="106" fill={VIOLET} stroke="none" />
       <circle cx="120" cy="120" r="106" stroke={VIOLET_SOFT} strokeWidth={3} opacity={0.55} />
 
+      {/* Sound bursts — radiating out of the megaphone mouth, on the bill side */}
+      <path d="M34 114c-5 3-6 8-5 13M28 104c-7 5-10 15-8 25" strokeWidth={6} stroke="#FFFFFF" />
+
       {/* Feet */}
-      <path d="M96 186c-2 10-8 14-16 16 6 6 18 7 26 2z" fill={BILL} />
-      <path d="M134 188c0 10 4 15 12 18-5 7-17 9-26 5z" fill={BILL} />
+      <path d="M104 186c-2 10-8 14-16 16 6 6 18 7 26 2z" fill={BILL} />
+      <path d="M138 188c0 10 4 15 12 18-5 7-17 9-26 5z" fill={BILL} />
 
       {/* Body */}
       <path d="M120 96c30 0 50 22 50 52 0 26-22 44-50 44s-50-18-50-44c0-30 20-52 50-52z" fill="#FFFFFF" />
       {/* Wing */}
-      <path d="M96 140c14-6 26-2 32 10-6 12-18 17-30 12-6-3-8-14-2-22z" fill="#F4F1FF" />
+      <path d="M92 146c12-6 24-2 30 10-6 12-18 17-28 12-6-3-8-16-2-22z" fill="#F4F1FF" />
 
-      {/* Clipboard */}
-      <rect x="58" y="140" width="46" height="56" rx="10" fill="#FFFFFF" />
-      <rect x="70" y="132" width="22" height="14" rx="6" fill={VIOLET_SOFT} />
-      <path d="M70 162h22M70 176h14" strokeWidth={5} />
+      {/* Clipboard, tucked under the far wing */}
+      <rect x="140" y="138" width="48" height="58" rx="10" fill="#FFFFFF" />
+      <rect x="154" y="130" width="22" height="14" rx="6" fill={VIOLET_SOFT} />
+      <path d="M152 162h24M152 176h16" strokeWidth={5} />
 
       {/* Lanyard + code badge */}
-      <path d="M108 116l6 26M132 114l-4 28" strokeWidth={5} />
-      <rect x="106" y="140" width="34" height="24" rx="7" fill={VIOLET_SOFT} />
-      <path d="M118 148l-5 4 5 4M129 148l5 4-5 4" strokeWidth={4} />
+      <path d="M100 116l8 26M126 114l-4 28" strokeWidth={5} />
+      <rect x="100" y="140" width="34" height="24" rx="7" fill={VIOLET_SOFT} />
+      <path d="M112 148l-5 4 5 4M123 148l5 4-5 4" strokeWidth={4} />
 
-      {/* Head */}
-      <circle cx="118" cy="80" r="36" fill="#FFFFFF" />
+      {/* Head, three-quarter turn toward the bill side */}
+      <circle cx="112" cy="80" r="36" fill="#FFFFFF" />
       {/* Tuft */}
-      <path d="M112 46c2-10 10-14 18-12-6 4-8 8-7 14" strokeWidth={5} />
+      <path d="M106 46c2-10 10-14 18-12-6 4-8 8-7 14" strokeWidth={5} />
       {/* Bill */}
-      <path d="M84 76H62a10 10 0 0 0 0 20h22z" fill={BILL} />
-      <path d="M64 86h16" strokeWidth={4} />
+      <path d="M78 76H56a10 10 0 0 0 0 20h22z" fill={BILL} />
+      <path d="M58 86h16" strokeWidth={4} />
       {/* Eye */}
-      <circle cx="108" cy="72" r="6" fill={INK} stroke="none" />
-      <circle cx="110.5" cy="69.5" r="2" fill="#FFFFFF" stroke="none" />
+      <circle cx="96" cy="74" r="6" fill={INK} stroke="none" />
+      <circle cx="98.5" cy="71.5" r="2" fill="#FFFFFF" stroke="none" />
 
-      {/* Arm + megaphone */}
-      <path d="M148 138l14-12" strokeWidth={9} />
-      <path d="M160 130l38-26a10 10 0 0 1 15 5l10 34a10 10 0 0 1-11 13l-46-8a10 10 0 0 1-6-18z" fill={VIOLET_DEEP} />
-      <path d="M176 118l12 40" strokeWidth={5} opacity={0.9} />
-
-      {/* Sound bursts */}
-      <path d="M212 66c10 6 14 16 12 28M220 50c13 10 17 26 11 42" strokeWidth={6} stroke="#FFFFFF" />
+      {/* Arm + megaphone, raised on the same side as the bill */}
+      <path d="M104 150l-12-10" strokeWidth={9} />
+      <path d="M100 132 L48 106 L38 140 L96 150 Z" fill={VIOLET_DARK} />
+      {/* Mouth opening */}
+      <ellipse cx="43" cy="123" rx="7" ry="18" transform="rotate(-16 43 123)" fill={VIOLET_SOFT} strokeWidth={5} />
+      {/* Barrel highlight */}
+      <path d="M78 124l-5 20" strokeWidth={5} stroke={VIOLET_SOFT} opacity={0.85} />
 
       {/* Sparkles */}
-      <path d="M52 62l4 10 10 4-10 4-4 10-4-10-10-4 10-4z" fill="#FFFFFF" stroke="none" opacity={0.9} />
-      <path d="M196 194l3 7 7 3-7 3-3 7-3-7-7-3 7-3z" fill="#FFFFFF" stroke="none" opacity={0.75} />
+      <path d="M188 52l4 10 10 4-10 4-4 10-4-10-10-4 10-4z" fill="#FFFFFF" stroke="none" opacity={0.9} />
+      <path d="M60 186l3 7 7 3-7 3-3 7-3-7-7-3 7-3z" fill="#FFFFFF" stroke="none" opacity={0.75} />
     </svg>
   );
 }
