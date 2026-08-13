@@ -15,6 +15,7 @@ export interface CueEnv {
   MAILER_FROM?: string;
   DEMO_PERSONA_HEADERS?: string;
   DEMO_MCP_TOKEN?: string;
+  AUTOMATION_PROVIDER_DELIVERY?: string;
   DB?: D1Database;
   AI?: { run(model: string, input: Record<string, unknown>): Promise<unknown> };
 }
@@ -50,6 +51,7 @@ export class CueState extends DurableObject<CueEnv> {
         ai: env.AI,
         demoPersonaHeaders: env.DEMO_PERSONA_HEADERS !== "false",
         demoMcpToken: env.DEMO_MCP_TOKEN,
+        automationProviderDelivery: env.AUTOMATION_PROVIDER_DELIVERY === "true",
       });
       await restoreSnapshot({ repo, persistence }).catch((error) =>
         console.error("CUE Durable Object snapshot restore failed", error instanceof Error ? error.message : "unknown error"),

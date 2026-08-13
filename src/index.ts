@@ -13,6 +13,7 @@ export interface Env extends CueEnv {
   MAILER_FROM?: string;
   DEMO_PERSONA_HEADERS?: string;
   DEMO_MCP_TOKEN?: string;
+  AUTOMATION_PROVIDER_DELIVERY?: string;
   ASSETS: { fetch(request: Request): Promise<Response> };
   CUE_STATE: DurableObjectNamespace;
 }
