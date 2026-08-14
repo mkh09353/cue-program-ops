@@ -15,7 +15,9 @@ const flat = (c) => {
   return String(c ?? "");
 };
 
+const TEXT_ONLY = new Set((process.env.SHIM_TEXT_ONLY_MODELS || "").split(",").map(s=>s.trim()).filter(Boolean));
 function toOpenAI(body) {
+  const textOnly = TEXT_ONLY.has(String(body.model));
   const out = [];
   if (body.system) out.push({ role: "system", content: flat(body.system) });
   for (const m of body.messages ?? []) {
@@ -38,8 +40,10 @@ function toOpenAI(body) {
       for (const b of blocks) {
         if (b.type === "tool_result") out.push({ role: "tool", tool_call_id: b.tool_use_id, content: flat(b.content) || (b.is_error ? "error" : "ok") });
         else if (b.type === "text") parts.push({ type: "text", text: b.text });
-        else if (b.type === "image" && b.source?.type === "base64")
-          parts.push({ type: "image_url", image_url: { url: `data:${b.source.media_type};base64,${b.source.data}` } });
+        else if (b.type === "image" && b.source?.type === "base64") {
+          if (textOnly) parts.push({ type: "text", text: "[screenshot omitted: judge model is text-only; rely on observations and transcript]" });
+          else parts.push({ type: "image_url", image_url: { url: `data:${b.source.media_type};base64,${b.source.data}` } });
+        }
       }
       if (parts.length) out.push({ role: "user", content: parts.every(p=>p.type==="text") ? parts.map(p=>p.text).join("") : parts });
     }
@@ -86,7 +90,7 @@ const server = http.createServer(async (req, res) => {
   req.on("end", async () => {
     try {
       const body = JSON.parse(raw);
-      if (String(body.model).startsWith("grok")) {
+      if (process.env.GROK_VIA_XAI && String(body.model).startsWith("grok")) {
         const r = await fetch(XAI_URL, {
           method: "POST",
           headers: { "x-api-key": XAI_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" },

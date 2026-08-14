@@ -23,6 +23,7 @@ Vite proxies `/api`, `/public`, `/embed`, `/health` and `/sync` to the API. With
 |---|---|
 | Config | `wrangler.toml` |
 | Worker | `ruckus` |
+| Legacy redirect | `cue-program-ops` worker (infra/redirect/) 301s the retired workers.dev URL to https://ruckus.to |
 | Entry | `src/index.ts` → single named `CueState` Durable Object for API traffic |
 | Static binding | `ASSETS` → `dist/` |
 | SPA fallback | `dist/index.html` |

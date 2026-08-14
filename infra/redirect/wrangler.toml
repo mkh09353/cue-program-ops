@@ -1,0 +1,5 @@
+# Permanent redirect from the retired cue-program-ops.headley-max.workers.dev
+# URL to https://ruckus.to (path- and query-preserving).
+name = "cue-program-ops"
+main = "index.js"
+compatibility_date = "2026-08-09"
