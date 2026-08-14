@@ -228,13 +228,18 @@ export interface Communication {
   templateKey?: string;
   subject: string;
   body: string;
-  kind: "acceptance" | "reminder" | "rejection" | "cfp_received" | "schedule_locked" | "custom";
+  kind: "acceptance" | "reminder" | "rejection" | "cfp_received" | "schedule_locked" | "custom" | "reviewer_invite";
   status: "mock_sent" | "sent" | "logged_undeliverable" | "failed";
   ics: string;
   createdAt: string;
   submissionId?: string;
   /** Provider receipt retained only when an external provider accepts the send. */
   providerId?: string;
+  recipientEmail?: string;
+  recipientName?: string;
+  deliveryNote?: string;
+  /** Review round that owns a reviewer-invite send, when applicable. */
+  roundId?: string;
 }
 
 export interface Resource {

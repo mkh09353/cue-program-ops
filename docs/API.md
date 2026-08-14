@@ -83,6 +83,7 @@ Final submissions enforce configured visible-required fields, category validity,
 | POST | `/api/events/:eventId/reviewer-queue/:assignmentId/submit` | Assigned reviewer | Submit responses and complete assignment |
 | POST | `/api/events/:eventId/reviewer-queue/:assignmentId/recuse` | Assigned reviewer | Record conflict and remove active assignment |
 | GET | `/api/events/:eventId/review-progress` | Organizer | Per-round/reviewer completion metrics |
+| POST | `/api/events/:eventId/review-rounds/:roundId/invite-emails` | Organizer | Email reviewer invite links for a round; skips already-sent recipients |
 | POST | `/api/events/:eventId/review-reminders` | Organizer | Manually send outstanding-review reminders |
 | GET | `/api/events/:eventId/review-results` | Organizer | Human-review aggregates and recommendations |
 | GET | `/api/events/:eventId/review-results.csv` | Organizer | Download result summary as CSV |

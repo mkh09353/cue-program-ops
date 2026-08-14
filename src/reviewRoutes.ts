@@ -61,6 +61,95 @@ export function createReviewRoutes(deps: {
     const b=await c.req.json(),email=String(b.email||"").trim().toLowerCase(),name=String(b.name||"").trim();if(!name||!/^\S+@\S+\.\S+$/.test(email))return error(c,"valid name and email required");
     const duplicates=life.personas.filter(x=>x.email.trim().toLowerCase()===email&&x.role==="reviewer"),conflict=life.personas.find(x=>x.email.trim().toLowerCase()===email&&x.role==="speaker");if(conflict)return error(c,"email belongs to a speaker persona",409);let p=duplicates[0];if(!p){p={id:`rev-${crypto.randomUUID().slice(0,8)}`,role:"reviewer",name,email};life.personas.push(p)}for(const duplicate of duplicates.slice(1)){for(const rr of life.reviewRounds)rr.reviewerIds=rr.reviewerIds.map(id=>id===duplicate.id?p!.id:id);for(const a of life.reviewAssignments)if(a.reviewerId===duplicate.id)a.reviewerId=p.id;for(const rv of life.reviews)if(rv.reviewerId===duplicate.id)rv.reviewerId=p.id;life.personas=life.personas.filter(x=>x.id!==duplicate.id)}r.reviewerIds=[...new Set([...r.reviewerIds,p.id])];await deps.persist(life.event.id,life);return c.json({data:{reviewer:p,round:r}},201);
   });
+  app.post("/:eventId/review-rounds/:roundId/invite-emails", async (c) => {
+    if (!event(c)) return error(c, "event not found", 404);
+    if (!organizer(c)) return error(c, "organizer role required", 403);
+    const life = deps.store;
+    const r = life.reviewRounds.find((x) => x.id === c.req.param("roundId"));
+    if (!r) return error(c, "round not found", 404);
+    const b = (await c.req.json().catch(() => ({}))) as { reviewerIds?: string[] };
+    const requested = Array.isArray(b.reviewerIds) ? [...new Set(b.reviewerIds.map(String))] : [...new Set(r.reviewerIds)];
+    const unknown = requested.find((id) => !r.reviewerIds.includes(id));
+    if (unknown) return error(c, "reviewer is not a member of that round", 400);
+    life.reviewerInvites ||= [];
+    const alreadySent = (email: string) =>
+      life.communications.some(
+        (row) =>
+          row.kind === "reviewer_invite" &&
+          row.roundId === r.id &&
+          (row.recipientEmail || "").trim().toLowerCase() === email.trim().toLowerCase() &&
+          ["sent", "delivered", "mock_sent"].includes(row.status),
+      );
+    const outcomes: {
+      reviewerId: string;
+      email?: string;
+      status: "sent" | "skipped_already_sent" | "failed";
+      providerId?: string;
+    }[] = [];
+    const origin = new URL(c.req.url).origin;
+    for (const reviewerId of requested) {
+      const reviewer = life.personas.find((p) => p.id === reviewerId && p.role === "reviewer");
+      if (!reviewer) return error(c, "reviewer is not a member of that round", 400);
+      if (alreadySent(reviewer.email)) {
+        outcomes.push({ reviewerId, email: reviewer.email, status: "skipped_already_sent" });
+        continue;
+      }
+      let invite = life.reviewerInvites.find(
+        (x) =>
+          x.reviewerId === reviewer.id &&
+          x.roundId === r.id &&
+          !x.revokedAt &&
+          (!x.expiresAt || Date.parse(x.expiresAt) > Date.now()),
+      );
+      if (!invite) {
+        invite = {
+          token: crypto.randomUUID(),
+          eventId: life.event.id,
+          reviewerId: reviewer.id,
+          roundId: r.id,
+          email: reviewer.email,
+          createdAt: new Date().toISOString(),
+        };
+        life.reviewerInvites.push(invite);
+      }
+      const inviteUrl = `${origin}/r?invite=${encodeURIComponent(invite.token)}`;
+      const subject = `You're invited to review ${life.event.name} on Ruckus`;
+      const body = [
+        `Hello ${reviewer.name},`,
+        "",
+        `The organizers of ${life.event.name} invited you to review submissions for ${r.name} in Ruckus.`,
+        "Open your reviewer queue with this personal invite link:",
+        inviteUrl,
+        "",
+        "The link opens your assigned reviewer queue for this event. Please keep it private.",
+        "",
+        "Thank you,",
+        `${life.event.name} organizers`,
+      ].join("\n");
+      const result = await deps.mailer
+        .send({ to: reviewer.email, subject, text: body })
+        .catch(() => ({ status: "failed" as const }));
+      const providerId = "providerId" in result ? result.providerId : undefined;
+      const outcomeStatus = result.status === "failed" || result.status === "logged_undeliverable" ? "failed" : "sent";
+      life.communications.push({
+        id: `comm-${crypto.randomUUID().slice(0, 8)}`,
+        speakerId: reviewer.id,
+        subject,
+        body,
+        kind: "reviewer_invite",
+        status: result.status,
+        providerId,
+        ics: "",
+        createdAt: new Date().toISOString(),
+        recipientEmail: reviewer.email,
+        recipientName: reviewer.name,
+        roundId: r.id,
+      });
+      outcomes.push({ reviewerId, email: reviewer.email, status: outcomeStatus, providerId });
+    }
+    await deps.persist(life.event.id, life);
+    return c.json({ data: outcomes });
+  });
   app.delete("/:eventId/review-rounds/:id", async (c) => {
     if (!event(c)) return error(c, "event not found", 404); if (!organizer(c)) return error(c, "organizer role required", 403);
     const index = deps.store.reviewRounds.findIndex((r) => r.id === c.req.param("id")); if (index < 0) return error(c, "round not found", 404);
