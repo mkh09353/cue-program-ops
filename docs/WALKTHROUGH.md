@@ -3,7 +3,7 @@
 **Live:** https://ruckus.to
 **Local:** `npm run dev`, then use the Vite URL (normally `http://localhost:5173`).
 
-The demo is credential-free and seeded. Choose **Swyx · organizer** on `/`. State is process memory by default, so use a fresh process for the most predictable path.
+The demo is credential-free and seeded. Start at `/demo` and pick a role. The live site persists every change to Cloudflare D1; a local `npm run dev` uses process memory unless configured otherwise.
 
 ## 0:00–0:45 — CFP
 
