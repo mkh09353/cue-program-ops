@@ -282,3 +282,48 @@ export function averageScores(scores?: Record<string, number> | null): number | 
 export function adoptSaveResult<T>(current: T, sentSnapshot: string, server: T, snapshot: (v: T) => string): T {
   return snapshot(current) === sentSnapshot ? server : current;
 }
+
+/**
+ * Weighted mean over rating criteria, normalized onto a 1-5 scale.
+ *
+ * Mirrors weightedAverage() in src/lifecycle.ts so the browser can show the same
+ * number the server computes without bundling the server module (and its seed).
+ * test/review-weighted-aggregate.test.ts fails if the two ever diverge.
+ */
+export function weightedAverageScores(
+  scores: Record<string, unknown> | null | undefined,
+  criteria: { id: string; type?: string; weight?: number; min?: number; max?: number }[],
+): number | null {
+  const values = Object.entries(scores || {}).flatMap(([id, raw]) => {
+    const criterion = (criteria || []).find((c) => c.id === id && (c.type ?? "rating") === "rating");
+    const value = Number(raw);
+    if (!criterion || typeof raw !== "number" || !Number.isFinite(value)) return [];
+    const min = Number(criterion.min ?? 1);
+    const max = Number(criterion.max ?? 5);
+    if (!Number.isFinite(min) || !Number.isFinite(max) || max <= min || value < min || value > max) return [];
+    return [{ normalized: 1 + (4 * (value - min)) / (max - min), weight: Number(criterion.weight ?? 0) }];
+  });
+  if (!values.length) return null;
+  const weighted = values.filter((v) => v.weight > 0);
+  const pool = weighted.length ? weighted : values.map((v) => ({ ...v, weight: 1 }));
+  const total = pool.reduce((sum, v) => sum + v.weight, 0);
+  if (!total) return null;
+  return Math.round((pool.reduce((sum, v) => sum + v.normalized * v.weight, 0) / total) * 100) / 100;
+}
+
+/** "(2x4 + 1x2)/3 = 3.33" - the arithmetic behind a displayed aggregate. */
+export function weightedMathLabel(
+  scores: Record<string, unknown> | null | undefined,
+  criteria: { id: string; label?: string; type?: string; weight?: number; min?: number; max?: number }[],
+): string {
+  const parts = Object.entries(scores || {}).flatMap(([id, raw]) => {
+    const criterion = (criteria || []).find((c) => c.id === id && (c.type ?? "rating") === "rating");
+    if (!criterion || typeof raw !== "number" || !Number.isFinite(Number(raw))) return [];
+    return [{ weight: Number(criterion.weight ?? 0) || 1, value: Number(raw) }];
+  });
+  if (!parts.length) return "";
+  const total = parts.reduce((sum, p) => sum + p.weight, 0);
+  const result = weightedAverageScores(scores, criteria);
+  if (result == null || !total) return "";
+  return `(${parts.map((p) => `${p.weight}x${p.value}`).join(" + ")})/${total} = ${result}`;
+}

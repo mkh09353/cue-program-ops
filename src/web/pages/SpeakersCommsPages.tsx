@@ -768,6 +768,8 @@ export function SpeakerDetailPage() {
   const [headshotBusy, setHeadshotBusy] = useState(false);
   const [statusBusy, setStatusBusy] = useState(false);
   const [statusConfirmation, setStatusConfirmation] = useState("");
+  /** Persist-evident stamp shown next to the workflow badge after a save. */
+  const [statusSavedAt, setStatusSavedAt] = useState("");
 
   const detail = useAsyncData(async () => (await api.speakerDetail(id!)).data, [id]);
   const load = () => detail.reload();
@@ -901,6 +903,10 @@ export function SpeakerDetailPage() {
               </Field>
               <Field label="Workflow status">
                 <div className="flex flex-wrap items-center gap-2">
+                  <Badge tone="muted" data-testid="workflow-status-badge">{formatStatus(row.workflowStatus || "accepted")}</Badge>
+                  {statusSavedAt ? (
+                    <span className="text-xs text-mid" data-testid="workflow-status-saved-at">saved {statusSavedAt}</span>
+                  ) : null}
                   <select
                     className="h-10 min-w-48 flex-1 rounded-full bg-white px-3 text-sm ring-1 ring-line focus:outline-none focus:ring-2 focus:ring-brand-400"
                     value={edit.workflowStatus}
@@ -925,7 +931,9 @@ export function SpeakerDetailPage() {
                         const result = await api.setSpeakerStatus(row.speakerId, edit.workflowStatus);
                         const saved = result.data.workflowStatus;
                         setEdit((current: any) => ({ ...current, workflowStatus: saved }));
+                        const at = new Date().toLocaleTimeString();
                         setStatusConfirmation(`Workflow status updated to ${formatStatus(saved)}.`);
+                        setStatusSavedAt(at);
                         await load();
                       } catch (e: any) {
                         toast(e.message || "Status update failed", "danger");

@@ -21,6 +21,7 @@ import { SEED_ORGANIZER_PERSONAS,
   readiness,
   isSafeAccent,
   resolveDemoPersona,
+  weightedAverage,
   seededStore,
   appendFeedback,
   formsOf,
@@ -1308,11 +1309,15 @@ export function createApp(deps: AppDeps = {}) {
 function avgScore(submissionId: string) {
   const submitted = store.reviews.filter((r) => r.submissionId === submissionId && r.status === "submitted");
   if (!submitted.length) return null;
-  const totals = submitted.map((r) => {
-    const vals = Object.values(r.scores);
-    return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
+  // Each reviewer's score is the WEIGHTED mean over that round's rating criteria;
+  // a plain mean ignored configured weights and disagreed with the results table.
+  const totals = submitted.flatMap((r) => {
+    const round = store.reviewRounds.find((x) => x.id === r.roundId) || store.reviewRounds[0];
+    const value = weightedAverage((round?.criteria || []) as any[], (r.responses || r.scores || {}) as any);
+    return value == null ? [] : [value];
   });
-  return Math.round((totals.reduce((a, b) => a + b, 0) / totals.length) * 10) / 10;
+  if (!totals.length) return null;
+  return Math.round((totals.reduce((a, b) => a + b, 0) / totals.length) * 100) / 100;
 }
 
 function escapeHtml(s: string) {

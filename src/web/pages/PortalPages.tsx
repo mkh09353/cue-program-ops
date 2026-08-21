@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { getActiveEvent, api, getPersona, subscribeData } from "../lib/api";
 import { calendarLinks, fmtTime, fmtTzLabel, isProfessionalEmbed, taskTypeLabel } from "../lib/utils";
 import {
@@ -250,8 +250,25 @@ export function PortalTalksPage() {
   );
 }
 
+
+/** Tasks whose completion is DERIVED from saving something else. */
+const DERIVED_TASK_TYPES = new Set(["profile", "headshot", "slides", "supporting_doc", "form"]);
+export const derivedCompletionCopy = (type: string) =>
+  type === "profile"
+    ? "Completed automatically when you saved your profile"
+    : type === "form"
+      ? "Completed automatically when you submitted the form"
+      : "Completed automatically when you uploaded the file";
+export const derivedTodoCopy = (type: string) =>
+  type === "profile"
+    ? "Complete your profile below"
+    : type === "form"
+      ? "Fill in the form below"
+      : "Upload the file below";
+
 export function PortalTasksPage() {
   const { data, err } = useSpeakerHome();
+  const nav = useNavigate();
   const [deliverables,setDeliverables]=useState<any[]|null>(null);
   useEffect(()=>{api.deliverables().then(r=>setDeliverables(r.data||[])).catch(()=>setDeliverables([]))},[getPersona().id]);
   if (!data && !err) return <Spinner />;
@@ -275,8 +292,50 @@ export function PortalTasksPage() {
                 {t.dueAt ? ` · due ${String(t.dueAt).slice(0, 10)}` : ""}
               </div>
               {t.type === "form" ? <Badge tone="muted">Form to complete</Badge> : null}
+              {effectiveStatus === "completed" && DERIVED_TASK_TYPES.has(t.type) ? (
+                <div className="mt-1 text-[11px] text-mid" data-testid={`task-derived-note-${t.id}`}>
+                  {derivedCompletionCopy(t.type)}
+                </div>
+              ) : null}
             </div>
-            <StatusBadge status={effectiveStatus} />
+            <span className="flex items-center gap-2">
+              {effectiveStatus === "completed" ? (
+                <input
+                  type="checkbox"
+                  checked
+                  disabled
+                  aria-label={`${t.title} is complete`}
+                  data-testid={`task-complete-check-${t.id}`}
+                />
+              ) : (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  data-testid={`task-mark-complete-${t.id}`}
+                  aria-label={`Mark ${t.title} complete`}
+                  onClick={async (e: any) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    // Derived tasks cannot be ticked off directly: send the speaker
+                    // to the thing that completes them.
+                    if (DERIVED_TASK_TYPES.has(t.type)) {
+                      toast(derivedTodoCopy(t.type));
+                      nav(`/p/tasks/${t.id}`);
+                      return;
+                    }
+                    try {
+                      await api.completeTask(t.id);
+                      toast("Task completed");
+                    } catch (err: any) {
+                      toast(err?.message || "Could not complete the task", "danger");
+                    }
+                  }}
+                >
+                  Mark complete
+                </Button>
+              )}
+              <StatusBadge status={effectiveStatus} />
+            </span>
           </Link>
         )})}
         {deliverables.filter((d:any)=>!linkedIds.has(d.id)).map((d:any)=><Link key={d.id} to={`/p/deliverables/${d.id}`} data-testid={`portal-deliverable-task-${d.id}`} className="flex items-center justify-between rounded-3xl border border-line bg-white p-4 hover:border-brand-200"><div><div className="font-semibold">{d.name}</div><div className="text-xs text-mid">Organizer file request · due {String(d.dueAt).slice(0,10)} · {d.uploadCount} version{d.uploadCount===1?"":"s"}</div></div><StatusBadge status={d.overdue?"overdue":d.status}/></Link>)}
@@ -767,17 +826,41 @@ export function PortalTaskDetailPage() {
           </>
         ) : null}
 
-        {!isFile && task.type !== "profile" && task.type !== "form" && task.status !== "completed" ? (
+        {/* Explicit completion state for EVERY task type: an action task gets a real
+            button, a derived task says what completes it (and points at that). */}
+        {effectiveTaskStatus === "completed" ? (
+          <div className="mt-4 flex items-center gap-2 rounded-2xl border border-line bg-soft p-3 text-sm" data-testid="task-complete-state">
+            <input type="checkbox" checked disabled aria-label={`${task.title} is complete`} />
+            <span>
+              <b>Completed</b>
+              {DERIVED_TASK_TYPES.has(task.type) ? (
+                <span className="ml-1 text-mid" data-testid="task-derived-completion-copy">
+                  · {derivedCompletionCopy(task.type)}
+                </span>
+              ) : null}
+            </span>
+          </div>
+        ) : DERIVED_TASK_TYPES.has(task.type) ? (
+          <div className="mt-4 rounded-2xl border border-line bg-soft p-3 text-sm" data-testid="task-derived-todo">
+            <b>To complete this task:</b> <span className="text-mid">{derivedTodoCopy(task.type)}</span>
+          </div>
+        ) : (
           <Button
+            data-testid="task-mark-complete"
+            aria-label={`Mark ${task.title} complete`}
             onClick={async () => {
-              await api.completeTask(task.id);
-              toast("Task completed");
-              load();
+              try {
+                await api.completeTask(task.id);
+                toast("Task completed");
+                load();
+              } catch (e: any) {
+                toast(e?.message || "Could not complete the task", "danger");
+              }
             }}
           >
             Mark complete
           </Button>
-        ) : null}
+        )}
 
         {isFile && linkedDeliverable ? (
           <div className="mt-4 rounded-2xl border border-line bg-soft p-4" data-testid="task-uploaded-panel">

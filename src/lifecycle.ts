@@ -1069,9 +1069,11 @@ export function reviewHistory(submissionId: string, life: LifecycleStore = store
         type: string;
         value: number;
       }[];
-      const average = ratings.length
-        ? Math.round((ratings.reduce((a, b) => a + b.value, 0) / ratings.length) * 100) / 100
-        : null;
+      // Weighted, not a plain mean: the criteria carry weights that the UI renders.
+      const scoringCriteria = (round?.criteria || []) as any[];
+      const responses = (review.responses || review.scores || {}) as Record<string, unknown>;
+      const average = roundAggregate(weightedAverage(scoringCriteria, responses));
+      const averageMath = weightedMath(scoringCriteria as any, responses);
       const reviewer = life.personas.find((p) => p.id === review.reviewerId);
       const comment = String(review.responses?.comments ?? review.notes ?? "");
       return {
@@ -1083,6 +1085,7 @@ export function reviewHistory(submissionId: string, life: LifecycleStore = store
         entries,
         ratings,
         average,
+        averageMath,
         comment,
         isAiDraft: review.source === "ai_draft",
         assignmentStatus: assignment?.status,
@@ -1528,4 +1531,57 @@ export function createEventForm(input: { name?: string; slug?: string }, life: L
   life.extraForms ||= [];
   life.extraForms.push(form);
   return { ok: true, form };
+}
+
+/**
+ * Weighted mean over rating criteria, normalized onto a 1-5 scale.
+ *
+ * Single source of truth for EVERY displayed aggregate. The organizer inbox, the
+ * review-history rows and the results table used to compute plain means, so a
+ * 4 (weight 2) plus 2 (weight 1) showed 3 instead of 3.33 even though the weights
+ * were configured, saved and rendered.
+ */
+export function weightedAverage(
+  criteria: { id: string; type?: string; weight?: number; min?: number; max?: number }[],
+  responses: Record<string, unknown>,
+): number | null {
+  const values = Object.entries(responses || {}).flatMap(([id, raw]) => {
+    const criterion = (criteria || []).find((c) => c.id === id && (c.type ?? "rating") === "rating");
+    const value = Number(raw);
+    if (!criterion || typeof raw !== "number" || !Number.isFinite(value)) return [];
+    const min = Number(criterion.min ?? 1);
+    const max = Number(criterion.max ?? 5);
+    if (!Number.isFinite(min) || !Number.isFinite(max) || max <= min || value < min || value > max) return [];
+    return [{ normalized: 1 + (4 * (value - min)) / (max - min), weight: Number(criterion.weight ?? 0) }];
+  });
+  if (!values.length) return null;
+  const weighted = values.filter((v) => v.weight > 0);
+  const pool = weighted.length ? weighted : values.map((v) => ({ ...v, weight: 1 }));
+  const total = pool.reduce((sum, v) => sum + v.weight, 0);
+  if (!total) return null;
+  return pool.reduce((sum, v) => sum + v.normalized * v.weight, 0) / total;
+}
+
+/** Round an aggregate for display: two decimals, trailing zeros trimmed. */
+export const roundAggregate = (value: number | null) =>
+  value == null ? null : Math.round(value * 100) / 100;
+
+/**
+ * Human-readable arithmetic behind an aggregate, e.g. "(2x4 + 1x2)/3 = 3.33".
+ * Returns "" when nothing score-bearing was submitted.
+ */
+export function weightedMath(
+  criteria: { id: string; label?: string; type?: string; weight?: number; min?: number; max?: number }[],
+  responses: Record<string, unknown>,
+): string {
+  const parts = Object.entries(responses || {}).flatMap(([id, raw]) => {
+    const criterion = (criteria || []).find((c) => c.id === id && (c.type ?? "rating") === "rating");
+    if (!criterion || typeof raw !== "number" || !Number.isFinite(Number(raw))) return [];
+    return [{ weight: Number(criterion.weight ?? 0) || 1, value: Number(raw) }];
+  });
+  if (!parts.length) return "";
+  const total = parts.reduce((sum, p) => sum + p.weight, 0);
+  const result = roundAggregate(weightedAverage(criteria, responses));
+  if (result == null || !total) return "";
+  return `(${parts.map((p) => `${p.weight}x${p.value}`).join(" + ")})/${total} = ${result}`;
 }

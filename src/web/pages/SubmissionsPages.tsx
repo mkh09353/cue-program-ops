@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api, getActiveEvent, setActiveEventId, subscribeData, subscribeEvent } from "../lib/api";
-import { averageScores, EVENT_SLUG, formatStatus } from "../lib/utils";
+import { averageScores, EVENT_SLUG, formatStatus, weightedAverageScores, weightedMathLabel } from "../lib/utils";
 import { csvFilename, downloadCsv, toCsv } from "../lib/csv";
 import {
   Badge,
@@ -49,11 +49,13 @@ function inboxScore(s: any): string {
   const reviews: any[] = s.reviews || [];
   const withScores = reviews.filter((r) => r.scores && Object.keys(r.scores).length);
   if (!withScores.length) return "—";
+  // Use the server's WEIGHTED per-review average; the unweighted client fallback
+  // only applies to legacy rows that carry no average at all.
   const avgs = withScores
-    .map((r) => averageScores(r.scores))
-    .filter((n): n is number => n != null);
+    .map((r) => (r.average != null ? Number(r.average) : averageScores(r.scores)))
+    .filter((n): n is number => n != null && Number.isFinite(n));
   if (!avgs.length) return "—";
-  const mean = Math.round((avgs.reduce((a, b) => a + b, 0) / avgs.length) * 10) / 10;
+  const mean = Math.round((avgs.reduce((a, b) => a + b, 0) / avgs.length) * 100) / 100;
   const draftOnly = withScores.every((r) => r.status !== "submitted");
   return draftOnly ? `${mean} (draft)` : String(mean);
 }
@@ -445,9 +447,9 @@ export function ReviewStudioPage() {
     );
 
   const ratingCriteria = criteria.filter((c: any) => c.type === "rating");
-  const total = ratingCriteria.length
-    ? ratingCriteria.reduce((a: number, c: any) => a + (Number(scores[c.id]) || 0), 0) / ratingCriteria.length
-    : 0;
+  // Weighted, matching the server: a plain mean ignored the configured weights.
+  const total = weightedAverageScores(scores as any, criteria as any);
+  const totalMath = weightedMathLabel(scores as any, criteria as any);
 
   return (
     <div>
@@ -586,7 +588,8 @@ export function ReviewStudioPage() {
             <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={4} />
           </Field>
           <div className="mb-4 text-sm">
-            Rating average <b>{total.toFixed(1)}</b>
+            <span data-testid="scorecard-weighted-average">Weighted average <b>{total == null ? "—" : total}</b></span>
+            {totalMath ? <span className="ml-2 text-xs text-mid" data-testid="scorecard-average-math">{totalMath}</span> : null}
             {activeReview?.source === "ai_draft" ? (
               <span className="ml-2 text-xs text-mid">· provenance: AI advisory draft</span>
             ) : null}
@@ -758,6 +761,7 @@ export function ReviewStudioPage() {
             <ul className="mt-2 space-y-2 text-xs text-mid">
               {data.reviews?.map((r: any) => {
                 const avg = r.average != null ? r.average : averageScores(r.scores);
+                const math = r.averageMath || "";
                 const entries: any[] = r.entries?.length
                   ? r.entries
                   : Object.entries(r.scores || {}).map(([key, value]) => ({ key, label: key, value }));
@@ -771,7 +775,7 @@ export function ReviewStudioPage() {
                       <Badge tone={r.isAiDraft || r.source === "ai_draft" ? "ai" : "muted"}>
                         {r.isAiDraft || r.source === "ai_draft" ? "AI draft" : "Human"}
                       </Badge>
-                      {avg != null ? <span className="font-semibold">Avg {avg}</span> : null}
+                      {avg != null ? <span className="font-semibold" title={math} data-testid={`review-average-${r.id}`}>Weighted avg {avg}{math ? <span className="ml-1 font-normal text-mid">{math}</span> : null}</span> : null}
                       {r.submittedAt ? (
                         <span className="text-mid">submitted {new Date(r.submittedAt).toLocaleString()}</span>
                       ) : null}
