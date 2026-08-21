@@ -140,7 +140,7 @@ async function workersAiDraft(ai: WorkersAiRunner | undefined, submission: Submi
 }
 
 const fail = (c: any, message: string, status = 400) =>
-  c.json({ error: { code: status === 404 ? "NOT_FOUND" : status === 403 ? "FORBIDDEN" : status === 401 ? "UNAUTHORIZED" : "VALIDATION_ERROR", message } }, status);
+  c.json({ error: { code: status === 404 ? "NOT_FOUND" : status === 403 ? "FORBIDDEN" : status === 401 ? "UNAUTHORIZED" : status === 409 ? "CONFLICT" : "VALIDATION_ERROR", message } }, status);
 
 /** Anonymous stand-in used when demo headers are off and no session exists. Never an organizer. */
 const ANONYMOUS_PERSONA = { id: "anonymous", role: "speaker" as Role, name: "Anonymous", email: "" };
@@ -939,6 +939,75 @@ export function createApp(deps: AppDeps = {}) {
         tasks: store.tasks.filter((t) => t.speakerId === s.speakerId),
         session: store.sessions.find((x) => x.submissionId === s.id),
         communication: comm,
+      },
+    });
+  });
+
+  app.delete("/api/events/:eventId/submissions/:id", async (c) => {
+    const denied = requireOrganizer(c);
+    if (denied) return denied;
+    const id = c.req.param("id");
+    const s = store.submissions.find((x) => x.id === id);
+    if (!s) return fail(c, "submission not found", 404);
+    const body = await c.req.json().catch(() => ({})) as { force?: boolean };
+    const force = body?.force === true;
+
+    const r = repo as Repository & {
+      getSchedule?: (eventId: string) => Promise<any>;
+      putSchedule?: (eventId: string, schedule: any) => Promise<void>;
+    };
+    const schedule = await r.getSchedule?.(store.event.id);
+    const mirrored = schedule?.sessions?.find(
+      (session: any) => session.acceptedSubmissionId === s.id || session.id === `ses-${s.id}` || session.id === s.id,
+    );
+    const linked = s.status === "accepted" && mirrored;
+    if (linked) {
+      if (isPublishedSession(mirrored)) {
+        return fail(c, "cannot delete an accepted submission whose mirrored session is published", 409);
+      }
+      if (!force) {
+        return fail(c, "accepted submission has a linked schedule session; pass force:true to detach the unpublished mirrored session", 409);
+      }
+    }
+
+    const removedReviews = store.reviews.filter((review) => review.submissionId === s.id);
+    const removedAssignments = store.reviewAssignments.filter((assignment) => assignment.submissionId === s.id);
+    const conflicts = store.reviewConflicts || [];
+    const removedConflicts = conflicts.filter((conflict) =>
+      removedAssignments.some((assignment) => assignment.id === conflict.assignmentId),
+    );
+    store.reviews = store.reviews.filter((review) => review.submissionId !== s.id);
+    store.reviewAssignments = store.reviewAssignments.filter((assignment) => assignment.submissionId !== s.id);
+    if (store.reviewConflicts) {
+      store.reviewConflicts = store.reviewConflicts.filter(
+        (conflict) => !removedAssignments.some((assignment) => assignment.id === conflict.assignmentId),
+      );
+    }
+    store.submissions = store.submissions.filter((row) => row.id !== s.id);
+
+    let detachedSessionId: string | undefined;
+    if (linked && force && schedule && r.putSchedule) {
+      schedule.sessions = schedule.sessions.filter((session: any) => session.id !== mirrored.id);
+      if (Array.isArray(schedule.slots)) {
+        schedule.slots = schedule.slots.filter((slot: any) => slot.sessionId !== mirrored.id);
+      }
+      await r.putSchedule(store.event.id, schedule);
+      detachedSessionId = mirrored.id;
+    }
+
+    await persist();
+    return c.json({
+      data: {
+        id: s.id,
+        title: s.title,
+        status: s.status,
+        removed: {
+          submissionId: s.id,
+          reviews: removedReviews.map((review) => review.id),
+          assignments: removedAssignments.map((assignment) => assignment.id),
+          conflicts: removedConflicts.map((conflict) => conflict.id),
+          sessionId: detachedSessionId,
+        },
       },
     });
   });

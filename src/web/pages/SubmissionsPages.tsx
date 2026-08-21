@@ -363,6 +363,9 @@ export function ReviewStudioPage() {
   /** Committee feedback sent with the decision (stored on the submission). */
   const [decisionFeedback, setDecisionFeedback] = useState("");
   const [busy, setBusy] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
   // Assignments let the studio request an AI draft before any Review row exists.
   const [assignments, setAssignments] = useState<any[]>([]);
   const [aiDraft, setAiDraft] = useState<
@@ -457,11 +460,65 @@ export function ReviewStudioPage() {
         title={data.code ? `Review Studio · ${data.code}` : "Review Studio"}
         description="Human-only decisions. AI is advisory and never accepts a talk."
         actions={
-          <Button variant="outline" onClick={() => nav("/app/submissions")}>
-            Back to inbox
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" onClick={() => nav("/app/submissions")}>
+              Back to inbox
+            </Button>
+            <Button
+              variant="danger"
+              data-testid="delete-submission"
+              disabled={busy || deleteBusy}
+              onClick={() => { setDeleteError(""); setConfirmDelete(true); }}
+            >
+              Delete submission
+            </Button>
+          </div>
         }
       />
+
+      {deleteError ? (
+        <div data-testid="delete-submission-error">
+          <Notice tone="danger">{deleteError}</Notice>
+        </div>
+      ) : null}
+      {confirmDelete ? (
+        <div data-testid="delete-submission-confirm">
+        <Notice tone="warn">
+          <span className="block font-semibold">Delete this submission?</span>
+          <span className="block text-xs">Removes this proposal and its review scorecards. Speakers and other submissions stay. An accepted talk with a published session cannot be deleted.</span>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <Button
+              variant="danger"
+              size="sm"
+              data-testid="confirm-delete-submission"
+              disabled={deleteBusy}
+              onClick={async () => {
+                setDeleteBusy(true);
+                setDeleteError("");
+                try {
+                  const accepted = data.status === "accepted";
+                  await api.deleteSubmission(data.id, accepted ? { force: true } : {});
+                  toast("Submission deleted");
+                  nav("/app/submissions");
+                } catch (e: any) {
+                  const message = e?.message || "Could not delete this submission";
+                  setDeleteError(message);
+                  toast(message, "danger");
+                } finally {
+                  setDeleteBusy(false);
+                  setConfirmDelete(false);
+                }
+              }}
+            >
+              {deleteBusy ? "Deleting…" : "Confirm delete"}
+            </Button>
+            <Button variant="outline" size="sm" disabled={deleteBusy} onClick={() => setConfirmDelete(false)}>
+              Cancel
+            </Button>
+          </div>
+        </Notice>
+        </div>
+      ) : null}
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card className="p-5">

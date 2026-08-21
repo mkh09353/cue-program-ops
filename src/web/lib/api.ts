@@ -306,6 +306,8 @@ export const api = {
       `/api/events/${EVENT_ID}/submissions${filter ? `?filter=${filter}` : ""}`,
     ),
   submission: (id: string) => req<{ data: any }>(`/api/events/${EVENT_ID}/submissions/${id}`),
+  deleteSubmission: (id: string, body: { force?: boolean } = {}) =>
+    mut<{ data: any }>(`/api/events/${EVENT_ID}/submissions/${id}`, { method: "DELETE", body: JSON.stringify(body) }),
   reviews: () => req<{ data: any[] }>(`/api/events/${EVENT_ID}/reviews`),
   reviewRounds: () => req<{ data: any[] }>(`/api/events/${EVENT_ID}/review-rounds`),
   createReviewRound: (body: any) => mut(`/api/events/${EVENT_ID}/review-rounds`, { method: "POST", body: JSON.stringify(body) }),

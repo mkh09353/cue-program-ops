@@ -130,6 +130,7 @@ test("representative paths from every group are documented with their methods", 
     // submissions
     "get /api/events/{eventId}/submissions",
     "get /api/events/{eventId}/submissions/{id}",
+    "delete /api/events/{eventId}/submissions/{id}",
     "post /api/events/{eventId}/submissions/{id}/decision",
     "post /api/public/events/{slug}/submissions",
     "put /api/public/events/{slug}/submissions/{id}",
@@ -189,7 +190,7 @@ test("the document describes its own endpoint under meta", () => {
   const yaml = doc();
   const documented = documentedOperations(yaml);
   assert.ok(documented.has(`get ${OPENAPI_PATH}`), "GET /api/openapi.yaml is documented");
-  assert.equal(documented.size, 188, "expected 188 documented operations");
+  assert.equal(documented.size, 189, "expected 189 documented operations");
 
   const block = yaml.slice(yaml.indexOf("  /api/openapi.yaml:"), yaml.indexOf('  "/api/public/events/{slug}/cfp"'));
   assert.match(block, /tags: \[meta\]/, "tagged meta");
