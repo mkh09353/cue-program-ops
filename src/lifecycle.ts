@@ -173,12 +173,33 @@ export interface SpeakerProfile {
 }
 
 export type TaskCompletedVia = "manual" | "profile_save" | "headshot_upload" | "file_upload";
+/** File-backed types require an upload; confirm/confirmation/general/action are
+ *  no-file action tasks the speaker marks complete independently. */
+export type SpeakerTaskType =
+  | "profile"
+  | "headshot"
+  | "slides"
+  | "supporting_doc"
+  | "confirm"
+  | "confirmation"
+  | "form"
+  | "general"
+  | "action";
+export const ACTION_TASK_TYPES: ReadonlySet<SpeakerTaskType> = new Set([
+  "confirm",
+  "confirmation",
+  "general",
+  "action",
+]);
+export function isActionTaskType(type: string | undefined): boolean {
+  return ACTION_TASK_TYPES.has(type as SpeakerTaskType);
+}
 export interface SpeakerTask {
   id: string;
   speakerId: string;
   submissionId?: string;
   title: string;
-  type: "profile" | "headshot" | "slides" | "supporting_doc" | "confirm" | "confirmation" | "form";
+  type: SpeakerTaskType;
   required: boolean;
   status: "not_started" | "completed";
   dueAt: string;

@@ -4690,6 +4690,55 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
+  "/api/events/{eventId}/speakers/invite":
+    parameters:
+      - name: eventId
+        in: path
+        required: true
+        schema:
+          type: string
+        description: "eventId path parameter."
+    post:
+      tags: [speakers]
+      operationId: post_api_events_eventId_speakers_invite
+      summary: "Registered in speakerRoutes.ts. See docs/API.md for role and behaviour notes."
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JsonObject'
+      responses:
+        '201':
+          description: Successful response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DataEnvelope'
+        '200':
+          description: Successful response for operations that update in place.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DataEnvelope'
+        '400':
+          description: Validation error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '403':
+          description: Demo role or ownership scope rejected the request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '404':
+          description: Event, record or route target was not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
   "/api/events/{eventId}/speakers/tasks":
     parameters:
       - name: eventId

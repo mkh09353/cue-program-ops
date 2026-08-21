@@ -65,6 +65,42 @@ export function createSpeakerRoutes(deps: {
   const eventOk = (c: any) => c.req.param("eventId") === deps.store.event.id;
   const boot = () => enrichSpeakerMgmtDemo(deps.store);
 
+  /** One portal-invitation send: issue token, mail via the shared mailer, log
+   *  the communication with per-recipient status. Bulk invite loops this. */
+  const sendPortalInvitation = async (speakerId: string, origin: string) => {
+    const profile = deps.store.profiles.find((p) => p.speakerId === speakerId);
+    if (!profile) return { ok: false as const, error: "speaker not found" };
+    const sub = deps.store.submissions.find((s) => s.speakerId === speakerId && s.status === "accepted");
+    const title = sub?.title || "your session";
+    const comm = sendTemplate("accepted", speakerId, title, "acceptance", deps.store);
+    const invite = issueSpeakerInvite(speakerId, deps.store);
+    const portalPath = invite ? speakerInvitePath(invite.token) : "/p";
+    const portalUrl = `${origin}${portalPath}`;
+    if (invite) {
+      comm.body = `${comm.body}\n\nAccess your speaker portal:\n${portalUrl}\n\nThis is a personal access link for ${profile.name} — do not forward it. It expires on ${new Date(invite.expiresAt!).toDateString()}.`;
+    }
+    try {
+      const result = await deps.mailer.send({
+        to: profile.email,
+        subject: comm.subject,
+        text: comm.body,
+        html: brandedHtmlFor(comm.subject, comm.body, {
+          eventName: deps.store.event.name,
+          kind: "acceptance",
+          ctaUrl: portalUrl,
+          ctaLabel: "Open your speaker portal",
+        }),
+      });
+      comm.status = result.status;
+      comm.providerId = result.providerId;
+    } catch {
+      comm.status = "failed";
+    }
+    comm.recipientEmail = profile.email;
+    comm.recipientName = profile.name;
+    return { ok: true as const, communication: comm, portalPath, portalUrl, expiresAt: invite?.expiresAt, speakerId, name: profile.name, email: profile.email, status: comm.status };
+  };
+
   // —— Organizer roster ——
   app.get("/api/events/:eventId/speakers", (c) => {
     if (!eventOk(c)) return fail(c, "event not found", 404);
@@ -174,43 +210,35 @@ export function createSpeakerRoutes(deps: {
     return c.json({ data: updated.profile });
   });
 
+  app.post("/api/events/:eventId/speakers/invite", async (c) => {
+    if (!eventOk(c)) return fail(c, "event not found", 404);
+    boot();
+    const denied = requireOrg(c);
+    if (denied) return denied;
+    const b = await c.req.json().catch(() => ({}));
+    const speakerIds: string[] = Array.isArray(b.speakerIds) ? b.speakerIds.map(String).filter(Boolean) : [];
+    if (!speakerIds.length) return fail(c, "speakerIds required");
+    const origin = new URL(c.req.url).origin;
+    const sent = [];
+    const failed = [];
+    for (const speakerId of speakerIds) {
+      const row = await sendPortalInvitation(speakerId, origin);
+      if (!row.ok) failed.push({ speakerId, error: row.error, status: "failed" });
+      else sent.push({ speakerId: row.speakerId, name: row.name, email: row.email, status: row.status, communicationId: row.communication.id, portalUrl: row.portalUrl });
+    }
+    await deps.persist(deps.store.event.id, deps.store);
+    return c.json({ data: sent, meta: { count: sent.length, failed: failed.length, failures: failed } });
+  });
+
   app.post("/api/events/:eventId/speakers/:speakerId/invite", async (c) => {
     if (!eventOk(c)) return fail(c, "event not found", 404);
     boot();
     const denied = requireOrg(c);
     if (denied) return denied;
-    const speakerId = c.req.param("speakerId");
-    const profile = deps.store.profiles.find((p) => p.speakerId === speakerId);
-    if (!profile) return fail(c, "speaker not found", 404);
-    const sub = deps.store.submissions.find((s) => s.speakerId === speakerId && s.status === "accepted");
-    const title = sub?.title || "your session";
-    const comm = sendTemplate("accepted", speakerId, title, "acceptance", deps.store);
-    // Real per-speaker access token (same pattern as reviewer invite links).
-    const invite = issueSpeakerInvite(speakerId, deps.store);
-    const portalPath = invite ? speakerInvitePath(invite.token) : "/p";
-    const portalUrl = `${new URL(c.req.url).origin}${portalPath}`;
-    if (invite) {
-      comm.body = `${comm.body}\n\nAccess your speaker portal:\n${portalUrl}\n\nThis is a personal access link for ${profile.name} — do not forward it. It expires on ${new Date(invite.expiresAt!).toDateString()}.`;
-    }
-    try {
-      const result = await deps.mailer.send({
-        to: profile.email,
-        subject: comm.subject,
-        text: comm.body,
-        html: brandedHtmlFor(comm.subject, comm.body, {
-          eventName: deps.store.event.name,
-          kind: "acceptance",
-          ctaUrl: portalUrl,
-          ctaLabel: "Open your speaker portal",
-        }),
-      });
-      comm.status = result.status;
-      comm.providerId = result.providerId;
-    } catch {
-      comm.status = "failed";
-    }
+    const sent = await sendPortalInvitation(c.req.param("speakerId"), new URL(c.req.url).origin);
+    if (!sent.ok) return fail(c, sent.error, 404);
     await deps.persist(deps.store.event.id, deps.store);
-    return c.json({ data: { communication: comm, portalPath, portalUrl, mode: "speaker_access_token", expiresAt: invite?.expiresAt } });
+    return c.json({ data: { communication: sent.communication, portalPath: sent.portalPath, portalUrl: sent.portalUrl, mode: "speaker_access_token", expiresAt: sent.expiresAt } });
   });
 
   app.post("/api/events/:eventId/speakers/import", async (c) => {

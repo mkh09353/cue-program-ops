@@ -668,7 +668,7 @@ export function assignGeneralTasks(
   if (!title) return { ok: false, error: "title is required" };
   if (!dueAt || !Number.isFinite(Date.parse(dueAt))) return { ok: false, error: "valid dueAt is required" };
   if (!speakerIds.length) return { ok: false, error: "speakerIds required" };
-  const type = input.type || "confirm";
+  const type = input.type || "general";
   const made: SpeakerTaskExt[] = speakerIds.map((speakerId) => {
     const task: SpeakerTaskExt = {
       id: id("task"),

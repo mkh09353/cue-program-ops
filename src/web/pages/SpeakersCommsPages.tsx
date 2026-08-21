@@ -35,8 +35,8 @@ import { useAsyncData } from "../lib/useAsyncData";
 /** One-click Assign-task templates (label, task type and prefilled description). */
 export const TASK_TEMPLATE_DUE_DAYS = 14;
 export const TASK_TEMPLATES = [
-  { title: "Confirm participation", type: "confirm", description: "Confirm that you will participate in the event." },
-  { title: "Sign speaker release form", type: "confirm", description: "Confirm that you signed the speaker release form." },
+  { title: "Confirm participation", type: "general", description: "Confirm that you will participate in the event." },
+  { title: "Sign speaker release form", type: "general", description: "Confirm that you signed the speaker release form." },
   { title: "Complete bio and profile", type: "profile", description: "Review and complete your speaker bio and profile." },
   { title: "Speaker details form", type: "form", description: "Complete speaker logistics and event preparation details.", formSchema: [
     { key: "shirt_size", label: "Shirt size", type: "select", required: true, options: ["XS", "S", "M", "L", "XL", "XXL"] },
@@ -211,8 +211,10 @@ export function SpeakersPage() {
     title: "Confirm travel plans",
     description: "Reply with arrival city and hotel needs.",
     dueAt: "2026-09-20",
-    type: "confirm",
+    type: "general",
   });
+  const [bulkInvite, setBulkInvite] = useState<{ count: number; sent: number; failed: number; at: string } | null>(null);
+  const [bulkInviteBusy, setBulkInviteBusy] = useState(false);
   /** Assignees chosen inside the task dialog (seeded from the table selection). */
   const [taskSpeakerIds, setTaskSpeakerIds] = useState<string[]>([]);
   const [taskResult, setTaskResult] = useState<{ count: number; names: string[] } | null>(null);
@@ -335,12 +337,49 @@ export function SpeakersPage() {
             >
               Assign task
             </Button>
+            <Button
+              variant="secondary"
+              data-testid="bulk-send-portal-invitation"
+              disabled={!selected.length || bulkInviteBusy}
+              onClick={async () => {
+                setBulkInviteBusy(true);
+                setBulkInvite(null);
+                try {
+                  const response = await api.inviteSpeakers(selected);
+                  const sent = response.data?.length || 0;
+                  const failed = response.meta?.failed || 0;
+                  const at = new Date().toLocaleTimeString();
+                  setBulkInvite({ count: selected.length, sent, failed, at });
+                  toast(
+                    failed
+                      ? `Portal invitation sent to ${sent} of ${selected.length} speaker(s)`
+                      : `Portal invitation sent to ${sent} speaker${sent === 1 ? "" : "s"}`,
+                    failed ? "warn" : "info",
+                  );
+                  await load();
+                } catch (error: any) {
+                  toast(error.message || "Portal invitation failed", "danger");
+                } finally {
+                  setBulkInviteBusy(false);
+                }
+              }}
+            >
+              {bulkInviteBusy ? "Sending invitations…" : `Send portal invitation (${selected.length})`}
+            </Button>
             <Button onClick={() => setShowAdd(true)}>Add speaker</Button>
           </div>
         }
       />
       {duplicatePairs.length ? <Card className="mb-4 border-line p-4"><div className="flex flex-wrap items-center justify-between gap-2"><div><h2 className="text-sm font-bold uppercase tracking-wide text-mid">{duplicatePairs.length} possible duplicate{duplicatePairs.length === 1 ? "" : "s"} — Review &amp; merge</h2><p className="mt-1 text-xs text-mid">Name matches with different emails. They stay separate until you merge; the richer, older record is kept and enriched with the duplicate\u2019s missing details.</p></div><Button size="sm" onClick={()=>void mergeAll(duplicatePairs)}>Merge all suggested duplicates</Button></div><div className="mt-3 space-y-2">{duplicatePairs.map(pair=><div key={`${pair.primary.speakerId}-${pair.duplicate.speakerId}`} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-line p-3 text-sm"><div><b>{pair.primary.name}</b><div className="text-xs text-mid">Keep {pair.primary.email} · merge {pair.duplicate.email}</div></div><Button size="sm" onClick={async()=>{await api.mergeSpeakers(pair.primary.speakerId,pair.duplicate.speakerId);toast("Speaker records merged");load();}}>Merge duplicate</Button></div>)}</div></Card>:null}
       {err ? <Notice tone="danger">{err}</Notice> : null}
+      {bulkInvite ? (
+        <Notice tone={bulkInvite.failed ? "warn" : "ok"} onClose={() => setBulkInvite(null)}>
+          <span data-testid="bulk-invite-success">
+            <b>Portal invitation sent</b> to {bulkInvite.sent} of {bulkInvite.count} selected speaker{bulkInvite.count === 1 ? "" : "s"} at {bulkInvite.at}
+            {bulkInvite.failed ? ` · ${bulkInvite.failed} failed` : ""} · each send logged in communication history with per-recipient status.
+          </span>
+        </Notice>
+      ) : null}
 
       {progress ? (
         <Card className="mb-4 overflow-x-auto p-4">
@@ -468,7 +507,7 @@ export function SpeakersPage() {
             <Card key={s.speakerId} className="p-4">
               <div className="flex items-start justify-between gap-2">
                 <div className="flex gap-3">
-                  <input type="checkbox" checked={selected.includes(s.speakerId)} onChange={() => toggle(s.speakerId)} />
+                  <input type="checkbox" aria-label={`Select ${s.name}`} checked={selected.includes(s.speakerId)} onChange={() => toggle(s.speakerId)} />
                   {s.headshotUrl || s.profile?.headshotUrl ? (
                     <img key={s.headshotUrl || s.profile?.headshotUrl} src={s.headshotUrl || s.profile?.headshotUrl} alt={`${s.name} headshot`} className="h-12 w-12 rounded-full object-cover" />
                   ) : (
@@ -510,16 +549,16 @@ export function SpeakersPage() {
                     try {
                       const response = await api.inviteSpeaker(s.speakerId);
                       const communication = response.data.communication;
-                      const message = `Portal invite logged for ${s.name} (${communication.status})`;
+                      const message = `Portal invitation sent to ${s.name} (${communication.status})`;
                       setInviteSuccess((current) => ({ ...current, [s.speakerId]: message }));
                       toast(message);
                       await load();
                     } catch (error: any) {
-                      toast(error.message || "Portal invite failed", "danger");
+                      toast(error.message || "Portal invitation failed", "danger");
                     }
                   }}
                 >
-                  Send invite
+                  Send portal invitation
                 </Button>
                 <Button
                   size="sm"
@@ -677,7 +716,9 @@ export function SpeakersPage() {
               value={taskForm.type}
               onChange={(e) => setTaskForm({ ...taskForm, type: e.target.value })}
             >
-              <option value="confirm">Action / confirm</option>
+              <option value="general">General action (no file)</option>
+              <option value="action">Action</option>
+              <option value="confirm">Confirm</option>
               <option value="form">Form</option>
               <option value="profile">Profile</option>
             </select>
@@ -913,9 +954,9 @@ export function SpeakerDetailPage() {
                   const r = await api.inviteSpeaker(row.speakerId);
                   const at = new Date().toLocaleString();
                   const link = (r as any)?.data?.portalUrl || (r as any)?.data?.portalPath || "";
-                  setInviteMsg(`Invited · logged at ${at}`);
+                  setInviteMsg(`Portal invitation sent · logged at ${at} · ${((r as any)?.data?.communication?.status) || "mock_sent"}`);
                   setInviteLink(link);
-                  toast(`Portal invite logged for ${row.name}`);
+                  toast(`Portal invitation sent to ${row.name}`);
                   load();
                   void r;
                 } catch (e: any) {
@@ -923,7 +964,7 @@ export function SpeakerDetailPage() {
                 }
               }}
             >
-              Send portal invite
+              Send portal invitation
             </Button>
             <Button asChild variant="outline">
               <Link to="/app/speakers">Back</Link>
@@ -1192,6 +1233,11 @@ export function SpeakerDetailPage() {
                       </span>
                     ) : null}
                     {t.type === "form" ? <Badge tone="muted">Form to complete</Badge> : null}
+                    {t.type === "general" || t.type === "action" || t.type === "confirm" || t.type === "confirmation" ? (
+                      <Badge tone="muted" data-testid={`task-kind-${t.id}`}>General action · no file</Badge>
+                    ) : t.type === "headshot" || t.type === "slides" || t.type === "supporting_doc" ? (
+                      <Badge tone="muted">File request</Badge>
+                    ) : null}
                     {t.formAnswers && Object.keys(t.formAnswers).length ? <dl className="mt-2 text-xs">{Object.entries(t.formAnswers).map(([key,value])=><div key={key}><dt className="inline font-semibold">{t.formSchema?.find((f:any)=>f.key===key)?.label || key}: </dt><dd className="inline">{String(value)}</dd></div>)}</dl> : null}
                   </div>
                   <StatusBadge status={t.status} />

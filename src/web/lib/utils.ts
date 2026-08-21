@@ -201,7 +201,11 @@ const TASK_TYPE_LABELS: Record<string, string> = {
   supporting_doc: "Upload supporting document",
   supporting_document: "Upload supporting document",
   confirm: "Confirm details",
+  confirmation: "Confirm details",
   form: "Complete form",
+  general: "General action",
+  action: "General action",
+  file: "File request",
   bio: "Add speaker bio",
 };
 

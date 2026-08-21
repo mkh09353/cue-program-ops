@@ -814,7 +814,7 @@ test("assign-task modal exposes quick-add template chips with prefilled fields",
       "Flight reimbursement form",
     ],
   );
-  assert.deepEqual(TASK_TEMPLATES.map((t: any) => t.type), ["confirm", "confirm", "profile", "form", "form", "form"]);
+  assert.deepEqual(TASK_TEMPLATES.map((t: any) => t.type), ["general", "general", "profile", "form", "form", "form"]);
   assert.ok(TASK_TEMPLATES.every((t: any) => t.description && t.description.length > 10), "descriptions are prefilled");
 
   // Deterministic relative due date in the date-input format the modal uses.
@@ -885,6 +885,144 @@ test("bulk comms send appends one log entry per recipient and returns the UI pay
   for (const row of body.data) {
     assert.ok(newestIds.includes(row.id), "the just-sent rows are the newest log entries");
   }
+});
+
+test("general/action tasks create independent per-speaker records, mark complete, and survive snapshot restore", async () => {
+  let snapshot: any;
+  const persistence = { save: async (value: any) => { snapshot = structuredClone(value); }, load: async () => snapshot };
+  const repo = new MemoryRepository();
+  const app = createApp({ repo, persistence });
+  const title = `Sign speaker release form ${crypto.randomUUID().slice(0, 8)}`;
+  const assigned = await app.request(`/api/events/${EVENT_ID}/speakers/tasks`, {
+    method: "POST",
+    headers: org,
+    body: JSON.stringify({
+      title,
+      description: "Confirm that you signed the speaker release form.",
+      dueAt: "2027-05-01T23:59:59.000Z",
+      type: "general",
+      speakerIds: ["spk-sam", "spk-ada"],
+    }),
+  });
+  assert.equal(assigned.status, 201);
+  const tasks = (await assigned.json()).data;
+  assert.equal(tasks.length, 2);
+  assert.ok(tasks.every((t: any) => t.type === "general" && t.status === "not_started" && t.title === title));
+  const samTask = tasks.find((t: any) => t.speakerId === "spk-sam");
+  const adaTask = tasks.find((t: any) => t.speakerId === "spk-ada");
+  assert.ok(samTask && adaTask && samTask.id !== adaTask.id);
+
+  const done = await app.request(`/api/speaker/events/${EVENT_ID}/tasks/${samTask.id}`, {
+    method: "PATCH",
+    headers: speakerSam,
+    body: JSON.stringify({ status: "completed" }),
+  });
+  assert.equal(done.status, 200);
+  const completed = (await done.json()).data.task;
+  assert.equal(completed.status, "completed");
+  assert.equal(completed.completedVia, "manual");
+
+  const adaHome = await app.request(`/api/speaker/events/${EVENT_ID}/home`, { headers: speakerAda });
+  assert.equal(adaHome.status, 200);
+  const adaRow = (await adaHome.json()).data.tasks.find((t: any) => t.id === adaTask.id);
+  assert.equal(adaRow.status, "not_started", "Ada's copy stays open when Sam marks complete");
+
+  const progress = (await (await app.request(`/api/events/${EVENT_ID}/speakers/progress`, { headers: org })).json()).data;
+  const samProgress = progress.rows.find((r: any) => r.speakerId === "spk-sam");
+  const adaProgress = progress.rows.find((r: any) => r.speakerId === "spk-ada");
+  assert.equal(samProgress.cells[title].status, "completed");
+  assert.equal(samProgress.cells[title].type, "general");
+  assert.equal(adaProgress.cells[title].status, "not_started");
+
+  store.tasks.filter((t) => t.title === title).forEach((t) => { t.status = "not_started"; delete t.completedVia; });
+  const { restoreSnapshot } = await import("../src/app.js");
+  await restoreSnapshot({ repo: new MemoryRepository(), persistence });
+  const restoredSam = store.tasks.find((t) => t.id === samTask.id);
+  const restoredAda = store.tasks.find((t) => t.id === adaTask.id);
+  assert.equal(restoredSam?.status, "completed");
+  assert.equal(restoredSam?.completedVia, "manual");
+  assert.equal(restoredSam?.type, "general");
+  assert.equal(restoredAda?.status, "not_started");
+});
+
+test("assignGeneralTasks defaults type to general and action is an alias of no-file tasks", () => {
+  const title = `Action alias ${crypto.randomUUID().slice(0, 6)}`;
+  const made = assignGeneralTasks({
+    title,
+    dueAt: "2027-06-01T00:00:00.000Z",
+    speakerIds: ["spk-sam"],
+  });
+  assert.equal(made.ok, true);
+  if (made.ok) {
+    assert.equal(made.tasks[0]!.type, "general");
+    assert.equal(made.tasks[0]!.status, "not_started");
+  }
+  const action = assignGeneralTasks({
+    title: `${title} action`,
+    dueAt: "2027-06-02T00:00:00.000Z",
+    type: "action",
+    speakerIds: ["spk-ada"],
+  });
+  assert.equal(action.ok, true);
+  if (action.ok) assert.equal(action.tasks[0]!.type, "action");
+});
+
+test("content TaskBuilder and speaker roster distinguish general action tasks from file requests", async () => {
+  const content = await readFile(new URL("../src/web/pages/ContentPages.tsx", import.meta.url), "utf8");
+  assert.match(content, /data-testid="task-kind"/);
+  assert.match(content, /<option value="general">General action \(no file\)<\/option>/);
+  assert.match(content, /api\.assignSpeakerTasks\(\{title:form\.name,description:form\.instructions,dueAt,type:"general",speakerIds:form\.speakerIds\}\)/);
+  assert.match(content, /api\.createDeliverableTask/);
+  const page = await readFile(new URL("../src/web/pages/SpeakersCommsPages.tsx", import.meta.url), "utf8");
+  assert.match(page, /title="Assign general task"/);
+  assert.match(page, /<option value="general">General action \(no file\)<\/option>/);
+  assert.match(page, /General action · no file/);
+  assert.match(page, /Send portal invitation/);
+  assert.match(page, /data-testid="bulk-send-portal-invitation"/);
+  assert.match(page, /api\.inviteSpeakers\(selected\)/);
+});
+
+test("send portal invitation records per-recipient communications log status for one and many speakers", async () => {
+  const app = createApp({ repo: new MemoryRepository() });
+  const one = await app.request(`/api/events/${EVENT_ID}/speakers/spk-sam/invite`, {
+    method: "POST",
+    headers: org,
+    body: "{}",
+  });
+  assert.equal(one.status, 200);
+  const oneBody = await one.json();
+  assert.ok(oneBody.data.communication?.id);
+  assert.ok(["mock_sent", "sent"].includes(oneBody.data.communication.status));
+  assert.equal(oneBody.data.communication.recipientEmail || store.profiles.find((p) => p.speakerId === "spk-sam")?.email, store.profiles.find((p) => p.speakerId === "spk-sam")?.email);
+  assert.match(oneBody.data.portalUrl || "", /\/p(\?invite=|\/)/);
+
+  const bulk = await app.request(`/api/events/${EVENT_ID}/speakers/invite`, {
+    method: "POST",
+    headers: org,
+    body: JSON.stringify({ speakerIds: ["spk-sam", "spk-ada"] }),
+  });
+  assert.equal(bulk.status, 200);
+  const bulkBody = await bulk.json();
+  assert.equal(bulkBody.data.length, 2);
+  assert.equal(bulkBody.meta.count, 2);
+  assert.equal(bulkBody.meta.failed, 0);
+  assert.ok(bulkBody.data.every((row: any) => ["mock_sent", "sent"].includes(row.status) && row.communicationId && row.email));
+
+  const history = await app.request(`/api/events/${EVENT_ID}/comms/log`, { headers: org });
+  assert.equal(history.status, 200);
+  const log = (await history.json()).data;
+  for (const row of bulkBody.data) {
+    const entry = log.find((c: any) => c.id === row.communicationId);
+    assert.ok(entry, "bulk invite wrote a communications log row");
+    assert.equal(entry.speakerId, row.speakerId);
+    assert.equal(entry.status, row.status);
+  }
+  const missing = await app.request(`/api/events/${EVENT_ID}/speakers/invite`, {
+    method: "POST",
+    headers: org,
+    body: JSON.stringify({ speakerIds: [] }),
+  });
+  assert.equal(missing.status, 400);
 });
 
 test("comms page renders busy, persistent success and error states for every send action", async () => {

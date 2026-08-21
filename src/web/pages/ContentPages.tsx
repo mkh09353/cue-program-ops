@@ -180,22 +180,42 @@ return <div><PageHeader title="Content" description="Deliverables, approvals, se
 
 function TaskBuilder({data,reload}:{data:any;reload:()=>void}){
   const[open,setOpen]=useState(false),[busy,setBusy]=useState(false),[result,setResult]=useState<any>(null),[err,setErr]=useState("");
+  const[kind,setKind]=useState<"file"|"general">("file");
   const[form,setForm]=useState<any>({name:"Upload Session Presentation",instructions:"Final slide deck as a PDF, 16:9 aspect ratio.",dueAt:"2027-05-01",speakerIds:[],fileRequired:true,acceptedTypes:["application/pdf"]});
   const speakers:any[]=data.speakers||[];
   const allSelected=speakers.length>0&&speakers.every((s:any)=>form.speakerIds.includes(s.speakerId));
   const toggle=(id:string,on:boolean)=>setForm((f:any)=>({...f,speakerIds:on?[...new Set([...f.speakerIds,id])]:f.speakerIds.filter((x:string)=>x!==id)}));
   const selectedNames=speakers.filter((s:any)=>form.speakerIds.includes(s.speakerId)).map((s:any)=>s.name);
+  const isGeneral=kind==="general";
   return <Card className="mb-4 p-5">
     <div className="flex flex-wrap items-start justify-between gap-3">
-      <div><b>File-request tasks</b><p className="text-sm text-mid">Assign instructions, deadlines, file requirements, and accepted MIME types to one or many speakers.</p></div>
+      <div>
+        <b>{isGeneral?"General action tasks":"File-request tasks"}</b>
+        <p className="text-sm text-mid">{isGeneral?"Assign a title, optional description, due date, and one or many speakers. No file is required — each speaker marks the task complete independently.":"Assign instructions, deadlines, file requirements, and accepted MIME types to one or many speakers."}</p>
+      </div>
       <Button onClick={()=>setOpen(!open)}>{open?"Close":"Create task"}</Button>
     </div>
     {result?<Notice tone="ok" onClose={()=>setResult(null)}>
-      <b>{result.count} deliverable{result.count===1?"":"s"} created</b> · {result.name} · due {result.dueAt}<br/>
+      <b>{result.count} {result.kind==="general"?"general task":"deliverable"}{result.count===1?"":"s"} created</b> · {result.name} · due {result.dueAt}<br/>
       Assigned to: {result.names.join(", ")}
     </Notice>:null}
     {err?<Notice tone="danger" onClose={()=>setErr("")}>{err}</Notice>:null}
     {open?<div className="mt-4 grid gap-2 md:grid-cols-2">
+      <Field label="Task kind" hint="General/action tasks never require a file. File-request tasks collect an upload.">
+        <Select aria-label="Task kind" data-testid="task-kind" value={kind} onChange={e=>{
+          const next=e.target.value==="general"?"general":"file";
+          setKind(next);
+          setForm((f:any)=>({
+            ...f,
+            name: next==="general" && f.name==="Upload Session Presentation" ? "Sign speaker release form" : next==="file" && f.name==="Sign speaker release form" ? "Upload Session Presentation" : f.name,
+            instructions: next==="general" && f.instructions.startsWith("Final slide deck") ? "Confirm that you signed the speaker release form." : f.instructions,
+            fileRequired: next==="file",
+          }));
+        }}>
+          <option value="file">File request (upload required)</option>
+          <option value="general">General action (no file)</option>
+        </Select>
+      </Field>
       <Field label="Task name"><Input value={form.name} onChange={e=>{
         const name=e.target.value;
         // A task named "…headshot…" should collect images, not PDFs — switch the
@@ -207,7 +227,7 @@ function TaskBuilder({data,reload}:{data:any;reload:()=>void}){
       }}/></Field>
       <Field label="Due date"><Input type="date" value={form.dueAt} onChange={e=>setForm({...form,dueAt:e.target.value})}/></Field>
       <Field label="Instructions"><Textarea value={form.instructions} onChange={e=>setForm({...form,instructions:e.target.value})}/></Field>
-      <Field label="Accepted MIME types" hint={/headshot|photo|portrait/i.test(form.name)?"Headshot task — defaults to PNG/JPEG images.":"Comma separated MIME types (server enforces them on upload)."}><Input value={form.acceptedTypes.join(",")} onChange={e=>setForm({...form,acceptedTypes:e.target.value.split(",").map((x:string)=>x.trim()).filter(Boolean)})}/></Field>
+      {isGeneral?null:<Field label="Accepted MIME types" hint={/headshot|photo|portrait/i.test(form.name)?"Headshot task — defaults to PNG/JPEG images.":"Comma separated MIME types (server enforces them on upload)."}><Input value={form.acceptedTypes.join(",")} onChange={e=>setForm({...form,acceptedTypes:e.target.value.split(",").map((x:string)=>x.trim()).filter(Boolean)})}/></Field>}
       <div className="md:col-span-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <b className="text-xs uppercase tracking-wide text-mid">Assign to speakers ({form.speakerIds.length} selected)</b>
@@ -229,21 +249,24 @@ function TaskBuilder({data,reload}:{data:any;reload:()=>void}){
             </label>;
           })}
         </div>
-        {selectedNames.length?<p className="mt-2 text-xs text-mid">Will create one deliverable per session for: <b className="text-ink">{selectedNames.join(", ")}</b></p>:<p className="mt-2 text-xs text-mid">Select at least one speaker.</p>}
+        {selectedNames.length?<p className="mt-2 text-xs text-mid">{isGeneral?"Will create one independent general task per speaker for:":"Will create one deliverable per session for:"} <b className="text-ink">{selectedNames.join(", ")}</b></p>:<p className="mt-2 text-xs text-mid">Select at least one speaker.</p>}
       </div>
       <div className="md:col-span-2">
         <Button disabled={busy||!form.speakerIds.length||!form.name.trim()} onClick={async()=>{
           setBusy(true);setErr("");
           try{
-            const r:any=await api.createDeliverableTask({...form,dueAt:new Date(`${form.dueAt}T23:59:59Z`).toISOString()});
+            const dueAt=new Date(`${form.dueAt}T23:59:59Z`).toISOString();
+            const r:any=isGeneral
+              ? await api.assignSpeakerTasks({title:form.name,description:form.instructions,dueAt,type:"general",speakerIds:form.speakerIds})
+              : await api.createDeliverableTask({...form,dueAt,fileRequired:true});
             const made=r.data||[];
             const names=[...new Set(made.map((t:any)=>speakers.find((s:any)=>s.speakerId===t.speakerId)?.name||t.speakerId))] as string[];
-            setResult({count:made.length,names,name:form.name,dueAt:form.dueAt});
-            toast(`${made.length} deliverable(s) assigned to ${names.length} speaker(s)`);
+            setResult({count:made.length,names,name:form.name,dueAt:form.dueAt,kind:isGeneral?"general":"file"});
+            toast(`${made.length} ${isGeneral?"general task":"deliverable"}(s) assigned to ${names.length} speaker(s)`);
             setOpen(false);reload();
           }catch(e:any){setErr(e?.message||"Task creation failed");toast(e?.message||"Task creation failed","danger")}
           finally{setBusy(false)}
-        }}>{busy?"Saving…":"Save task"}</Button>
+        }}>{busy?"Saving…":isGeneral?"Save general task":"Save task"}</Button>
       </div>
     </div>:null}
   </Card>;

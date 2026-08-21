@@ -344,6 +344,7 @@ export const api = {
   updateSpeaker: (id: string, body: any) => mut<{ data: any }>(`/api/events/${EVENT_ID}/speakers/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   setSpeakerStatus: (id: string, status: string) => mut<{ data: any }>(`/api/events/${EVENT_ID}/speakers/${id}/status`, { method: "POST", body: JSON.stringify({ status }) }),
   inviteSpeaker: (id: string) => mut<{ data: any }>(`/api/events/${EVENT_ID}/speakers/${id}/invite`, { method: "POST", body: "{}" }),
+  inviteSpeakers: (speakerIds: string[]) => mut<{ data: any[]; meta?: { count: number; failed: number; failures: any[] } }>(`/api/events/${EVENT_ID}/speakers/invite`, { method: "POST", body: JSON.stringify({ speakerIds }) }),
   importSpeakers: (csv: string) => mut<{ data: any }>(`/api/events/${EVENT_ID}/speakers/import`, { method: "POST", body: JSON.stringify({ csv }) }),
   mergeSpeakers: (primaryId:string,secondaryId:string) => mut(`/api/events/${EVENT_ID}/speakers/merge`,{method:"POST",body:JSON.stringify({primaryId,secondaryId})}),
   mergeSuggestedSpeakers: (pairs:{primaryId:string;secondaryId:string}[]) => mut<{data:{merged:number;profiles:any[];skipped?:{primaryId:string;secondaryId:string;reason:string}[];remaining?:any[]}}>(`/api/events/${EVENT_ID}/speakers/merge-suggestions`,{method:"POST",body:JSON.stringify({pairs})}),
