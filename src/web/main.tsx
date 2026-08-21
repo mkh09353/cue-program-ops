@@ -7,6 +7,7 @@ import { ToastViewport } from "./components/ui";
 import { CommandPage } from "./pages/CommandPage";
 import { ReviewStudioPage, SubmissionsListPage } from "./pages/SubmissionsPages";
 import { SchedulePage } from "./pages/SchedulePage";
+import { RunOfShowPage } from "./pages/RunOfShowPage";
 import { SessionsPage } from "./pages/SessionsPage";
 import { CommsPage, SpeakerDetailPage, SpeakersPage } from "./pages/SpeakersCommsPages";
 import { FormsPage, PublishPage, SettingsPage } from "./pages/PublishFormsSettings";
@@ -67,6 +68,7 @@ function App() {
           <Route path="review-progress" element={<ReviewProgressPage />} />
           <Route path="results" element={<ResultsPage />} />
           <Route path="schedule" element={<SchedulePage />} />
+          <Route path="schedule/run-of-show" element={<RunOfShowPage />} />
           <Route path="sessions" element={<SessionsPage />} />
           <Route path="speakers" element={<SpeakersPage />} />
           <Route path="speakers/:id" element={<SpeakerDetailPage />} />

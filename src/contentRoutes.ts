@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { type ContentApprovalStatus, type LifecycleStore } from "./lifecycle.js";
 import type { Mailer } from "./mailer.js";
+import { brandedHtmlFor } from "./emailTemplate.js";
 import type { Repository } from "./domain.js";
 import { addFileVersion, canAccessFile, canonicalDeliverable, contentReadiness, upsertDeliverable, validateUpload } from "./content.js";
 import { applySessionEdit, listEditableSessions, restoreSessionHistory } from "./sessionContent.js";
@@ -10,6 +11,7 @@ const fail=(c:any,message:string,status=400)=>c.json({error:{message}},status as
 const validStatus=(v:string):v is ContentApprovalStatus=>["draft","submitted","approved","changes_requested"].includes(v);
 export function createContentRoutes(deps:{store:LifecycleStore;persist:(eventId?:string,store?:LifecycleStore)=>Promise<void>;persona:(c:any)=>{id:string;role:string;name:string;email:string;speakerId?:string};mailer:Mailer;repo:Repository}) {
  const app=new Hono(); const event=(c:any)=>c.req.param("eventId")===deps.store.event.id; const org=(c:any)=>deps.persona(c).role==="organizer";
+ const requireOrg=(c:any)=>{if(org(c))return null;const hasAuth=c.get("auth")||c.get("authCookiePresent");const demoOn=c.get("demoPersonaHeaders")!==false;const hasDemo=demoOn&&(c.req.header("x-demo-persona")||c.req.header("x-demo-role"));if(hasAuth||hasDemo)return fail(c,"organizer role required",403);return fail(c,"authentication required",401);};
  const scheduleRepo=deps.repo as Repository&{getSchedule?:(id:string)=>Promise<any>;putSchedule?:(id:string,s:any)=>Promise<void>};
  /**
   * Mirror a lifecycle session edit onto the canonical schedule session that every
@@ -25,12 +27,12 @@ export function createContentRoutes(deps:{store:LifecycleStore;persist:(eventId?
  const syncSpeaker=async(speakerId:string)=>{const profile=deps.store.profiles.find(p=>p.speakerId===speakerId), schedule=await scheduleRepo.getSchedule?.(deps.store.event.id), target=schedule?.speakers.find((s:any)=>s.id===speakerId);if(profile&&target){Object.assign(target,{name:profile.name,bio:profile.bio,company:profile.company,title:profile.title,headshotUrl:(profile as any).headshotUrl});if(scheduleRepo.putSchedule)await scheduleRepo.putSchedule(deps.store.event.id,schedule);}};
  const commentRole=(comment:{authorId:string;authorRole?:string})=>comment.authorRole||(deps.store.personas.find(p=>p.id===comment.authorId)?.role==="organizer"?"Organizer":"Speaker");
  const projectFile=(f:any)=>({...f,comments:(f.comments||[]).map((comment:any)=>({...comment,authorRole:commentRole(comment)}))});
- app.get("/api/events/:eventId/content",async(c)=>{if(!event(c))return fail(c,"event not found",404);if(!org(c))return fail(c,"organizer role required",403);
+ app.get("/api/events/:eventId/content",async(c)=>{if(!event(c))return fail(c,"event not found",404);const denied=requireOrg(c);if(denied)return denied;
   // Sessions are the canonical schedule rows (including runtime-created ones), each with
   // its approval state and full history so the restore UI exists before any save.
   const schedule=await scheduleRepo.getSchedule?.(deps.store.event.id);
   return c.json({data:{tasks:contentReadiness(deps.store),files:deps.store.contentFiles.map(f=>({...projectFile(f),speaker:deps.store.profiles.find(p=>p.speakerId===f.speakerId),session:deps.store.sessions.find(s=>s.id===f.sessionId),currentVersion:f.versions.find(v=>v.current)})),sessions:listEditableSessions(deps.store,schedule),speakers:deps.store.profiles}})});
- app.post("/api/events/:eventId/content/tasks",async(c)=>{if(!event(c))return fail(c,"event not found",404);if(!org(c))return fail(c,"organizer role required",403);const b=await c.req.json();if(!b.name||!b.dueAt||!Array.isArray(b.speakerIds)||!b.speakerIds.length)return fail(c,"name, due date, and assigned speakers are required");const made=b.speakerIds.flatMap((speakerId:string)=>{const sessions=(b.sessionIds?.length?deps.store.sessions.filter(s=>b.sessionIds.includes(s.id)&&s.speakerId===speakerId):deps.store.sessions.filter(s=>s.speakerId===speakerId));const targets=sessions.length?sessions:[undefined];return targets.map((session:any)=>{
+ app.post("/api/events/:eventId/content/tasks",async(c)=>{if(!event(c))return fail(c,"event not found",404);const denied=requireOrg(c);if(denied)return denied;const b=await c.req.json();if(!b.name||!b.dueAt||!Array.isArray(b.speakerIds)||!b.speakerIds.length)return fail(c,"name, due date, and assigned speakers are required");const made=b.speakerIds.flatMap((speakerId:string)=>{const sessions=(b.sessionIds?.length?deps.store.sessions.filter(s=>b.sessionIds.includes(s.id)&&s.speakerId===speakerId):deps.store.sessions.filter(s=>s.speakerId===speakerId));const targets=sessions.length?sessions:[undefined];return targets.map((session:any)=>{
       // One canonical slot per speaker/session/kind: reuse+extend an equivalent
       // deliverable instead of forking a second row the uploads would miss.
       const candidate={id:`deliverable-${crypto.randomUUID().slice(0,8)}`,name:b.name,instructions:b.instructions||"",dueAt:b.dueAt,speakerId,sessionId:session?.id,fileRequired:b.fileRequired!==false,acceptedTypes:b.acceptedTypes||["application/pdf"],status:"incomplete" as const,createdAt:new Date().toISOString()};
@@ -44,10 +46,10 @@ export function createContentRoutes(deps:{store:LifecycleStore;persist:(eventId?
  app.get("/api/events/:eventId/content/files/:fileId/versions/:versionId",download);
  app.get("/api/content/files/:fileId/versions/:versionId",download);
  app.post("/api/content/files/:fileId/comments",async(c)=>{const p=deps.persona(c),file=deps.store.contentFiles.find(f=>f.id===c.req.param("fileId"));if(!file||!canAccessFile(file,p))return fail(c,"file not found",404);const b=await c.req.json();if(!String(b.body||"").trim())return fail(c,"comment is required");const row={id:`comment-${crypto.randomUUID().slice(0,8)}`,authorId:p.id,authorName:p.name,authorRole:p.role==="organizer"?"Organizer":"Speaker",body:String(b.body),createdAt:new Date().toISOString()};file.comments.push(row as any);await deps.persist(deps.store.event.id, deps.store);return c.json({data:row},201)});
- app.patch("/api/events/:eventId/content/files/:fileId/approval",async(c)=>{if(!event(c))return fail(c,"event not found",404);if(!org(c))return fail(c,"organizer role required",403);const file=deps.store.contentFiles.find(f=>f.id===c.req.param("fileId")),b=await c.req.json();if(!file)return fail(c,"file not found",404);if(!validStatus(b.status))return fail(c,"invalid approval status");file.status=b.status;file.approvalComment=b.comment||"";await deps.persist(deps.store.event.id, deps.store);return c.json({data:file})});
- app.post("/api/events/:eventId/content/reminders",async(c)=>{if(!event(c))return fail(c,"event not found",404);if(!org(c))return fail(c,"organizer role required",403);const b=await c.req.json().catch(()=>({}));const outstanding=contentReadiness(deps.store).filter(t=>t.status!=="complete"&&(!b.overdueOnly||t.overdue)),ids=[...new Set(outstanding.map(t=>t.speakerId))],sent=[];for(const speakerId of ids){const profile=deps.store.profiles.find(p=>p.speakerId===speakerId);if(!profile)continue;const names=outstanding.filter(t=>t.speakerId===speakerId).map(t=>`${t.name} (due ${t.dueAt.slice(0,10)})`);const result=await deps.mailer.send({to:profile.email,subject:"Speaker deliverables outstanding",text:`Please complete: ${names.join(", ")}`}).catch(()=>({status:"failed" as const}));deps.store.communications.push({id:`comm-${crypto.randomUUID().slice(0,8)}`,speakerId,subject:"Speaker deliverables outstanding",body:names.join("\n"),kind:"reminder",status:result.status,providerId:"providerId" in result?result.providerId:undefined,ics:"",createdAt:new Date().toISOString()});sent.push({speakerId,status:result.status,providerId:"providerId" in result?result.providerId:undefined});}await deps.persist(deps.store.event.id, deps.store);return c.json({data:sent})});
+ app.patch("/api/events/:eventId/content/files/:fileId/approval",async(c)=>{if(!event(c))return fail(c,"event not found",404);const denied=requireOrg(c);if(denied)return denied;const file=deps.store.contentFiles.find(f=>f.id===c.req.param("fileId")),b=await c.req.json();if(!file)return fail(c,"file not found",404);if(!validStatus(b.status))return fail(c,"invalid approval status");file.status=b.status;file.approvalComment=b.comment||"";await deps.persist(deps.store.event.id, deps.store);return c.json({data:file})});
+ app.post("/api/events/:eventId/content/reminders",async(c)=>{if(!event(c))return fail(c,"event not found",404);const denied=requireOrg(c);if(denied)return denied;const b=await c.req.json().catch(()=>({}));const outstanding=contentReadiness(deps.store).filter(t=>t.status!=="complete"&&(!b.overdueOnly||t.overdue)),ids=[...new Set(outstanding.map(t=>t.speakerId))],sent=[];for(const speakerId of ids){const profile=deps.store.profiles.find(p=>p.speakerId===speakerId);if(!profile)continue;const tasks=outstanding.filter(t=>t.speakerId===speakerId);const names=tasks.map(t=>`${t.name} (due ${t.dueAt.slice(0,10)})`);const subject="Speaker deliverables outstanding",text=`Please complete: ${names.join(", ")}`;const result=await deps.mailer.send({to:profile.email,subject,text,html:brandedHtmlFor(subject,text,{eventName:deps.store.event.name,kind:"reminder",tasks:tasks.map(t=>({title:t.name,dueAt:t.dueAt,overdue:t.overdue}))})}).catch(()=>({status:"failed" as const}));deps.store.communications.push({id:`comm-${crypto.randomUUID().slice(0,8)}`,speakerId,subject:"Speaker deliverables outstanding",body:names.join("\n"),kind:"reminder",status:result.status,providerId:"providerId" in result?result.providerId:undefined,ics:"",createdAt:new Date().toISOString()});sent.push({speakerId,status:result.status,providerId:"providerId" in result?result.providerId:undefined});}await deps.persist(deps.store.event.id, deps.store);return c.json({data:sent})});
  app.patch("/api/events/:eventId/content/sessions/:sessionId",async(c)=>{
-  if(!event(c))return fail(c,"event not found",404);if(!org(c))return fail(c,"organizer role required",403);
+  if(!event(c))return fail(c,"event not found",404);const denied=requireOrg(c);if(denied)return denied;
   const b=await c.req.json().catch(()=>null) as any;if(!b)return fail(c,"JSON body required");
   if(b.contentStatus&&!validStatus(b.contentStatus))return fail(c,"invalid approval status");
   const schedule=await scheduleRepo.getSchedule?.(deps.store.event.id);
@@ -61,7 +63,7 @@ export function createContentRoutes(deps:{store:LifecycleStore;persist:(eventId?
   return c.json({data:{...row,id:result.canonicalId,contentStatus:result.contentStatus,propagated:result.scheduleTouched}});
  });
  app.post("/api/events/:eventId/content/history/:historyId/restore",async(c)=>{
-  if(!event(c))return fail(c,"event not found",404);if(!org(c))return fail(c,"organizer role required",403);
+  if(!event(c))return fail(c,"event not found",404);const denied=requireOrg(c);if(denied)return denied;
   const h=deps.store.contentHistory.find(x=>x.id===c.req.param("historyId"));if(!h)return fail(c,"history not found",404);
   const p=deps.persona(c);
   if(h.entityType==="session"){
@@ -78,7 +80,7 @@ export function createContentRoutes(deps:{store:LifecycleStore;persist:(eventId?
   }
   return c.json({data:h});
  });
- app.patch("/api/events/:eventId/content/speakers/:speakerId",async(c)=>{if(!event(c))return fail(c,"event not found",404);if(!org(c))return fail(c,"organizer role required",403);const profile=deps.store.profiles.find(p=>p.speakerId===c.req.param("speakerId")),b=await c.req.json();if(!profile)return fail(c,"speaker not found",404);const before={bio:profile.bio,company:profile.company,title:profile.title,headshotUrl:(profile as any).headshotUrl};Object.assign(profile,{bio:b.bio??profile.bio,company:b.company??profile.company,title:b.title??profile.title});if(b.headshotUrl!==undefined)(profile as any).headshotUrl=b.headshotUrl;const p=deps.persona(c);deps.store.contentHistory.push({id:`history-${crypto.randomUUID().slice(0,8)}`,entityType:"speaker",entityId:profile.speakerId,editorId:p.id,editorName:p.name,createdAt:new Date().toISOString(),before,after:{bio:profile.bio,company:profile.company,title:profile.title,headshotUrl:(profile as any).headshotUrl}});await syncSpeaker(profile.speakerId);await deps.persist(deps.store.event.id, deps.store);return c.json({data:profile})});
+ app.patch("/api/events/:eventId/content/speakers/:speakerId",async(c)=>{if(!event(c))return fail(c,"event not found",404);const denied=requireOrg(c);if(denied)return denied;const profile=deps.store.profiles.find(p=>p.speakerId===c.req.param("speakerId")),b=await c.req.json();if(!profile)return fail(c,"speaker not found",404);const before={bio:profile.bio,company:profile.company,title:profile.title,headshotUrl:(profile as any).headshotUrl};Object.assign(profile,{bio:b.bio??profile.bio,company:b.company??profile.company,title:b.title??profile.title});if(b.headshotUrl!==undefined)(profile as any).headshotUrl=b.headshotUrl;const p=deps.persona(c);deps.store.contentHistory.push({id:`history-${crypto.randomUUID().slice(0,8)}`,entityType:"speaker",entityId:profile.speakerId,editorId:p.id,editorName:p.name,createdAt:new Date().toISOString(),before,after:{bio:profile.bio,company:profile.company,title:profile.title,headshotUrl:(profile as any).headshotUrl}});await syncSpeaker(profile.speakerId);await deps.persist(deps.store.event.id, deps.store);return c.json({data:profile})});
  /**
   * —— Archive export (CNT-14) ——
   *
@@ -142,7 +144,7 @@ export function createContentRoutes(deps:{store:LifecycleStore;persist:(eventId?
  /** Legacy GET stays global (unchanged behaviour for any existing consumer). */
  const exportAllZip=(c:any)=>{
   if(!event(c))return fail(c,"event not found",404);
-  if(!org(c))return fail(c,"organizer role required",403);
+  const denied=requireOrg(c);if(denied)return denied;
   const entries=buildEntries(deps.store.contentFiles,"session");
   return zipResponse(c,entries,"session");
  };
@@ -150,7 +152,7 @@ export function createContentRoutes(deps:{store:LifecycleStore;persist:(eventId?
  /** Filtered POST used by the archive dialog. */
  const exportSelectionZip=async(c:any)=>{
   if(!event(c))return fail(c,"event not found",404);
-  if(!org(c))return fail(c,"organizer role required",403);
+  const denied=requireOrg(c);if(denied)return denied;
   const body=await c.req.json().catch(()=>null) as any;
   if(!body||typeof body!=="object")return fail(c,"selection payload required");
   const grouping=body.grouping;

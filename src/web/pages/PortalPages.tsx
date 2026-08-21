@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { getActiveEvent, api, getPersona, subscribeData } from "../lib/api";
 import { calendarLinks, fmtTime, fmtTzLabel, isProfessionalEmbed, taskTypeLabel } from "../lib/utils";
@@ -104,6 +104,12 @@ export function PortalHomePage() {
           <div className="text-xs font-bold uppercase tracking-wide text-ink">Up next</div>
           <h2 className="mt-1 text-xl font-bold">{next.title}</h2>
           <p className="mt-1 text-xs text-mid">{taskTypeLabel(next.type)}</p>
+          {/* Say up-front what will close this task, so the later flip to Done is expected. */}
+          {DERIVED_TASK_TYPES.has(next.type) ? (
+            <p className="mt-1 text-[11px] text-mid" data-testid="next-task-derived-todo">
+              {derivedTodoCopy(next.type)}
+            </p>
+          ) : null}
           {next.type === "form" ? <Badge tone="muted">Form to complete</Badge> : null}
           <Button asChild className="mt-3">
             <Link to={`/p/tasks/${next.id}`}>Continue task</Link>
@@ -253,12 +259,18 @@ export function PortalTalksPage() {
 
 /** Tasks whose completion is DERIVED from saving something else. */
 const DERIVED_TASK_TYPES = new Set(["profile", "headshot", "slides", "supporting_doc", "form"]);
-export const derivedCompletionCopy = (type: string) =>
-  type === "profile"
+export const derivedCompletionCopy = (typeOrTask: string | { type?: string; completedVia?: string }) => {
+  const via = typeof typeOrTask === "object" ? typeOrTask.completedVia : undefined;
+  const type = typeof typeOrTask === "object" ? String(typeOrTask.type || "") : typeOrTask;
+  if (via === "manual") return "Completed manually";
+  if (via === "profile_save") return "Completed automatically when you saved your profile";
+  if (via === "headshot_upload" || via === "file_upload") return "Completed automatically when you uploaded the file";
+  return type === "profile"
     ? "Completed automatically when you saved your profile"
     : type === "form"
       ? "Completed automatically when you submitted the form"
       : "Completed automatically when you uploaded the file";
+};
 export const derivedTodoCopy = (type: string) =>
   type === "profile"
     ? "Complete your profile below"
@@ -294,7 +306,7 @@ export function PortalTasksPage() {
               {t.type === "form" ? <Badge tone="muted">Form to complete</Badge> : null}
               {effectiveStatus === "completed" && DERIVED_TASK_TYPES.has(t.type) ? (
                 <div className="mt-1 text-[11px] text-mid" data-testid={`task-derived-note-${t.id}`}>
-                  {derivedCompletionCopy(t.type)}
+                  {derivedCompletionCopy(t)}
                 </div>
               ) : null}
             </div>
@@ -552,15 +564,32 @@ export function PortalTaskDetailPage() {
       .catch(() => setLinkedFile(null));
   }, [linkedId, deliverables]);
 
-  useEffect(() => {
-    if (data?.profile) setProfile({ ...data.profile });
-  }, [data]);
+  /** Guards the two editable blocks on this page (profile fields and the logistics
+   * form answers) against the refetch that every bumpData() triggers: uploading a
+   * file or posting a comment on this very page used to wipe whatever was typed. */
+  const [dirty, setDirty] = useState(false);
+  const editedTaskRef = useRef(id);
+  const patchProfile = (patch: any) => {
+    setDirty(true);
+    setProfile((prev: any) => ({ ...prev, ...patch }));
+  };
+  const patchAnswers = (patch: Record<string, string>) => {
+    setDirty(true);
+    setFormAnswers((prev) => ({ ...prev, ...patch }));
+  };
 
   useEffect(() => {
-    const task = data?.tasks?.find((t: any) => t.id === id);
+    if (!data) return;
+    // Route switch = different record: always adopt, and drop the guard.
+    if (editedTaskRef.current !== id) {
+      editedTaskRef.current = id;
+      setDirty(false);
+    } else if (dirty) return;
+    if (data.profile) setProfile({ ...data.profile });
+    const task = data.tasks?.find((t: any) => t.id === id);
     if (task?.formAnswers) setFormAnswers({ ...task.formAnswers });
     else if (task?.formSchema) setFormAnswers(Object.fromEntries(task.formSchema.map((f: any) => [f.key, ""])));
-  }, [data, id]);
+  }, [data, id, dirty]);
 
   if (!data && !err) return <Spinner />;
   if (err) return <Notice tone="danger">{err}</Notice>;
@@ -610,40 +639,42 @@ export function PortalTaskDetailPage() {
         {task.type === "profile" && profile ? (
           <>
             <Field label="Name">
-              <Input value={profile.name || ""} onChange={(e) => setProfile({ ...profile, name: e.target.value })} />
+              <Input value={profile.name || ""} onChange={(e) => patchProfile({ name: e.target.value })} />
             </Field>
             <Field label="Title">
-              <Input value={profile.title || ""} onChange={(e) => setProfile({ ...profile, title: e.target.value })} />
+              <Input value={profile.title || ""} onChange={(e) => patchProfile({ title: e.target.value })} />
             </Field>
             <Field label="Company">
-              <Input value={profile.company || ""} onChange={(e) => setProfile({ ...profile, company: e.target.value })} />
+              <Input value={profile.company || ""} onChange={(e) => patchProfile({ company: e.target.value })} />
             </Field>
             <Field label="Bio" hint="Save with 20+ characters to auto-complete this task.">
-              <Textarea rows={5} value={profile.bio || ""} onChange={(e) => setProfile({ ...profile, bio: e.target.value })} />
+              <Textarea rows={5} value={profile.bio || ""} onChange={(e) => patchProfile({ bio: e.target.value })} />
             </Field>
             <Field label="LinkedIn">
-              <Input value={profile.linkedin || ""} onChange={(e) => setProfile({ ...profile, linkedin: e.target.value })} />
+              <Input value={profile.linkedin || ""} onChange={(e) => patchProfile({ linkedin: e.target.value })} />
             </Field>
             <Field label="X / Twitter">
-              <Input value={profile.x || ""} onChange={(e) => setProfile({ ...profile, x: e.target.value })} />
+              <Input value={profile.x || ""} onChange={(e) => patchProfile({ x: e.target.value })} />
             </Field>
             <Field label="Website">
-              <Input value={profile.website || ""} onChange={(e) => setProfile({ ...profile, website: e.target.value })} />
+              <Input value={profile.website || ""} onChange={(e) => patchProfile({ website: e.target.value })} />
             </Field>
             <Field label="Travel preference">
               <Input
                 value={profile.travelPreference || ""}
-                onChange={(e) => setProfile({ ...profile, travelPreference: e.target.value })}
+                onChange={(e) => patchProfile({ travelPreference: e.target.value })}
               />
             </Field>
             <Button
               onClick={async () => {
                 await api.saveProfile(profile);
+                // Refresh first, then drop the guard, so the re-seed uses saved state.
+                await load();
+                setDirty(false);
                 toast("Profile saved");
-                load();
               }}
             >
-              Save profile
+              {dirty ? "Save profile *" : "Save profile"}
             </Button>
           </>
         ) : null}
@@ -657,7 +688,7 @@ export function PortalTaskDetailPage() {
                   <Textarea
                     rows={3}
                     value={formAnswers[f.key] || ""}
-                    onChange={(e) => setFormAnswers({ ...formAnswers, [f.key]: e.target.value })}
+                    onChange={(e) => patchAnswers({ [f.key]: e.target.value })}
                     disabled={task.status === "completed"}
                   />
                 ) : f.type === "select" ? (
@@ -665,7 +696,7 @@ export function PortalTaskDetailPage() {
                     className="h-10 w-full rounded-full bg-white px-3 text-sm ring-1 ring-line focus:outline-none focus:ring-2 focus:ring-brand-400"
                     value={formAnswers[f.key] || ""}
                     disabled={task.status === "completed"}
-                    onChange={(e) => setFormAnswers({ ...formAnswers, [f.key]: e.target.value })}
+                    onChange={(e) => patchAnswers({ [f.key]: e.target.value })}
                   >
                     <option value="">Select…</option>
                     {(f.options || []).map((o: string) => (
@@ -678,7 +709,7 @@ export function PortalTaskDetailPage() {
                   <Input
                     value={formAnswers[f.key] || ""}
                     disabled={task.status === "completed"}
-                    onChange={(e) => setFormAnswers({ ...formAnswers, [f.key]: e.target.value })}
+                    onChange={(e) => patchAnswers({ [f.key]: e.target.value })}
                   />
                 )}
               </Field>
@@ -688,17 +719,42 @@ export function PortalTaskDetailPage() {
                 onClick={async () => {
                   try {
                     await api.submitTaskForm(task.id, formAnswers);
+                    await load();
+                    setDirty(false);
                     toast("Form submitted");
-                    load();
                   } catch (e: any) {
                     toast(e.message || "Form failed", "danger");
                   }
                 }}
               >
-                Submit form
+                {dirty ? "Submit form *" : "Submit form"}
               </Button>
             ) : (
-              <p className="text-sm text-ink">Form submitted.</p>
+              <div className="rounded-2xl border border-line bg-soft p-3">
+                <p className="text-sm font-semibold text-ink">Form submitted.</p>
+                <p className="mt-1 text-xs text-mid">
+                  Answered too soon? Reopen the task to edit and submit it again.
+                </p>
+                <Button
+                  className="mt-2"
+                  size="sm"
+                  variant="outline"
+                  data-testid="reopen-task"
+                  aria-label={`Reopen ${task.title}`}
+                  onClick={async () => {
+                    try {
+                      await api.reopenTask(task.id);
+                      await load();
+                      setDirty(false);
+                      toast("Task reopened — you can edit and resubmit it");
+                    } catch (e: any) {
+                      toast(e.message || "Could not reopen the task", "danger");
+                    }
+                  }}
+                >
+                  Reopen task
+                </Button>
+              </div>
             )}
           </>
         ) : null}
@@ -835,7 +891,7 @@ export function PortalTaskDetailPage() {
               <b>Completed</b>
               {DERIVED_TASK_TYPES.has(task.type) ? (
                 <span className="ml-1 text-mid" data-testid="task-derived-completion-copy">
-                  · {derivedCompletionCopy(task.type)}
+                  · {derivedCompletionCopy(task)}
                 </span>
               ) : null}
             </span>
@@ -1039,9 +1095,25 @@ export function PortalResourceDetailPage() {
 export function PortalProfilePage() {
   const { data, err, load } = useSpeakerHome();
   const [profile, setProfile] = useState<any>(null);
+  /** True once the speaker has typed (or picked a headshot) since the last save.
+   * useSpeakerHome refetches on every bumpData(), i.e. after ANY mutation on the
+   * portal; without this guard the refetch overwrote in-progress edits and silently
+   * dropped the chosen headshot file stashed on `_headshotFile`. */
+  const [dirty, setDirty] = useState(false);
+  const seededSpeakerRef = useRef<string | undefined>(undefined);
+  const patchProfile = (patch: any) => {
+    setDirty(true);
+    setProfile((prev: any) => ({ ...prev, ...patch }));
+  };
   useEffect(() => {
-    if (data?.profile) setProfile({ ...data.profile });
-  }, [data]);
+    if (!data?.profile) return;
+    // A persona/speaker switch is a record switch: always adopt the new record.
+    if (seededSpeakerRef.current !== data.profile.speakerId) {
+      seededSpeakerRef.current = data.profile.speakerId;
+      setDirty(false);
+    } else if (dirty) return;
+    setProfile({ ...data.profile });
+  }, [data, dirty]);
   if (!profile && !err) return <Spinner />;
   if (err) return <Notice tone="danger">{err}</Notice>;
   return (
@@ -1052,38 +1124,38 @@ export function PortalProfilePage() {
           <img key={profile.headshotUrl} src={profile.headshotUrl} alt={`${profile.name || "Speaker"} headshot`} className="mb-4 h-24 w-24 rounded-full object-cover" />
         ) : null}
         <Field label="Name">
-          <Input value={profile.name || ""} onChange={(e) => setProfile({ ...profile, name: e.target.value })} />
+          <Input value={profile.name || ""} onChange={(e) => patchProfile({ name: e.target.value })} />
         </Field>
         <Field label="Email" hint="Contact email on your speaker record">
-          <Input value={profile.email || ""} onChange={(e) => setProfile({ ...profile, email: e.target.value })} />
+          <Input value={profile.email || ""} onChange={(e) => patchProfile({ email: e.target.value })} />
         </Field>
         <Field label="Title">
-          <Input value={profile.title || ""} onChange={(e) => setProfile({ ...profile, title: e.target.value })} />
+          <Input value={profile.title || ""} onChange={(e) => patchProfile({ title: e.target.value })} />
         </Field>
         <Field label="Company">
-          <Input value={profile.company || ""} onChange={(e) => setProfile({ ...profile, company: e.target.value })} />
+          <Input value={profile.company || ""} onChange={(e) => patchProfile({ company: e.target.value })} />
         </Field>
         <Field label="Bio">
-          <Textarea rows={5} value={profile.bio || ""} onChange={(e) => setProfile({ ...profile, bio: e.target.value })} />
+          <Textarea rows={5} value={profile.bio || ""} onChange={(e) => patchProfile({ bio: e.target.value })} />
         </Field>
         <Field label="LinkedIn">
-          <Input value={profile.linkedin || ""} onChange={(e) => setProfile({ ...profile, linkedin: e.target.value })} />
+          <Input value={profile.linkedin || ""} onChange={(e) => patchProfile({ linkedin: e.target.value })} />
         </Field>
         <Field label="X / Twitter">
-          <Input value={profile.x || ""} onChange={(e) => setProfile({ ...profile, x: e.target.value })} />
+          <Input value={profile.x || ""} onChange={(e) => patchProfile({ x: e.target.value })} />
         </Field>
         <Field label="Website">
-          <Input value={profile.website || ""} onChange={(e) => setProfile({ ...profile, website: e.target.value })} />
+          <Input value={profile.website || ""} onChange={(e) => patchProfile({ website: e.target.value })} />
         </Field>
         <Field label="Travel preference">
           <Input
             value={profile.travelPreference || ""}
-            onChange={(e) => setProfile({ ...profile, travelPreference: e.target.value })}
+            onChange={(e) => patchProfile({ travelPreference: e.target.value })}
             placeholder="e.g. Direct flights, aisle seat"
           />
         </Field>
         <Field label="Dietary">
-          <Input value={profile.dietary || ""} onChange={(e) => setProfile({ ...profile, dietary: e.target.value })} />
+          <Input value={profile.dietary || ""} onChange={(e) => patchProfile({ dietary: e.target.value })} />
         </Field>
         <Field label="Headshot" hint="Well-lit, neutral background. PNG or JPEG. Included when you click Save profile.">
           <input
@@ -1092,13 +1164,18 @@ export function PortalProfilePage() {
             className="block w-full text-sm"
             onChange={(e) => {
               const f = e.target.files?.[0] || null;
-              setProfile((p: any) => ({ ...p, _headshotFile: f }));
+              patchProfile({ _headshotFile: f });
             }}
           />
           {profile._headshotFile ? (
             <p className="mt-1 text-xs text-mid">Selected: {profile._headshotFile.name} (saves with profile)</p>
           ) : null}
         </Field>
+        {dirty ? (
+          <p className="mb-3 text-xs font-semibold text-mid" data-testid="profile-unsaved">
+            Unsaved changes — click Save profile to store them.
+          </p>
+        ) : null}
         <Button
           onClick={async () => {
             const { _headshotFile, ...fields } = profile;
@@ -1114,10 +1191,14 @@ export function PortalProfilePage() {
             }
             const saved = await api.saveProfile({ ...fields, headshot });
             setProfile({ ...saved.data.profile });
+            // Pull fresh server state BEFORE dropping the guard so clearing `dirty`
+            // re-seeds from the saved record rather than the pre-save snapshot.
+            await load();
+            setDirty(false);
             toast("Profile saved");
           }}
         >
-          Save profile
+          {dirty ? "Save profile *" : "Save profile"}
         </Button>
       </Card>
     </div>

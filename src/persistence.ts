@@ -74,7 +74,7 @@ export class D1SnapshotPersistence implements SnapshotPersistence {
 }
 
 export class CompositeSnapshotPersistence implements SnapshotPersistence {
-  constructor(private readonly primary:SnapshotPersistence,private readonly secondary:SnapshotPersistence){}
+  constructor(readonly primary:SnapshotPersistence,readonly secondary:SnapshotPersistence){}
   async load(eventId:string){return (await this.primary.load(eventId)) || this.secondary.load(eventId)}
   async save(snapshot:CompetitionSnapshot){await Promise.all([this.primary.save(snapshot),this.secondary.save(snapshot)])}
   async listEventIds(){

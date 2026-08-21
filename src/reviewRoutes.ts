@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import type { Mailer } from "./mailer.js";
+import { brandedHtmlFor } from "./emailTemplate.js";
 import { markReviewSubmitted, reviewHistory, type LifecycleStore, type ReviewRound } from "./lifecycle.js";
 import { assignSpecific, autoDistribute, blindSubmission, csvCell, weightedScore } from "./review.js";
 
@@ -13,18 +14,38 @@ export function createReviewRoutes(deps: {
   const app = new Hono();
   const event = (c: any) => c.req.param("eventId") === deps.store.event.id;
   const organizer = (c: any) => deps.persona(c).role === "organizer";
+  const requireOrganizer = (c: any) => {
+    if (organizer(c)) return null;
+    const hasAuth = c.get("auth") || c.get("authCookiePresent");
+    const demoOn = c.get("demoPersonaHeaders") !== false;
+    const hasDemo = demoOn && (c.req.header("x-demo-persona") || c.req.header("x-demo-role"));
+    if (hasAuth || hasDemo) return error(c, "organizer role required", 403);
+    return error(c, "authentication required", 401);
+  };
+  const requireReviewer = (c: any) => {
+    if (deps.persona(c).role === "reviewer") return null;
+    const hasAuth = c.get("auth") || c.get("authCookiePresent");
+    const demoOn = c.get("demoPersonaHeaders") !== false;
+    const hasDemo = demoOn && (c.req.header("x-demo-persona") || c.req.header("x-demo-role"));
+    if (hasAuth || hasDemo) return error(c, "reviewer role required", 403);
+    return error(c, "authentication required", 401);
+  };
   const round = (id: string) => deps.store.reviewRounds.find((r) => r.id === id);
 
-  app.get("/:eventId/review-rounds", (c) => event(c) ? c.json({ data: deps.store.reviewRounds.map(r=>({...r,lastAssignmentAt:deps.store.reviewAssignments.filter(a=>a.roundId===r.id).map(a=>a.createdAt).sort().at(-1)})) }) : error(c, "event not found", 404));
+  app.get("/:eventId/review-rounds", (c) => {
+    if (!event(c)) return error(c, "event not found", 404);
+    const denied = requireOrganizer(c); if (denied) return denied;
+    return c.json({ data: deps.store.reviewRounds.map(r=>({...r,lastAssignmentAt:deps.store.reviewAssignments.filter(a=>a.roundId===r.id).map(a=>a.createdAt).sort().at(-1)})) });
+  });
   app.post("/:eventId/review-rounds", async (c) => {
-    if (!event(c)) return error(c, "event not found", 404); if (!organizer(c)) return error(c, "organizer role required", 403);
+    if (!event(c)) return error(c, "event not found", 404); const denied = requireOrganizer(c); if (denied) return denied;
     const b = await c.req.json();
     if (deps.store.reviewRounds.some((r) => r.name.trim().toLowerCase() === String(b.name || "Untitled round").trim().toLowerCase())) return error(c, "round name already exists", 409);
     const row: ReviewRound = { id: b.id || `round-${crypto.randomUUID().slice(0, 8)}`, name: b.name || "Untitled round", opensAt: b.opensAt || new Date().toISOString(), closesAt: b.closesAt || new Date().toISOString(), status: b.status || "draft", blind: Boolean(b.blind), reviewerIds: b.reviewerIds || [], criteria: b.criteria || [] };
     deps.store.reviewRounds.push(row); await deps.persist(deps.store.event.id, deps.store); return c.json({ data: row }, 201);
   });
   app.put("/:eventId/review-rounds/:id", async (c) => {
-    if (!event(c)) return error(c, "event not found", 404); if (!organizer(c)) return error(c, "organizer role required", 403);
+    if (!event(c)) return error(c, "event not found", 404); const denied = requireOrganizer(c); if (denied) return denied;
     const row = round(c.req.param("id")); if (!row) return error(c, "round not found", 404);
     const b=await c.req.json();
     if(b.name&&deps.store.reviewRounds.some((r)=>r.id!==row.id&&r.name.trim().toLowerCase()===String(b.name).trim().toLowerCase()))return error(c,"round name already exists",409);
@@ -57,13 +78,13 @@ export function createReviewRoutes(deps: {
     Object.assign(row,b,{id:row.id,reviewerIds,criteria}); await deps.persist(deps.store.event.id, deps.store); return c.json({ data: row });
   });
   app.post("/:eventId/review-rounds/:id/reviewers",async(c)=>{
-    const life=deps.store;if(c.req.param("eventId")!==life.event.id)return error(c,"event not found",404);if(deps.persona(c).role!=="organizer")return error(c,"organizer role required",403);const r=life.reviewRounds.find(x=>x.id===c.req.param("id"));if(!r)return error(c,"round not found",404);
+    const life=deps.store;if(c.req.param("eventId")!==life.event.id)return error(c,"event not found",404);const denied=requireOrganizer(c);if(denied)return denied;const r=life.reviewRounds.find(x=>x.id===c.req.param("id"));if(!r)return error(c,"round not found",404);
     const b=await c.req.json(),email=String(b.email||"").trim().toLowerCase(),name=String(b.name||"").trim();if(!name||!/^\S+@\S+\.\S+$/.test(email))return error(c,"valid name and email required");
     const duplicates=life.personas.filter(x=>x.email.trim().toLowerCase()===email&&x.role==="reviewer"),conflict=life.personas.find(x=>x.email.trim().toLowerCase()===email&&x.role==="speaker");if(conflict)return error(c,"email belongs to a speaker persona",409);let p=duplicates[0];if(!p){p={id:`rev-${crypto.randomUUID().slice(0,8)}`,role:"reviewer",name,email};life.personas.push(p)}for(const duplicate of duplicates.slice(1)){for(const rr of life.reviewRounds)rr.reviewerIds=rr.reviewerIds.map(id=>id===duplicate.id?p!.id:id);for(const a of life.reviewAssignments)if(a.reviewerId===duplicate.id)a.reviewerId=p.id;for(const rv of life.reviews)if(rv.reviewerId===duplicate.id)rv.reviewerId=p.id;life.personas=life.personas.filter(x=>x.id!==duplicate.id)}r.reviewerIds=[...new Set([...r.reviewerIds,p.id])];await deps.persist(life.event.id,life);return c.json({data:{reviewer:p,round:r}},201);
   });
   app.post("/:eventId/review-rounds/:roundId/invite-emails", async (c) => {
     if (!event(c)) return error(c, "event not found", 404);
-    if (!organizer(c)) return error(c, "organizer role required", 403);
+    const denied = requireOrganizer(c); if (denied) return denied;
     const life = deps.store;
     const r = life.reviewRounds.find((x) => x.id === c.req.param("roundId"));
     if (!r) return error(c, "round not found", 404);
@@ -127,7 +148,17 @@ export function createReviewRoutes(deps: {
         `${life.event.name} organizers`,
       ].join("\n");
       const result = await deps.mailer
-        .send({ to: reviewer.email, subject, text: body })
+        .send({
+          to: reviewer.email,
+          subject,
+          text: body,
+          html: brandedHtmlFor(subject, body, {
+            eventName: life.event.name,
+            kind: "reviewer_invite",
+            ctaUrl: inviteUrl,
+            ctaLabel: "Open your review queue",
+          }),
+        })
         .catch(() => ({ status: "failed" as const }));
       const providerId = "providerId" in result ? result.providerId : undefined;
       const outcomeStatus = result.status === "failed" || result.status === "logged_undeliverable" ? "failed" : "sent";
@@ -151,12 +182,12 @@ export function createReviewRoutes(deps: {
     return c.json({ data: outcomes });
   });
   app.delete("/:eventId/review-rounds/:id", async (c) => {
-    if (!event(c)) return error(c, "event not found", 404); if (!organizer(c)) return error(c, "organizer role required", 403);
+    if (!event(c)) return error(c, "event not found", 404); const denied = requireOrganizer(c); if (denied) return denied;
     const index = deps.store.reviewRounds.findIndex((r) => r.id === c.req.param("id")); if (index < 0) return error(c, "round not found", 404);
     deps.store.reviewRounds.splice(index, 1); deps.store.reviewAssignments = deps.store.reviewAssignments.filter((a) => a.roundId !== c.req.param("id")); await deps.persist(deps.store.event.id, deps.store); return c.body(null, 204);
   });
   app.post("/:eventId/review-assignments", async (c) => {
-    const life=deps.store;if(c.req.param("eventId")!==life.event.id)return error(c,"event not found",404);if(deps.persona(c).role!=="organizer")return error(c,"organizer role required",403);
+    const life=deps.store;if(c.req.param("eventId")!==life.event.id)return error(c,"event not found",404);const denied=requireOrganizer(c);if(denied)return denied;
     const b = await c.req.json(); const r = life.reviewRounds.find(x=>x.id===b.roundId); if (!r) return error(c, "round not found", 404);
     let ids: string[] = (b.submissionIds || []).filter((id:string)=>life.submissions.some(s=>s.id===id&&s.status!=="draft"));
     if (b.track) ids = life.submissions.filter((s) => s.status!=="draft" && s.category === b.track).map((s) => s.id);
@@ -166,13 +197,13 @@ export function createReviewRoutes(deps: {
     } catch (e) { return error(c, e instanceof Error ? e.message : "assignment failed"); }
   });
   app.get("/:eventId/reviewer-queue", (c) => {
-    if (!event(c)) return error(c, "event not found", 404); const p = deps.persona(c); if (p.role !== "reviewer") return error(c, "reviewer role required", 403);
+    if (!event(c)) return error(c, "event not found", 404); const denied = requireReviewer(c); if (denied) return denied; const p = deps.persona(c);
     const unique=[...new Map(deps.store.reviewAssignments.filter((a) => a.reviewerId === p.id && a.status !== "recused").map(a=>[`${a.roundId}|${a.submissionId}|${a.reviewerId}`,a])).values()];
     const data = unique.map((a) => ({ ...a, round: round(a.roundId), submission: blindSubmission(deps.store.submissions.find((s) => s.id === a.submissionId)!, Boolean(round(a.roundId)?.blind)), review: deps.store.reviews.find((r) => r.submissionId === a.submissionId && r.reviewerId === p.id&&(!r.roundId||r.roundId===a.roundId)) }));
     return c.json({ data });
   });
   app.get("/:eventId/reviewer-queue/:assignmentOrSubmissionId", (c) => {
-    if (!event(c)) return error(c, "event not found", 404); const p = deps.persona(c); if (p.role !== "reviewer") return error(c, "reviewer role required", 403);
+    if (!event(c)) return error(c, "event not found", 404); const denied = requireReviewer(c); if (denied) return denied; const p = deps.persona(c);
     // Queue rows expose both ids. Accept either so old bookmarked submission
     // links and assignment-id links use the exact same scoped record.
     const key = c.req.param("assignmentOrSubmissionId");
@@ -197,7 +228,7 @@ export function createReviewRoutes(deps: {
    * AI advisory draft from an assignment id when no Review row exists yet. */
   app.get("/:eventId/submissions/:submissionId/assignments", (c) => {
     if (!event(c)) return error(c, "event not found", 404);
-    if (!organizer(c)) return error(c, "organizer role required", 403);
+    const denied = requireOrganizer(c); if (denied) return denied;
     const submissionId = c.req.param("submissionId");
     if (!deps.store.submissions.some((s) => s.id === submissionId)) return error(c, "submission not found", 404);
     const data = deps.store.reviewAssignments
@@ -215,7 +246,7 @@ export function createReviewRoutes(deps: {
   /** Organizer list of recused assignments (for Assignments reinstate UI). */
   app.get("/:eventId/review-recusals", (c) => {
     if (!event(c)) return error(c, "event not found", 404);
-    if (!organizer(c)) return error(c, "organizer role required", 403);
+    const denied = requireOrganizer(c); if (denied) return denied;
     const data = deps.store.reviewAssignments
       .filter((a) => a.status === "recused")
       .map((a) => {
@@ -234,7 +265,7 @@ export function createReviewRoutes(deps: {
   /** Organizer reinstate: move recused assignment back to assigned and drop conflict row. */
   app.post("/:eventId/review-assignments/:assignmentId/reinstate", async (c) => {
     if (!event(c)) return error(c, "event not found", 404);
-    if (!organizer(c)) return error(c, "organizer role required", 403);
+    const denied = requireOrganizer(c); if (denied) return denied;
     const a = deps.store.reviewAssignments.find((x) => x.id === c.req.param("assignmentId"));
     if (!a) return error(c, "assignment not found", 404);
     if (a.status !== "recused") return error(c, "assignment is not recused", 400);
@@ -245,15 +276,37 @@ export function createReviewRoutes(deps: {
     return c.json({ data: a });
   });
   app.get("/:eventId/review-progress", (c) => {
-    if (!event(c)) return error(c, "event not found", 404); if (!organizer(c)) return error(c, "organizer role required", 403);
+    if (!event(c)) return error(c, "event not found", 404); const denied = requireOrganizer(c); if (denied) return denied;
     const requested=c.req.query("roundId"),rounds=requested?deps.store.reviewRounds.filter(r=>r.id===requested):deps.store.reviewRounds;const data = rounds.flatMap((r) => [...new Set(r.reviewerIds)].map((reviewerId) => { const rows=[...new Map(deps.store.reviewAssignments.filter((a)=>a.roundId===r.id&&a.reviewerId===reviewerId&&a.status!=="recused").map(a=>[a.submissionId,a])).values()], completed=rows.filter((a)=>a.status==="completed").length; return { roundId:r.id, roundName:r.name, reviewerId, reviewer:deps.store.personas.find((p)=>p.id===reviewerId), assigned:rows.length, completed, outstanding:rows.length-completed, percent:rows.length?Math.round(completed/rows.length*100):0 }; })); return c.json({ data });
   });
   app.post("/:eventId/review-reminders", async (c) => {
-    if (!event(c)) return error(c, "event not found", 404); if (!organizer(c)) return error(c, "organizer role required", 403); const b=await c.req.json(); const sent=[];
-    for (const reviewerId of b.reviewerIds || []) { const p=deps.store.personas.find((x)=>x.id===reviewerId); const outstanding=deps.store.reviewAssignments.filter((a)=>a.reviewerId===reviewerId&&a.status==="assigned").length; if (!p||!outstanding) continue; const result=await deps.mailer.send({to:p.email,subject:`${outstanding} Ruckus reviews outstanding`,text:`Please complete your ${outstanding} assigned review${outstanding===1?"":"s"}.`}).catch(()=>({status:"failed" as const})); deps.store.communications.push({id:`comm-${crypto.randomUUID().slice(0,8)}`,speakerId:reviewerId,subject:`${outstanding} Ruckus reviews outstanding`,body:`Review reminder sent to ${p.name}`,kind:"reminder",status:result.status,providerId:"providerId" in result?result.providerId:undefined,ics:"",createdAt:new Date().toISOString()}); sent.push({reviewerId,status:result.status,providerId:"providerId" in result?result.providerId:undefined}); } await deps.persist(deps.store.event.id, deps.store); return c.json({data:sent});
+    if (!event(c)) return error(c, "event not found", 404); const denied = requireOrganizer(c); if (denied) return denied; const b=await c.req.json(); const sent=[];
+    for (const reviewerId of b.reviewerIds || []) { const p=deps.store.personas.find((x)=>x.id===reviewerId); const outstanding=deps.store.reviewAssignments.filter((a)=>a.reviewerId===reviewerId&&a.status==="assigned").length; if (!p||!outstanding) continue; const subject=`${outstanding} Ruckus reviews outstanding`,text=`Please complete your ${outstanding} assigned review${outstanding===1?"":"s"}.`; const result=await deps.mailer.send({to:p.email,subject,text,html:brandedHtmlFor(subject,text,{eventName:deps.store.event.name,kind:"reminder"})}).catch(()=>({status:"failed" as const})); deps.store.communications.push({id:`comm-${crypto.randomUUID().slice(0,8)}`,speakerId:reviewerId,subject:`${outstanding} Ruckus reviews outstanding`,body:`Review reminder sent to ${p.name}`,kind:"reminder",status:result.status,providerId:"providerId" in result?result.providerId:undefined,ics:"",createdAt:new Date().toISOString()}); sent.push({reviewerId,status:result.status,providerId:"providerId" in result?result.providerId:undefined}); } await deps.persist(deps.store.event.id, deps.store); return c.json({data:sent});
   });
   const results = (roundId?:string) => { const rank:Record<string,number>={accepted:6,rejected:5,waitlisted:4,under_review:3,submitted:2,draft:1};const groups=new Map<string,typeof deps.store.submissions>();for(const sub of deps.store.submissions.filter(s=>s.status!=="draft")){const key=`${sub.speakerId}|${sub.title.trim().toLowerCase()}`,rows=groups.get(key)||[];rows.push(sub);groups.set(key,rows)}return [...groups.values()].map((group) => { const s=[...group].sort((a,b)=>(rank[b.status]||0)-(rank[a.status]||0))[0]!,ids=new Set(group.map(x=>x.id));const reviews=deps.store.reviews.filter((r)=>ids.has(r.submissionId)&&r.status==="submitted"&&r.source!=="ai_draft"&&(!roundId||r.roundId===roundId)); const breakdown=reviews.map((r)=>{const criteria=deps.store.reviewRounds.find((x)=>x.id===r.roundId)?.criteria||[],responses=r.responses||r.scores,computedScore=weightedScore(criteria,responses);return {id:r.id,reviewer:deps.store.personas.find(p=>p.id===r.reviewerId)?.name||r.reviewerId,roundId:r.roundId,computedScore,scaleLabel:"normalized 1–5",criteria:criteria.map(c=>({id:c.id,label:c.label,type:c.type,weight:c.weight,min:c.min,max:c.max,response:responses[c.id]}))}}); const scores=breakdown.map(x=>x.computedScore).filter((x):x is number=>x!==null); const recommendationCounts=Object.fromEntries([...new Set(reviews.map((r)=>r.recommendation).filter(Boolean))].map((v)=>[v,reviews.filter((r)=>r.recommendation===v).length]));const participants=[{id:s.speakerId,name:s.name,email:s.email,role:"lead"},...(s.additionalSpeakers||[]).map(p=>({...p,role:p.role||"co-presenter"}))]; return {...s,participants,reviewerCount:reviews.length,aggregateScore:scores.length?scores.reduce((a,b)=>a+b,0)/scores.length:null,recommendationCounts,reviewBreakdown:breakdown,scoreScale:"Normalized 1–5"}; }); };
-  app.get("/:eventId/review-results", (c) => { if (!event(c)) return error(c,"event not found",404); if(!organizer(c)) return error(c,"organizer role required",403); return c.json({data:results(c.req.query("roundId"))}); });
-  app.get("/:eventId/review-results.csv", (c) => { if (!event(c)) return error(c,"event not found",404); if(!organizer(c)) return error(c,"organizer role required",403); const lines=[["Submission","Title","Status","Average score","Reviewer count"].map(csvCell).join(","),...results().map((r)=>[r.id,r.title,r.status,r.aggregateScore??"",r.reviewerCount].map(csvCell).join(","))]; return c.body(lines.join("\n"),200,{"content-type":"text/csv; charset=utf-8","content-disposition":"attachment; filename=review-results.csv"}); });
+  app.get("/:eventId/review-results", (c) => { if (!event(c)) return error(c,"event not found",404); const denied = requireOrganizer(c); if (denied) return denied; return c.json({data:results(c.req.query("roundId"))}); });
+  app.get("/:eventId/review-results.csv", (c) => {
+    if (!event(c)) return error(c,"event not found",404); const denied = requireOrganizer(c); if (denied) return denied;
+    const roundId=c.req.query("roundId");
+    const rows=results(roundId);
+    const rounds=roundId?deps.store.reviewRounds.filter(r=>r.id===roundId):deps.store.reviewRounds;
+    const criteria=[...new Map(rounds.flatMap(r=>r.criteria.filter(x=>x.type==="rating")).map(x=>[x.id,x])).values()];
+    const headers=["Submission","Title","Speaker","Status","Recommendation",...criteria.map(x=>x.label),"Weighted total","Reviewer count"];
+    const lines=[headers.map(csvCell).join(","),...rows.map((r)=>{
+      const criterionValues=criteria.map(criterion=>{
+        const values=r.reviewBreakdown.flatMap(b=>{
+          const hit=b.criteria.find(x=>x.id===criterion.id);
+          return typeof hit?.response==="number"?[hit.response]:[];
+        });
+        if(!values.length)return "";
+        const avg=values.reduce((a,b)=>a+b,0)/values.length;
+        return Number.isInteger(avg)?String(avg):avg.toFixed(2);
+      });
+      const recs=Object.entries(r.recommendationCounts as Record<string,number>).sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0])).map(([k])=>k);
+      const weighted=r.aggregateScore==null?"":(Number.isInteger(r.aggregateScore)?String(r.aggregateScore):Number(r.aggregateScore).toFixed(2));
+      return [r.id,r.title,r.name,r.status,recs.join("; "),...criterionValues,weighted,r.reviewerCount].map(csvCell).join(",");
+    })];
+    return c.body(lines.join("\n"),200,{"content-type":"text/csv; charset=utf-8","content-disposition":"attachment; filename=review-results.csv"});
+  });
   return app;
 }

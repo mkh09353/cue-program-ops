@@ -8,6 +8,7 @@ import {
   speakerInvitePath,
 } from "./lifecycle.js";
 import type { Mailer } from "./mailer.js";
+import { brandedHtmlFor } from "./emailTemplate.js";
 import type { Repository } from "./domain.js";
 import {
   addSpeakerManual,
@@ -35,7 +36,7 @@ const fail = (c: any, message: string, status = 400) =>
   c.json(
     {
       error: {
-        code: status === 404 ? "NOT_FOUND" : status === 403 ? "FORBIDDEN" : "VALIDATION_ERROR",
+        code: status === 404 ? "NOT_FOUND" : status === 403 ? "FORBIDDEN" : status === 401 ? "UNAUTHORIZED" : "VALIDATION_ERROR",
         message,
       },
     },
@@ -51,7 +52,14 @@ export function createSpeakerRoutes(deps: {
 }) {
   const app = new Hono();
   const org = (c: any) => deps.persona(c).role === "organizer";
-  const requireOrg = (c: any) => (!org(c) ? fail(c, "organizer role required", 403) : null);
+  const requireOrg = (c: any) => {
+    if (org(c)) return null;
+    const hasAuth = c.get("auth") || c.get("authCookiePresent");
+    const demoOn = c.get("demoPersonaHeaders") !== false;
+    const hasDemo = demoOn && (c.req.header("x-demo-persona") || c.req.header("x-demo-role"));
+    if (hasAuth || hasDemo) return fail(c, "organizer role required", 403);
+    return fail(c, "authentication required", 401);
+  };
   const speakerIdOf = (c: any) => deps.persona(c).speakerId;
 
   const eventOk = (c: any) => c.req.param("eventId") === deps.store.event.id;
@@ -123,6 +131,10 @@ export function createSpeakerRoutes(deps: {
           to: made.profile.email,
           subject: made.communication.subject,
           text: made.communication.body,
+          html: brandedHtmlFor(made.communication.subject, made.communication.body, {
+            eventName: deps.store.event.name,
+            kind: made.communication.kind,
+          }),
         });
         made.communication.status = result.status;
         made.communication.providerId = result.providerId;
@@ -181,7 +193,17 @@ export function createSpeakerRoutes(deps: {
       comm.body = `${comm.body}\n\nAccess your speaker portal:\n${portalUrl}\n\nThis is a personal access link for ${profile.name} — do not forward it. It expires on ${new Date(invite.expiresAt!).toDateString()}.`;
     }
     try {
-      const result = await deps.mailer.send({ to: profile.email, subject: comm.subject, text: comm.body });
+      const result = await deps.mailer.send({
+        to: profile.email,
+        subject: comm.subject,
+        text: comm.body,
+        html: brandedHtmlFor(comm.subject, comm.body, {
+          eventName: deps.store.event.name,
+          kind: "acceptance",
+          ctaUrl: portalUrl,
+          ctaLabel: "Open your speaker portal",
+        }),
+      });
       comm.status = result.status;
       comm.providerId = result.providerId;
     } catch {
@@ -293,7 +315,10 @@ export function createSpeakerRoutes(deps: {
       applyHeadshot(speakerId,{name:headshot.name},life);
     }
     const profileTask = life.tasks.find((t) => t.speakerId === speakerId && t.type === "profile");
-    if (profileTask && (updated.profile.bio || "").trim().length > 20) profileTask.status = "completed";
+    if (profileTask && (updated.profile.bio || "").trim().length > 20) {
+      profileTask.status = "completed";
+      profileTask.completedVia = "profile_save";
+    }
     await syncProfileToSchedule(speakerId,life,deps.repo);
     await deps.persist(life.event.id,life);
     return c.json({data:{profile:updated.profile,readiness:readiness(speakerId,new Date(),life)}});
@@ -426,6 +451,10 @@ export function createSpeakerRoutes(deps: {
             to: profile.email,
             subject: row.subject,
             text: row.body,
+            html: brandedHtmlFor(row.subject, row.body, {
+              eventName: life.event.name,
+              kind: row.kind,
+            }),
             attachments: row.ics
               ? [{ filename: "invite.ics", content: row.ics, contentType: "text/calendar" as const }]
               : undefined,
@@ -511,7 +540,16 @@ export function createSpeakerRoutes(deps: {
       const row = sendTemplate("task_reminder", speakerId, names[0] || "tasks", "reminder", deps.store);
       row.body = `Hi ${profile.name.split(" ")[0]},\n\nOutstanding onboarding tasks:\n- ${names.join("\n- ")}\n\nComplete them in your portal: /p\n`;
       try {
-        const result = await deps.mailer.send({ to: profile.email, subject: row.subject, text: row.body });
+        const result = await deps.mailer.send({
+          to: profile.email,
+          subject: row.subject,
+          text: row.body,
+          html: brandedHtmlFor(row.subject, row.body, {
+            eventName: deps.store.event.name,
+            kind: "reminder",
+            tasks: items.map((i) => ({ title: i.title, dueAt: i.dueAt, overdue: i.overdue })),
+          }),
+        });
         row.status = result.status;
         row.providerId = result.providerId;
       } catch {

@@ -23,12 +23,12 @@ test("reject and regenerate retain history and organizer-only enforcement",async
 });
 
 test("organizer configures schedule structure and publishes canonical scheduled sessions",async()=>{
- const repo=new MemoryRepository(),app=createApp({repo});const room=await post(app,`/api/events/${EVENT_ID}/agenda/rooms`,{name:"Overflow Room",capacity:75});assert.equal(room.status,201);const track=await post(app,`/api/events/${EVENT_ID}/agenda/tracks`,{name:"Community"});assert.equal(track.status,201);const schedule=await repo.getSchedule(EVENT_ID);assert.ok(schedule?.rooms.some(x=>x.name==="Overflow Room"));assert.ok(schedule?.tracks.some(x=>x.name==="Community"));const published=await post(app,`/api/events/${EVENT_ID}/agenda/publish`);assert.equal(published.status,200);const result=await published.json();assert.equal(result.data.status,"published");assert.ok(result.data.publicUrl.includes("itinerary"));assert.ok((await repo.getSchedule(EVENT_ID))?.sessions.filter(x=>(schedule?.slots||[]).some(slot=>slot.sessionId===x.id)).every(x=>x.publishStatus==="published"));assert.equal((await post(app,`/api/events/${EVENT_ID}/agenda/rooms`,{name:"Forbidden"},"rev-ada")).status,403);
+ const repo=new MemoryRepository(),app=createApp({repo});const room=await post(app,`/api/events/${EVENT_ID}/agenda/rooms`,{name:"Overflow Room",capacity:75});assert.equal(room.status,201);const track=await post(app,`/api/events/${EVENT_ID}/agenda/tracks`,{name:"Community"});assert.equal(track.status,201);const schedule=await repo.getSchedule(EVENT_ID);assert.ok(schedule?.rooms.some(x=>x.name==="Overflow Room"));assert.ok(schedule?.tracks.some(x=>x.name==="Community"));const published=await post(app,`/api/events/${EVENT_ID}/agenda/publish`,{acknowledge:true});assert.equal(published.status,200);const result=await published.json();assert.equal(result.data.status,"published");assert.ok(result.data.publicUrl.includes("itinerary"));assert.ok((await repo.getSchedule(EVENT_ID))?.sessions.filter(x=>(schedule?.slots||[]).some(slot=>slot.sessionId===x.id)).every(x=>x.publishStatus==="published"));assert.equal((await post(app,`/api/events/${EVENT_ID}/agenda/rooms`,{name:"Forbidden"},"rev-ada")).status,403);
 });
 
 test("publish agenda persists lastAgendaPublish status for reload", async () => {
   const repo = new MemoryRepository(), app = createApp({ repo });
-  const published = await post(app, `/api/events/${EVENT_ID}/agenda/publish`);
+  const published = await post(app, `/api/events/${EVENT_ID}/agenda/publish`, { acknowledge: true });
   assert.equal(published.status, 200);
   const result = await published.json();
   assert.equal(result.data.status, "published");

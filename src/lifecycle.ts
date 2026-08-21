@@ -1,5 +1,8 @@
 // content.ts imports only types from this module, so this import is not a runtime cycle.
 import { upsertDeliverable } from "./content.js";
+import { buildCalendarDocument } from "./ics.js";
+import { isAcceptedUnscheduled } from "./schedule.js";
+import { EVENT_TIME_ZONE } from "./timezone.js";
 
 export const EVENT_ID = "evt-ai-summit-2026";
 export const EVENT_SLUG = "ai-engineer-summit";
@@ -169,6 +172,7 @@ export interface SpeakerProfile {
   headshotUrl?: string;
 }
 
+export type TaskCompletedVia = "manual" | "profile_save" | "headshot_upload" | "file_upload";
 export interface SpeakerTask {
   id: string;
   speakerId: string;
@@ -178,6 +182,8 @@ export interface SpeakerTask {
   required: boolean;
   status: "not_started" | "completed";
   dueAt: string;
+  /** How the task reached completed. Absent on pre-provenance records. */
+  completedVia?: TaskCompletedVia;
 }
 
 export interface FileRecord {
@@ -960,13 +966,16 @@ export function readiness(speakerId: string, at = new Date(), life: LifecycleSto
   };
 }
 
-export function ics(title: string, startsAt = "20261012T170000Z", endsAt = "20261012T174500Z", options: { uid?: string; description?: string; location?: string; dtstamp?: string } = {}) {
-  const clean = (value: string) => value.replace(/[\r\n]+/g, " ").replace(/[,;]/g, "\\$&");
+export function ics(title: string, startsAt = "2026-10-12T17:00:00.000Z", endsAt = "2026-10-12T17:45:00.000Z", options: { uid?: string; description?: string; location?: string; dtstamp?: string } = {}) {
   const uid = options.uid || `cue-${title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}@cue.local`;
   const description = options.description || `AI Engineer Summit session. ${store.event.website}`;
   const location = options.location || store.event.location;
-  const dtstamp = options.dtstamp || "20261001T000000Z";
-  return `BEGIN:VCALENDAR\r\nVERSION:2.0\r\nCALSCALE:GREGORIAN\r\nMETHOD:PUBLISH\r\nPRODID:-//Ruckus//EN\r\nBEGIN:VEVENT\r\nUID:${clean(uid)}\r\nDTSTAMP:${dtstamp}\r\nDTSTART:${startsAt}\r\nDTEND:${endsAt}\r\nSUMMARY:${clean(title)}\r\nDESCRIPTION:${clean(description)}\r\nLOCATION:${clean(location)}\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n`;
+  const dtstamp = options.dtstamp || "2026-10-01T00:00:00.000Z";
+  return buildCalendarDocument({
+    name: store.event.name,
+    timeZone: store.event.timezone || EVENT_TIME_ZONE,
+    events: [{ uid, title, description, location, startsAt, endsAt, dtstamp }],
+  });
 }
 
 export function safeEmbed(url?: string) {
@@ -1114,13 +1123,18 @@ export function markReviewSubmitted(review: Review, at = new Date().toISOString(
   return review;
 }
 
+export function completeSpeakerTask(task: SpeakerTask, via: TaskCompletedVia) {
+  task.status = "completed";
+  task.completedVia = via;
+  return task;
+}
 export function completeTaskForSpeaker(taskId: string, speakerId: string) {
   const task = store.tasks.find((t) => t.id === taskId);
   if (!task) return { ok: false as const, error: "task not found" };
   if (task.speakerId !== speakerId) return { ok: false as const, error: "cannot modify another speaker's task" };
   const requiredFile = task.type === "headshot" ? "headshot" : task.type === "slides" ? "slides" : task.type === "supporting_doc" ? "supporting_document" : undefined;
   if (requiredFile && !store.files.some((f) => f.speakerId === speakerId && f.kind === requiredFile)) return { ok: false as const, error: `upload a ${requiredFile.replace("_", " ")} before completing this task` };
-  task.status = "completed"; return { ok: true as const, task };
+  completeSpeakerTask(task, "manual"); return { ok: true as const, task };
 }
 
 export function upsertResource(input: Omit<Resource, "id"> & { id?: string }) {
@@ -1136,9 +1150,8 @@ export function reminderPlans(at = new Date(), life: LifecycleStore = store): Re
 
 export function icsForSession(session: SessionDraft) {
   if (!session.slot) return undefined;
-  const format=(iso:string)=>{const d=new Date(iso),p=(n:number)=>String(n).padStart(2,"0");return `${d.getUTCFullYear()}${p(d.getUTCMonth()+1)}${p(d.getUTCDate())}T${p(d.getUTCHours())}${p(d.getUTCMinutes())}${p(d.getUTCSeconds())}Z`};
   const room = store.rooms.find((r) => r.id === session.roomId)?.name;
-  return ics(session.title, format(session.slot.startsAt), format(session.slot.endsAt), { uid: `${session.id}@cue.local`, description: session.abstract, location: room ? `${room}, ${store.event.location}` : store.event.location });
+  return ics(session.title, session.slot.startsAt, session.slot.endsAt, { uid: `${session.id}@cue.local`, description: session.abstract, location: room ? `${room}, ${store.event.location}` : store.event.location, dtstamp: "2026-10-01T00:00:00.000Z" });
 }
 
 export function boardForCategory(category: string) {
@@ -1190,7 +1203,7 @@ export function renderTemplate(
 export function ensureOnboarding(submission: Submission) {
   if (store.tasks.some((t) => t.speakerId === submission.speakerId)) {
     const confirmation=store.tasks.find(t=>t.speakerId===submission.speakerId&&t.submissionId===submission.id&&t.type==="confirmation");
-    if(confirmation&&store.event.speakerConfirmation===false)confirmation.status="completed";
+    if(confirmation&&store.event.speakerConfirmation===false)completeSpeakerTask(confirmation,"manual");
     // Deliverables are a separate, file-backed table from onboarding tasks; an
     // accepted speaker must always get both or /p/deliverables looks broken.
     ensureDeliverables(submission);
@@ -1213,6 +1226,7 @@ export function ensureOnboarding(submission: Submission) {
       type: b.type,
       required: b.required !== false,
       status: b.type === "confirmation" && store.event.speakerConfirmation === false ? "completed" : "not_started",
+      completedVia: b.type === "confirmation" && store.event.speakerConfirmation === false ? "manual" : undefined,
       dueAt: due,
     });
   }
@@ -1354,7 +1368,8 @@ export function commandSnapshot() {
     ["submitted", "under_review"].includes(s.status),
   );
   const unscored = store.reviews.filter((r) => r.status === "assigned");
-  const unscheduled = store.sessions.filter((s) => s.status === "draft" || !s.slot);
+  const slotted = new Set(store.sessions.filter((s) => s.slot).map((s) => s.id));
+  const unscheduled = store.sessions.filter((s) => isAcceptedUnscheduled(s, slotted));
   const speakers = [...new Set(accepted.map((s) => s.speakerId))];
   const blocked = speakers
     .map((id) => {

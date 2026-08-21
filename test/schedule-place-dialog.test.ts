@@ -9,7 +9,7 @@ import { EVENT_TIME_ZONE, isoToZonedWallTime, zonedDayKey, zonedWallTimeToIso } 
 const h = { "content-type": "application/json", "x-demo-persona": "org-swyx" };
 const post = (app: any, path: string, body: unknown) =>
   app.request(path, { method: "POST", headers: h, body: JSON.stringify(body) });
-const schedule = async (app: any) => (await (await app.request(`/api/events/${EVENT_ID}/schedule`)).json()) as any;
+const schedule = async (app: any) => (await (await app.request(`/api/events/${EVENT_ID}/schedule`, { headers: h })).json()) as any;
 
 /**
  * Build the exact payload the place/move dialog sends: the picked day + HH:MM are

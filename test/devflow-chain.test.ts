@@ -166,7 +166,7 @@ test("DevFlow Conf 2027: create → CFP → review → decide → schedule → p
   assert.equal(slot.roomId, room2A.id, "placed in Room 2A");
 
   // —— 10. Publish the agenda, then the PUBLIC slug program shows it ——
-  const publishRes = await post(`/api/events/${E}/agenda/publish`, {});
+  const publishRes = await post(`/api/events/${E}/agenda/publish`, { acknowledge: true });
   assert.ok([200, 201].includes(publishRes.status), `agenda published (${publishRes.status})`);
 
   const publicSessions = await get(`/e/${ev.slug}/public/sessions`, PUBLIC);

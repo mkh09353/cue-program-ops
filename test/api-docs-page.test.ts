@@ -12,6 +12,19 @@ const page = async () => {
   return { res, html: await res.text() };
 };
 
+test("GET /api/openapi.yaml is served inline so a browser can render it", async () => {
+  const app = createApp({ repo: new MemoryRepository() });
+  const res = await app.request("/api/openapi.yaml");
+  assert.equal(res.status, 200);
+  assert.match(String(res.headers.get("content-type") || ""), /text\/yaml/);
+  const disposition = res.headers.get("content-disposition");
+  assert.ok(!disposition || !/attachment/i.test(disposition), "must not force a file download");
+  assert.match(await res.text(), /^openapi: 3\.1/);
+  const docs = await app.request("/docs/api");
+  assert.equal(docs.status, 200);
+  assert.match(String(docs.headers.get("content-type") || ""), /text\/html/);
+});
+
 test("GET /docs/api returns an HTML page with the spec link and a known endpoint", async () => {
   const { res, html } = await page();
   assert.equal(res.status, 200);

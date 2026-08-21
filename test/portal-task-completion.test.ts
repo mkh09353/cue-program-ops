@@ -1,11 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { createApp } from "../src/app.js";
+import { createApp, restoreSnapshot } from "../src/app.js";
 import { EVENT_ID, store } from "../src/lifecycle.js";
 import { derivedCompletionCopy, derivedTodoCopy } from "../src/web/pages/PortalPages.js";
+import { autoCompletionNote } from "../src/web/lib/utils.js";
 import { resetEventRegistry } from "../src/events.js";
 import { MemoryRepository } from "../src/repository.js";
+import type { CompetitionSnapshot, SnapshotPersistence } from "../src/persistence.js";
 
 const ORG = { "content-type": "application/json", "x-demo-persona": "org-swyx" };
 const json = async (r: Response) => (await r.json()) as any;
@@ -33,9 +35,11 @@ test("an explicit Mark complete finishes a confirm task", async () => {
   });
   assert.equal(done.status, 200, "explicit completion is accepted");
   assert.equal((await json(done)).data.task.status, "completed");
+  assert.equal((await json(await app.request(`/api/speaker/events/${EVENT_ID}/tasks/${task.id}`, { headers: asSpeaker(speaker.speakerId) }))).data.task.completedVia, "manual");
 
   const home = (await json(await app.request(`/api/speaker/events/${EVENT_ID}/home`, { headers: asSpeaker(speaker.speakerId) }))).data;
   assert.equal(home.tasks.find((t: any) => t.id === task.id).status, "completed", "and persists on the portal");
+  assert.equal(home.tasks.find((t: any) => t.id === task.id).completedVia, "manual");
   resetEventRegistry();
 });
 
@@ -63,6 +67,61 @@ test("derived tasks show why they completed", () => {
   assert.equal(derivedCompletionCopy("profile"), "Completed automatically when you saved your profile");
   assert.equal(derivedCompletionCopy("form"), "Completed automatically when you submitted the form");
   assert.equal(derivedCompletionCopy("headshot"), "Completed automatically when you uploaded the file");
+  assert.equal(derivedCompletionCopy({ type: "profile", completedVia: "profile_save" }), "Completed automatically when you saved your profile");
+  assert.equal(derivedCompletionCopy({ type: "confirm", completedVia: "manual" }), "Completed manually");
+  assert.equal(autoCompletionNote({ type: "profile", status: "completed", completedVia: "profile_save" }), "Completed automatically via profile save");
+  assert.equal(autoCompletionNote({ type: "profile", status: "completed", completedVia: "manual" }), null);
+  assert.equal(autoCompletionNote({ type: "profile", status: "completed" }), "Completed automatically via profile save");
+});
+
+test("auto-complete and manual paths set completedVia and the field survives snapshot restore", async () => {
+  resetEventRegistry();
+  let saved: CompetitionSnapshot | undefined;
+  const persistence: SnapshotPersistence = { load: async () => saved, save: async (s) => { saved = structuredClone(s); } };
+  const repo = new MemoryRepository();
+  const app = createApp({ repo, persistence });
+  const speaker = "spk-sam";
+  const profile = store.tasks.find((t) => t.speakerId === speaker && t.type === "profile")!;
+  assert.equal(profile.status, "not_started");
+  const savedProfile = await app.request(`/api/speaker/events/${EVENT_ID}/profile`, {
+    method: "PUT",
+    headers: asSpeaker(speaker),
+    body: JSON.stringify({ bio: "A sufficiently long speaker biography for auto-complete." }),
+  });
+  assert.equal(savedProfile.status, 200);
+  assert.equal(store.tasks.find((t) => t.id === profile.id)?.completedVia, "profile_save");
+
+  const headshot = store.tasks.find((t) => t.speakerId === speaker && t.type === "headshot")!;
+  const uploaded = await app.request(`/api/speaker/events/${EVENT_ID}/profile/headshot`, {
+    method: "POST",
+    headers: asSpeaker(speaker),
+    body: JSON.stringify({ name: "sam.png", mime: "image/png", dataBase64: Buffer.from("png").toString("base64") }),
+  });
+  assert.equal(uploaded.status, 201);
+  assert.equal(store.tasks.find((t) => t.id === headshot.id)?.completedVia, "headshot_upload");
+
+  const slides = store.tasks.find((t) => t.speakerId === speaker && t.type === "slides")!;
+  const file = await app.request(`/api/speaker/events/${EVENT_ID}/files`, {
+    method: "POST",
+    headers: asSpeaker(speaker),
+    body: JSON.stringify({ kind: "slides", name: "deck.pdf" }),
+  });
+  assert.equal(file.status, 201);
+  assert.equal(store.tasks.find((t) => t.id === slides.id)?.completedVia, "file_upload");
+
+  const home = (await json(await app.request(`/api/speaker/events/${EVENT_ID}/home`, { headers: asSpeaker(speaker) }))).data;
+  assert.equal(home.tasks.find((t: any) => t.id === profile.id).completedVia, "profile_save");
+  assert.equal(home.tasks.find((t: any) => t.id === headshot.id).completedVia, "headshot_upload");
+  assert.equal(home.tasks.find((t: any) => t.id === slides.id).completedVia, "file_upload");
+
+  store.tasks.find((t) => t.id === profile.id)!.completedVia = undefined;
+  store.tasks.find((t) => t.id === headshot.id)!.completedVia = undefined;
+  store.tasks.find((t) => t.id === slides.id)!.completedVia = undefined;
+  assert.equal(await restoreSnapshot({ repo: new MemoryRepository(), persistence }), true);
+  assert.equal(store.tasks.find((t) => t.id === profile.id)?.completedVia, "profile_save");
+  assert.equal(store.tasks.find((t) => t.id === headshot.id)?.completedVia, "headshot_upload");
+  assert.equal(store.tasks.find((t) => t.id === slides.id)?.completedVia, "file_upload");
+  resetEventRegistry();
 });
 
 test("the task list exposes completion state and an action on every row", () => {

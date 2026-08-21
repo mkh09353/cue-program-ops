@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api, getActiveEvent, setActiveEventId, subscribeData, subscribeEvent } from "../lib/api";
-import { averageScores, EVENT_SLUG, formatStatus, weightedAverageScores, weightedMathLabel } from "../lib/utils";
+import { averageScores, EVENT_SLUG, formatStatus, submissionParticipants, weightedAverageScores, weightedMathLabel } from "../lib/utils";
 import { csvFilename, downloadCsv, toCsv } from "../lib/csv";
 import {
   Badge,
@@ -314,7 +314,7 @@ export function SubmissionsListPage() {
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      {(s.participants || [{ name: s.name, role: "lead" }, ...(s.additionalSpeakers || [])]).map((p:any)=><div key={p.id||`${p.name}-${p.role}`}><span className="font-medium">{p.name}</span> <span className="text-xs text-mid">({p.role === "co-author" ? "co-author" : p.role === "lead" ? "lead" : "co-presenter"})</span></div>)}
+                      {submissionParticipants(s).map((p, i)=><div key={p.id||`${p.name}-${i}`}><span className="font-medium">{p.name}</span> <span className="text-xs text-mid">({p.roleLabel})</span></div>)}
                     </td>
                     <td className="px-4 py-3">{s.category}</td>
                     <td className="px-4 py-3">{s.reviewBoard}</td>
@@ -477,7 +477,22 @@ export function ReviewStudioPage() {
             <Badge tone="info">Board · {data.reviewBoard}</Badge>
           </div>
           <h2 className="text-2xl font-bold tracking-tight">{data.title}</h2>
-          <div className="mt-2 rounded-2xl border border-line p-3 text-sm"><b>Speakers</b><ul className="mt-1 space-y-1">{(data.participants||[{id:data.speakerId,name:data.name,email:data.email,role:"lead"},...(data.additionalSpeakers||[])]).map((p:any)=><li key={p.id}>{p.name} · {p.email} <Badge tone="muted">{p.role==="co-author"?"co-author":p.role==="lead"?"lead":"co-presenter"}</Badge></li>)}</ul></div>
+          <div className="mt-2 rounded-2xl border border-line p-3 text-sm" data-testid="submission-participants">
+            <b>Participants</b>
+            <p className="text-xs text-mid">Submitting author and every co-author on this proposal.</p>
+            <ul className="mt-1 space-y-1">
+              {/* Prefer the server's canonical participant projection (data.participants);
+                  older records without it fall back to speaker + additionalSpeakers. */}
+              {submissionParticipants(data.participants?.length ? { participants: data.participants } : data).map((p, i) => (
+                <li key={p.id || `${p.name}-${i}`} className="flex flex-wrap items-center gap-2">
+                  <span className="font-medium">{p.name}</span>
+                  {p.email ? <span className="text-xs text-mid">{p.email}</span> : null}
+                  <Badge tone={p.roleLabel === "Author" ? "primary" : "muted"}>{p.roleLabel}</Badge>
+                  {p.roleDetail ? <span className="text-xs text-mid">{p.roleDetail}</span> : null}
+                </li>
+              ))}
+            </ul>
+          </div>
           <p className="mt-4 whitespace-pre-wrap text-sm leading-relaxed text-ink-soft">{data.abstract}</p>
           {data.answers?.workshopPlan ? (
             <div className="mt-4 rounded-2xl bg-canvas p-3 text-sm">

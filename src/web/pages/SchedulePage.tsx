@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { api, getPersona, subscribeData } from "../lib/api";
 import { getEventId } from "../lib/api";
 import { EVENT_TZ, PROGRAM_DAYS, cn, programDaysFromRange, type ProgramDay, fmtDate, fmtTime, fmtTzLabel, formatStatus } from "../lib/utils";
@@ -121,6 +122,7 @@ export function SchedulePage() {
   const [justPlaced, setJustPlaced] = useState<string>("");
   const [publishBusy, setPublishBusy] = useState(false);
   const [publishBanner, setPublishBanner] = useState("");
+  const [publishAck, setPublishAck] = useState<{ warnings: any[] } | null>(null);
   const [speakersTouched, setSpeakersTouched] = useState(false);
   const [newSession,setNewSession]=useState({title:"",speakerIds:[] as string[],trackId:"",durationMinutes:45});
   const [place, setPlace] = useState<PlaceTarget | null>(null);
@@ -391,7 +393,27 @@ export function SchedulePage() {
   if (!d && !err) return <Spinner />;
 
   const items = [...(d?.slots || [])].sort((a: any, b: any) => a.startsAt.localeCompare(b.startsAt));
-  const unscheduled = (d?.sessions || []).filter((x: any) => !scheduled.has(x.id) && x.status === "accepted");
+
+  // ONE definition of "accepted but unscheduled" on this page: the server's schedule
+  // warnings, which is the same source the warnings card above the board renders.
+  // The old local filter ignored `cancelled`, so the pool and the card disagreed and a
+  // cancelled session was still offered for placement. `scheduled` is still consulted so
+  // a card disappears the moment it is placed, before the next payload lands.
+  const unscheduledWarningIds = Array.isArray(d?.warnings)
+    ? new Set(
+        d.warnings
+          .filter((w: any) => w.code === "UNSCHEDULED_ACCEPTED")
+          .flatMap((w: any) => w.relatedIds || []),
+      )
+    : null;
+  const unscheduled = (d?.sessions || []).filter((x: any) =>
+    scheduled.has(x.id)
+      ? false
+      : unscheduledWarningIds
+        ? unscheduledWarningIds.has(x.id)
+        : // Payload without warnings: mirror the server predicate rather than invent a second one.
+          x.status === "accepted" && !x.cancelled,
+  );
   const seedDayLabel = items[0]?.startsAt ? fmtDate(items[0].startsAt) : programDays[0]?.dateLabel || PROGRAM_DAYS[0].dateLabel;
   const activeDay = programDays.find((d) => d.id === selectedDay) || programDays[0] || PROGRAM_DAYS[0];
   const dayItems = items.filter((slot: any) => zonedDayKey(slot.startsAt) === selectedDay);
@@ -406,14 +428,21 @@ export function SchedulePage() {
         title="Schedule"
         description="Drag accepted sessions onto rooms. Hard room/speaker conflicts are blocked server-side."
         actions={
-          <a
-            className="text-sm font-semibold text-ink"
-            href={`/public/events/${getEventId()}/itinerary`}
-            target="_blank"
-            rel="noreferrer"
-          >
-            Public HTML itinerary ↗
-          </a>
+          <>
+            <Button asChild variant="outline" size="sm">
+              <Link to="/app/schedule/run-of-show" data-testid="schedule-run-of-show-link">
+                Run of show
+              </Link>
+            </Button>
+            <a
+              className="text-sm font-semibold text-ink"
+              href={`/public/events/${getEventId()}/itinerary`}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Public HTML itinerary ↗
+            </a>
+          </>
         }
       />
       {err ? (
@@ -504,7 +533,24 @@ export function SchedulePage() {
           onClick={async () => {
             setPublishBusy(true);
             try {
-              const r = await api.publishAgenda();
+              const r = await api.publishAgendaDetailed();
+              if (r.status === 409) {
+                const msg = r.error || "Hard conflicts block publishing";
+                setErr(msg);
+                toast(msg, "danger");
+                return;
+              }
+              if (r.status === 422) {
+                setPublishAck({ warnings: r.warnings || [] });
+                toast("Schedule warnings require acknowledgement before publishing", "danger");
+                return;
+              }
+              if (!r.ok) {
+                const msg = r.error || "Publish failed";
+                setErr(msg);
+                toast(msg, "danger");
+                return;
+              }
               const count = r.data?.count ?? 0;
               const when = r.data?.publishedAt
                 ? new Date(r.data.publishedAt).toLocaleString()
@@ -513,6 +559,7 @@ export function SchedulePage() {
                 r.data?.message ||
                 `Published · ${count} session${count === 1 ? "" : "s"} · ${when}`;
               setPublishBanner(line);
+              setPublishAck(null);
               toast(line);
               load();
               if (r.data?.publicUrl) window.open(r.data.publicUrl, "_blank", "noopener,noreferrer");
@@ -541,6 +588,50 @@ export function SchedulePage() {
           >
             Open public itinerary ↗
           </a>
+        </Notice>
+      ) : null}
+
+      {publishAck ? (
+        <Notice tone="warn" onClose={() => setPublishAck(null)}>
+          <div data-testid="agenda-publish-warnings">
+            <p className="font-semibold">Schedule warnings require acknowledgement</p>
+            <ul className="mt-1 list-disc pl-5 text-sm">
+              {publishAck.warnings.map((w: any) => (
+                <li key={w.id || w.message}>{w.message || w.id}</li>
+              ))}
+            </ul>
+            <Button
+              size="sm"
+              className="mt-2"
+              disabled={publishBusy}
+              onClick={async () => {
+                setPublishBusy(true);
+                try {
+                  const r = await api.publishAgendaDetailed({ acknowledge: true });
+                  if (!r.ok) {
+                    const msg = r.error || "Publish failed";
+                    setErr(msg);
+                    toast(msg, "danger");
+                    return;
+                  }
+                  const count = r.data?.count ?? 0;
+                  const when = r.data?.publishedAt ? new Date(r.data.publishedAt).toLocaleString() : new Date().toLocaleString();
+                  const line = r.data?.message || `Published · ${count} session${count === 1 ? "" : "s"} · ${when}`;
+                  setPublishBanner(line);
+                  setPublishAck(null);
+                  toast(line);
+                  load();
+                  if (r.data?.publicUrl) window.open(r.data.publicUrl, "_blank", "noopener,noreferrer");
+                } catch (e: any) {
+                  toast(e?.message || "Publish failed", "danger");
+                } finally {
+                  setPublishBusy(false);
+                }
+              }}
+            >
+              Acknowledge warnings and publish
+            </Button>
+          </div>
         </Notice>
       ) : null}
 
@@ -628,6 +719,7 @@ export function SchedulePage() {
           <b>
             {d.warnings.length} unscheduled accepted session{d.warnings.length === 1 ? "" : "s"}
           </b>
+          <p className="text-xs text-mid">Same source as the unscheduled pool below.</p>
           <ul className="mt-1 list-disc pl-5">
             {d.warnings.map((w: any) => (
               <li key={w.id}>{w.message}</li>

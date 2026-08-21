@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, getPersona, subscribeEvent } from "../lib/api";
+import { api, getActiveEvent, getPersona, subscribeEvent } from "../lib/api";
 import {
   Badge,
   Button,
@@ -18,7 +18,20 @@ import {
   toast,
 } from "../components/ui";
 import { LOAD_TIMEOUT_MS } from "../lib/useAsyncData";
+import { csvFilename } from "../lib/csv";
+import { submissionParticipants } from "../lib/utils";
 import { isoToZonedWallTime, zonedWallTimeToIso } from "../../timezone";
+
+/** Machine-readable + human-readable description of the current results ordering. */
+export function sortDescription(sort: string): { label: string; ariaScore: "ascending" | "descending" | "none"; ariaReviews: "descending" | "none"; ariaTitle: "ascending" | "none" } {
+  if (sort === "score-asc")
+    return { label: "Score, ascending", ariaScore: "ascending", ariaReviews: "none", ariaTitle: "none" };
+  if (sort === "reviews-desc")
+    return { label: "Review count, descending", ariaScore: "none", ariaReviews: "descending", ariaTitle: "none" };
+  if (sort === "title")
+    return { label: "Title, A to Z", ariaScore: "none", ariaReviews: "none", ariaTitle: "ascending" };
+  return { label: "Score, descending", ariaScore: "descending", ariaReviews: "none", ariaTitle: "none" };
+}
 
 /**
  * Page loader with an explicit timeout: organizer screens must never sit on a bare
@@ -739,14 +752,21 @@ export function ResultsPage() {
   const {data:rounds}=useData(api.reviewRounds);const [roundId,setRoundId]=useState("");
   const { data, loading, timedOut, error, reload } = useData(()=>api.reviewResults(roundId||undefined));
   const [exportMsg, setExportMsg] = useState("");
+  /** Persistent, screenshot-visible receipt of the last successful export. */
+  const [exportReceipt, setExportReceipt] = useState<
+    { filename: string; bytes: number; rows: number; at: string } | null
+  >(null);
   const [exporting, setExporting] = useState(false);
   const [sort, setSort] = useState<"score-desc" | "score-asc" | "title" | "reviews-desc">("score-desc");
   const [expanded, setExpanded] = useState<string[]>([]);
   const sorted = useMemo(() => sortResults(data, sort), [data, sort]);
+  const sortAria = sortDescription(sort);
+  const sortLabel = sortAria.label;
 
   const downloadCsv = async () => {
     setExporting(true);
     setExportMsg("");
+    setExportReceipt(null);
     try {
       const p = getPersona();
       const res = await fetch(api.reviewResultsCsv(), {
@@ -757,17 +777,26 @@ export function ResultsPage() {
       });
       if (!res.ok) throw new Error(`Export failed (${res.status})`);
       const blob = await res.blob();
+      // Dated, event-scoped filename — the same convention the other CSV exports use —
+      // so the confirmation can NAME the file that landed in the downloads folder.
+      const filename = csvFilename("review-results", getActiveEvent().slug);
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = "review-results.csv";
+      a.download = filename;
       a.rel = "noopener";
       document.body.appendChild(a);
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
-      setExportMsg("CSV download started — check your downloads folder.");
-      toast("CSV download started");
+      setExportReceipt({
+        filename,
+        bytes: blob.size,
+        rows: sorted.length,
+        at: new Date().toLocaleTimeString(),
+      });
+      setExportMsg("");
+      toast(`Export downloaded · ${filename}`);
     } catch (e: any) {
       const err = e?.message || "Export failed";
       setExportMsg(err);
@@ -789,7 +818,18 @@ export function ResultsPage() {
         }
       />
       <Notice tone="info">Need evaluation help? AI drafts are advisory only. Open a submission in <a className="font-semibold underline" href="/app/submissions">Review Studio</a> and choose <b>AI draft review</b>; human reviewers retain responsibility.</Notice>
-      {exportMsg ? <Notice tone="ok">{exportMsg}</Notice> : null}
+      {exportMsg ? <Notice tone="danger">{exportMsg}</Notice> : null}
+      {exportReceipt ? (
+        <Notice tone="ok" onClose={() => setExportReceipt(null)}>
+          <span className="block font-semibold" role="status" data-testid="export-confirmation">
+            Export downloaded · {exportReceipt.filename}
+          </span>
+          <span className="text-xs" data-testid="export-receipt-detail">
+            {exportReceipt.rows} row{exportReceipt.rows === 1 ? "" : "s"} · {exportReceipt.bytes} bytes · saved to your
+            downloads folder at {exportReceipt.at}
+          </span>
+        </Notice>
+      ) : null}
       {loading || timedOut || error ? (
         <LoadState loading={loading} timedOut={timedOut} error={error} onRetry={reload} label="review results" />
       ) : null}
@@ -813,27 +853,43 @@ export function ResultsPage() {
           size="sm"
           variant="outline"
           data-testid="toggle-score-sort"
+          aria-label={`Sorted by ${sortLabel}. Activate to toggle score direction.`}
           onClick={() => setSort((cur) => (cur === "score-desc" ? "score-asc" : "score-desc"))}
         >
           Score {sort === "score-asc" ? "↑ ascending" : "↓ descending"}
         </Button>
+        {/* Stated in words as well as arrows so the ordering is verifiable from text. */}
+        <span className="text-xs font-semibold text-ink" role="status" data-testid="sort-direction">
+          Sorted by: {sortLabel}
+        </span>
         <span className="text-xs text-mid">Unscored submissions always sort last.</span>
       </div>
       <TableWrap>
         <Table>
           <THead>
             <tr>
-              <Th className="p-3">Submission</Th>
-              <Th>
+              <Th className="p-3" aria-sort={sortAria.ariaTitle} data-testid="th-submission">
+                Submission
+              </Th>
+              <Th aria-sort={sortAria.ariaScore} data-testid="th-score">
                 <button
                   type="button"
                   className="font-semibold underline-offset-2 hover:underline"
+                  aria-label={`Score, ${sortAria.ariaScore === "none" ? "not sorted" : sortAria.ariaScore}. Activate to toggle.`}
                   onClick={() => setSort((cur) => (cur === "score-desc" ? "score-asc" : "score-desc"))}
                 >
-                  Score {sort === "score-desc" ? "↓" : sort === "score-asc" ? "↑" : ""}
+                  Score{" "}
+                  <span className="text-xs font-normal text-mid">
+                    {sort === "score-desc" ? "↓ descending" : sort === "score-asc" ? "↑ ascending" : "— not sorted"}
+                  </span>
                 </button>
               </Th>
-              <Th>Reviews</Th>
+              <Th aria-sort={sortAria.ariaReviews} data-testid="th-reviews">
+                Reviews
+                {sortAria.ariaReviews === "descending" ? (
+                  <span className="ml-1 text-xs font-normal text-mid">↓ descending</span>
+                ) : null}
+              </Th>
               <Th>Status</Th>
             </tr>
           </THead>
@@ -842,7 +898,17 @@ export function ResultsPage() {
               <tr className="border-t" key={r.id}>
                 <td className="p-3">
                   <button type="button" className="text-left font-bold underline-offset-2 hover:underline" aria-expanded={expanded.includes(r.id)} onClick={()=>setExpanded(x=>x.includes(r.id)?x.filter(id=>id!==r.id):[...x,r.id])}>{r.title}</button>
-                  <div className="mt-1 text-xs text-mid">{(r.participants||[{name:r.name,role:"lead"},...(r.additionalSpeakers||[])]).map((p:any)=>`${p.name} (${p.role==="co-author"?"co-author":p.role==="lead"?"lead":"co-presenter"})`).join(" · ")}</div>
+                  {/* Author and co-authors, each with an explicit role label: the results
+                      view previously joined them into one unlabelled string. */}
+                  <ul className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs" data-testid={`results-participants-${r.id}`}>
+                    {/* Canonical projection first (r.participants), legacy fields as fallback. */}
+                    {submissionParticipants(r.participants?.length ? { participants: r.participants } : r).map((p, i) => (
+                      <li key={p.id || `${p.name}-${i}`} className="flex items-center gap-1">
+                        <span className="font-medium text-ink">{p.name}</span>
+                        <Badge tone={p.roleLabel === "Author" ? "primary" : "muted"}>{p.roleLabel}</Badge>
+                      </li>
+                    ))}
+                  </ul>
                 </td>
                 <td>{r.aggregateScore?.toFixed(2) || "—"} <span className="text-xs text-mid">{r.aggregateScore!=null?"/ 5 normalized":""}</span></td>
                 <td>{r.reviewerCount}</td>

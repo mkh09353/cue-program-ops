@@ -15,6 +15,7 @@ import {
   type PublicSessionView,
   type PublicSpeakerView,
 } from "./publicProjection.js";
+import { collectScheduleIssues } from "./schedule.js";
 
 export type PublicSiteDeps = {
   repo: Repository & { getSchedule?: (id: string) => Promise<any> };
@@ -436,7 +437,7 @@ const MY_SCHEDULE_JS = `
 })();
 `;
 
-async function loadProgram(repo: PublicSiteDeps["repo"], key: string): Promise<{ program: PublicProgram; eventId: string; slug: string } | undefined> {
+async function loadProgram(repo: PublicSiteDeps["repo"], key: string): Promise<{ program: PublicProgram; eventId: string; slug: string; hardConflicts: { id: string; message: string }[] } | undefined> {
   const resolved = resolvePublicEventKey(key);
   if (!resolved) return undefined;
   const schedule = await repo.getSchedule?.(resolved.eventId);
@@ -448,7 +449,9 @@ async function loadProgram(repo: PublicSiteDeps["repo"], key: string): Promise<{
     website: store.event.website,
     name: store.event.name || schedule.event?.name,
   });
-  return { program, eventId: resolved.eventId, slug: resolved.slug };
+  const publishedIds = new Set(program.sessions.map((s) => s.id));
+  const hardConflicts = collectScheduleIssues(schedule).filter((row) => row.severity === "hard" && row.relatedIds.some((id) => publishedIds.has(id)));
+  return { program, eventId: resolved.eventId, slug: resolved.slug, hardConflicts };
 }
 
 function baseFor(slug: string) {
@@ -687,7 +690,7 @@ function renderSpeakerDetail(program: PublicProgram, speaker: PublicSpeakerView,
   return shell(program, { title: speaker.name, active: from === "gallery" ? "gallery" : "speakers", body, base });
 }
 
-function renderAgenda(program: PublicProgram, base: string, dayKey?: string) {
+function renderAgenda(program: PublicProgram, base: string, dayKey?: string, hardConflicts: { id: string; message: string }[] = []) {
   const agenda = agendaByDay(program, dayKey);
   const day = agenda.day;
   const dayIndex = Math.max(0, program.days.indexOf(day || ""));
@@ -727,9 +730,13 @@ function renderAgenda(program: PublicProgram, base: string, dayKey?: string) {
     .map((s) => sessionCard(s, program, base, { detailHref: `${base}/sessions/${s.id}?from=agenda&day=${encodeURIComponent(day || "")}` }))
     .join("");
 
+  const conflictNotice = hardConflicts.length
+    ? `<div class="card" style="margin-bottom:12px;border-color:var(--warn-line);background:var(--warn-soft)" data-agenda-conflicts role="status"><b>Schedule conflicts on this published agenda</b><p class="meta" style="margin:4px 0 0">${hardConflicts.length} overlapping room or speaker booking${hardConflicts.length===1?"":"s"}. Times shown may overlap.</p></div>`
+    : "";
   const body = `
   <h1>Agenda</h1>
   <p class="sub">Room × time grid for one day. Click a block for session details.</p>
+  ${conflictNotice}
   <div class="card" style="margin-bottom:12px" data-agenda-publication-gate><b>Approval gate applied</b><p class="meta" style="margin:4px 0 0"><strong>Included approved/published:</strong> ${gateIncluded.map(s=>esc(s.title)).join(" · ")||"None"}<br/><strong>Excluded unapproved:</strong> ${gateExcluded.length} private session${gateExcluded.length===1?"":"s"} withheld</p></div>
   <div class="day-tabs" aria-label="Day navigation">
     <a class="btn secondary sm" href="${esc(base)}/agenda${prev ? `?day=${encodeURIComponent(prev)}` : ""}" ${prev ? "" : 'aria-disabled="true" style="opacity:.4;pointer-events:none"'}>← Prev day</a>
@@ -1154,7 +1161,7 @@ export function createPublicSite(deps: PublicSiteDeps) {
     if (config === null) return c.html(notFoundHtml("Embed configuration not found"), 404);
     const program = applyEmbedFilters(loaded.program, config?.filters, config?.fields);
     const day = c.req.query("day") || config?.filters?.day || undefined;
-    return c.html(withAccent(renderAgenda(program, baseFor(loaded.slug), day), config?.theme?.accent));
+    return c.html(withAccent(renderAgenda(program, baseFor(loaded.slug), day, loaded.hardConflicts), config?.theme?.accent));
   });
 
   app.get("/e/:slug/public/itinerary", async (c) => {
@@ -1270,7 +1277,7 @@ export function createPublicSite(deps: PublicSiteDeps) {
     if (kind === "itinerary") return c.html(renderItinerary(loaded.program, baseFor(loaded.slug)));
     if (kind === "sessions") return c.html(renderSessionsPage(loaded.program, baseFor(loaded.slug)));
     if (kind === "speakers") return c.html(renderSpeakersList(loaded.program, baseFor(loaded.slug), "list"));
-    if (kind === "agenda") return c.html(renderAgenda(loaded.program, baseFor(loaded.slug), c.req.query("day") || undefined));
+    if (kind === "agenda") return c.html(renderAgenda(loaded.program, baseFor(loaded.slug), c.req.query("day") || undefined, loaded.hardConflicts));
     return c.html(notFoundHtml(), 404);
   };
 

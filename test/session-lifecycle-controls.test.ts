@@ -39,6 +39,38 @@ test("cancelled sessions leave public program and ICS, free conflicts, and uncan
  assert.equal((await post(app,`${path}/uncancel`)).status,200);schedule=(await repo.getSchedule(EVENT_ID))!;assert.equal(validateSlot(schedule,candidate).conflicts.some(x=>x.code==="ROOM_OVERLAP"),true);
 });
 
+test("cancelled sessions are rejected when placed or moved",async()=>{
+ const repo=new MemoryRepository(),app=createApp({repo}),path=`/api/events/${EVENT_ID}/sessions/ses-analytical`;
+ assert.equal((await post(app,`${path}/cancel`,{reason:"Speaker unavailable"})).status,200);
+ const before=await repo.getSchedule(EVENT_ID);assert.ok(before);
+ const slot=before.slots.find(s=>s.sessionId==="ses-analytical")!;
+ const moved=await post(app,`/api/events/${EVENT_ID}/schedule/move`,{version:before.version,slot:{...slot,roomId:"room-lab",startsAt:"2026-10-14T21:00:00.000Z",endsAt:"2026-10-14T21:45:00.000Z"}});
+ assert.equal(moved.status,400);
+ const body=await moved.json() as any;
+ assert.match(String(body.error||""),/cancelled/i);
+ const after=await repo.getSchedule(EVENT_ID);
+ assert.equal(after?.version,before.version);
+ assert.equal(after?.slots.find(s=>s.sessionId==="ses-analytical")?.roomId,slot.roomId);
+ assert.equal((await post(app,`${path}/uncancel`)).status,200);
+});
+
+test("command KPI and schedule warnings agree for cancelled and published-unslotted sessions",async()=>{
+ const repo=new MemoryRepository(),app=createApp({repo});
+ const schedule=await repo.getSchedule(EVENT_ID);assert.ok(schedule);
+ schedule.sessions.find(s=>s.id==="ses-analytical")!.cancelled=true;
+ schedule.slots=schedule.slots.filter(s=>s.sessionId!=="ses-product");
+ await repo.putSchedule(EVENT_ID,schedule);
+ const command=await(await app.request(`/api/events/${EVENT_ID}/command`,{headers:org})).json() as any;
+ const listed=await(await app.request(`/api/events/${EVENT_ID}/schedule`,{headers:org})).json() as any;
+ const warningIds=(listed.warnings||[]).filter((w:any)=>w.code==="UNSCHEDULED_ACCEPTED").map((w:any)=>w.relatedIds[0]).sort();
+ assert.equal(command.data.kpis.acceptedUnscheduled,warningIds.length);
+ assert.deepEqual(warningIds,["ses-product","ses-reliable-agents","ses-sam"]);
+ assert.equal(warningIds.includes("ses-analytical"),false);
+ const blocker=command.data.blockers.find((item:any)=>item.id==="unscheduled");
+ assert.ok(blocker);
+ assert.match(blocker.label,/3 accepted sessions still unscheduled/);
+});
+
 test("publication approval filters public output; manual sessions default draft and endpoints toggle state",async()=>{
  const repo=new MemoryRepository(),app=createApp({repo});let schedule=(await repo.getSchedule(EVENT_ID))!;assert.equal(schedule.sessions.find(x=>x.id==="ses-analytical")?.publicationState,undefined,"raw legacy seed has no explicit field before normalization");
  const listed=await app.request(`/api/events/${EVENT_ID}/schedule`,{headers:org}),listedBody=await listed.json() as any;assert.equal(listedBody.sessions.find((x:any)=>x.id==="ses-analytical").publicationState,"approved");assert.ok(listedBody.meta.publication.approved>0);

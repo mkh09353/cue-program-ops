@@ -1,9 +1,10 @@
 // Anthropic /v1/messages -> OpenAI chat-completions shim for OpenCode Zen,
 // with passthrough to xAI for grok models. Handles deepseek reasoning_content round-trip.
 import http from "node:http";
+import fs from "node:fs";
 import crypto from "node:crypto";
 
-const ZEN_URL = "https://opencode.ai/zen/v1/chat/completions";
+const ZEN_URL = process.env.ZEN_URL || "https://opencode.ai/zen/v1/chat/completions";
 const ZEN_KEY = process.env.ZEN_KEY;
 const XAI_URL = "https://api.x.ai/v1/messages";
 const XAI_KEY = process.env.XAI_KEY;
@@ -68,13 +69,14 @@ function toAnthropic(resp, model) {
     content.push({ type: "tool_use", id: tc.id || "call_" + crypto.randomUUID().slice(0, 8), name: tc.function?.name, input });
   }
   const fr = ch.finish_reason;
+  const hasTools = content.some((b) => b.type === "tool_use");
   return {
     id: resp.id || "shim_" + crypto.randomUUID().slice(0, 8),
     type: "message",
     role: "assistant",
     model,
     content,
-    stop_reason: fr === "tool_calls" ? "tool_use" : fr === "length" ? "max_tokens" : "end_turn",
+    stop_reason: fr === "tool_calls" || (hasTools && fr !== "length") ? "tool_use" : fr === "length" ? "max_tokens" : "end_turn",
     stop_sequence: null,
     usage: { input_tokens: resp.usage?.prompt_tokens ?? 0, output_tokens: resp.usage?.completion_tokens ?? 0 },
   };
@@ -129,6 +131,8 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       const oaReq = toOpenAI(body);
+      const reqBytes = JSON.stringify(oaReq).length;
+      console.error(`[shim] req model=${oaReq.model} bytes=${reqBytes} msgs=${oaReq.messages.length} tools=${oaReq.tools?.length ?? 0}`);
       let lastErr = "";
       for (let attempt = 0; attempt < 7; attempt++) {
         const r = await fetch(ZEN_URL, {
@@ -151,7 +155,16 @@ const server = http.createServer(async (req, res) => {
           res.writeHead(r.status, { "content-type": "application/json" }).end(JSON.stringify({ type: "error", error: { type: "invalid_request_error", message: text.slice(0, 800) } }));
           return;
         }
-        const anth = toAnthropic(JSON.parse(text), body.model);
+        const parsedResp = JSON.parse(text);
+        const rmsg = parsedResp.choices?.[0]?.message ?? {};
+        if (!rmsg.content && !(rmsg.tool_calls?.length)) {
+          console.error(`[shim] EMPTY response (attempt ${attempt}) finish=${parsedResp.choices?.[0]?.finish_reason} usage=${JSON.stringify(parsedResp.usage)} — raw: ${text.slice(0, 400)}`);
+          if (attempt < 3) { lastErr = "empty response"; await new Promise((s) => setTimeout(s, 3000)); continue; }
+          try { fs.writeFileSync(`/tmp/shim-empty-${Date.now()}.json`, JSON.stringify({ req: oaReq, resp: parsedResp })); } catch {}
+        } else {
+          console.error(`[shim] resp finish=${parsedResp.choices?.[0]?.finish_reason} content=${(rmsg.content ?? "").length}ch tools=${rmsg.tool_calls?.length ?? 0} out_tokens=${parsedResp.usage?.completion_tokens}`);
+        }
+        const anth = toAnthropic(parsedResp, body.model);
         if (body.stream) {
           // Synthesize an Anthropic SSE stream from the complete response.
           res.writeHead(200, { "content-type": "text/event-stream" });

@@ -12,7 +12,7 @@ const H = { "content-type": "application/json", "x-demo-persona": "org-swyx" };
 const post = (app: any, path: string, body: unknown) =>
   app.request(path, { method: "POST", headers: H, body: JSON.stringify(body) });
 const getSchedule = async (app: any) =>
-  (await (await app.request(`/api/events/${EVENT_ID}/schedule`)).json()) as any;
+  (await (await app.request(`/api/events/${EVENT_ID}/schedule`, { headers: H })).json()) as any;
 
 /**
  * EXACT payload builder from SchedulePage.placeSlot(): day + HH:MM are event wall time,
@@ -213,7 +213,7 @@ test("publish includes newly placed sessions on their day in public agenda JSON 
   });
   assert.equal((await post(app, `/api/events/${EVENT_ID}/schedule/move`, placement)).status, 200);
 
-  const published = (await (await post(app, `/api/events/${EVENT_ID}/agenda/publish`, {})).json()) as any;
+  const published = (await (await post(app, `/api/events/${EVENT_ID}/agenda/publish`, { acknowledge: true })).json()) as any;
   assert.ok(published.data.count >= 4, `publish should cover every slotted session, got ${published.data.count}`);
   assert.ok(published.data.published.includes("Eval Harnesses Teams Actually Use"));
 
@@ -240,7 +240,7 @@ test("publish holds back sessions whose content is changes_requested", async () 
   store.sessionContent = store.sessionContent.filter((x) => x.sessionId !== "ses-sam");
   store.sessionContent.push({ sessionId: "ses-sam", status: "changes_requested" });
 
-  const published = (await (await post(app, `/api/events/${EVENT_ID}/agenda/publish`, {})).json()) as any;
+  const published = (await (await post(app, `/api/events/${EVENT_ID}/agenda/publish`, { acknowledge: true })).json()) as any;
   assert.ok(published.data.held.includes("Eval Harnesses Teams Actually Use"));
   assert.match(published.data.message, /held for content changes/);
 

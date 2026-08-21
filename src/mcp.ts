@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { authStore, tokenHash } from "./auth.js";
 import type { Mailer } from "./mailer.js";
+import { brandedHtmlFor } from "./emailTemplate.js";
 import type { Repository } from "./domain.js";
 import { activateEvent, listEvents } from "./events.js";
 import { completeTaskForSpeaker, EVENT_ID, EVENT_SLUG, readiness, reminderPlans, reviewHistory, sendTemplate, store, type SubmissionStatus } from "./lifecycle.js";
@@ -68,7 +69,7 @@ export function createMcpRoutes(deps:{repo:Repository;mailer:Mailer;persist:()=>
    else if(name==="complete_speaker_task"){
     if(typeof args.taskId!=="string"||typeof args.speakerId!=="string")return c.json(rpcError(id,-32602,"speakerId and taskId are required"));const result=completeTaskForSpeaker(args.taskId,args.speakerId);if(!result.ok)return c.json(rpc(id,toolResult(result.error,true)));await deps.persist();value=result.task;
    }else if(name==="send_task_reminder"){
-    if(typeof args.taskId!=="string"||typeof args.speakerId!=="string")return c.json(rpcError(id,-32602,"speakerId and taskId are required"));const plan=reminderPlans().find(x=>x.taskId===args.taskId&&x.speakerId===args.speakerId);if(!plan)return c.json(rpc(id,toolResult("outstanding required task not found",true)));const task=store.tasks.find(x=>x.id===args.taskId)!;const row=sendTemplate("task_reminder",args.speakerId,task.title,"reminder");const to=store.profiles.find(x=>x.speakerId===args.speakerId)?.email||store.submissions.find(x=>x.speakerId===args.speakerId)?.email;if(!to)row.status="failed";else try{const sent=await deps.mailer.send({to,subject:row.subject,text:row.body});row.status=sent.status;row.providerId=sent.providerId}catch{row.status="failed"}await deps.persist();value=row;
+    if(typeof args.taskId!=="string"||typeof args.speakerId!=="string")return c.json(rpcError(id,-32602,"speakerId and taskId are required"));const plan=reminderPlans().find(x=>x.taskId===args.taskId&&x.speakerId===args.speakerId);if(!plan)return c.json(rpc(id,toolResult("outstanding required task not found",true)));const task=store.tasks.find(x=>x.id===args.taskId)!;const row=sendTemplate("task_reminder",args.speakerId,task.title,"reminder");const to=store.profiles.find(x=>x.speakerId===args.speakerId)?.email||store.submissions.find(x=>x.speakerId===args.speakerId)?.email;if(!to)row.status="failed";else try{const sent=await deps.mailer.send({to,subject:row.subject,text:row.body,html:brandedHtmlFor(row.subject,row.body,{eventName:store.event.name,kind:"reminder",tasks:[{title:task.title,dueAt:task.dueAt,overdue:plan.overdue}]})});row.status=sent.status;row.providerId=sent.providerId}catch{row.status="failed"}await deps.persist();value=row;
    }else return c.json(rpc(id,toolResult(`unknown tool: ${name}`,true)));
    return c.json(rpc(id,toolResult(value)));
   }catch(error){return c.json(rpc(id,toolResult(error instanceof Error?error.message:"tool failed",true)))}

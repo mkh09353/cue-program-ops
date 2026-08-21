@@ -216,7 +216,7 @@ test("roundtrip D: schedule place + publish → public sessions and agenda HTML"
   const published = await json(app, `/api/events/${E}/agenda/publish`, {
     method: "POST",
     headers: org,
-    body: "{}",
+    body: JSON.stringify({ acknowledge: true }),
   });
   assert.equal(published.status, 200, JSON.stringify(published.body));
   assert.ok((published.body?.data?.count || 0) >= 1);

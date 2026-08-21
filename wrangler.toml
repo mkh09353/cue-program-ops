@@ -12,6 +12,11 @@ routes = [
 [triggers]
 crons = ["0 9 * * *"]
 
+# Production never accepts x-demo-persona / x-demo-role as an organizer stand-in.
+# Local `npm run dev` and Node tests keep demo headers on (src/dev.ts / createApp default).
+[vars]
+DEMO_PERSONA_HEADERS = "false"
+
 [assets]
 directory = "./dist"
 binding = "ASSETS"

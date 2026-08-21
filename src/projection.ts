@@ -1,5 +1,6 @@
 import type { CanonicalData, Event, ScheduleProjection } from "./domain.js";
 import type { ScheduleData, ScheduleSession, ScheduleSpeaker } from "./schedule.js";
+import { isAcceptedOrPublishedSession, isAcceptedUnscheduled } from "./schedule.js";
 import { isPublishedSession } from "./publicProjection.js";
 
 /** The schedule projection is the canonical event-program source for sync and public publishing. */
@@ -9,7 +10,7 @@ export const scheduleEvent = (eventId: string, schedule: ScheduleProjection): Ev
   timezone: schedule.event.timezone,
 });
 
-const eligibleSession = (session: ScheduleSession) => !session.cancelled && (session.status === "accepted" || session.status === "published");
+const eligibleSession = (session: ScheduleSession) => isAcceptedOrPublishedSession(session);
 const scheduledEligible = (session: ScheduleSession) => eligibleSession(session);
 
 /** Speakers attached to at least one published (+ slotted) session — used by public gallery/feeds. */
@@ -86,7 +87,7 @@ export async function canonicalScheduleMetrics(repo: { getSchedule?: (eventId: s
   const scheduled = new Set(schedule.slots.map((slot) => slot.sessionId));
   const accepted = schedule.sessions.filter(eligibleSession);
   return {
-    acceptedUnscheduled: accepted.filter((session) => !scheduled.has(session.id)).length,
+    acceptedUnscheduled: accepted.filter((session) => isAcceptedUnscheduled(session, scheduled)).length,
     acceptedScheduled: accepted.filter((session) => scheduled.has(session.id)).length,
   };
 }

@@ -15,7 +15,7 @@ const send = (app: any, method: string, path: string, body?: unknown, headers: a
 test("room rename keeps the id, the placements and bumps the schedule version", async () => {
   const repo = new MemoryRepository();
   const app = createApp({ repo });
-  const before = await json(await app.request(`/api/events/${EVENT_ID}/schedule`));
+  const before = await json(await app.request(`/api/events/${EVENT_ID}/schedule`, { headers: org }));
   const slotsInMain = before.slots.filter((s: any) => s.roomId === "room-main").map((s: any) => s.id);
   assert.ok(slotsInMain.length >= 1, "fixture needs a placement in the room we rename");
 
@@ -23,7 +23,7 @@ test("room rename keeps the id, the placements and bumps the schedule version", 
   assert.equal(renamed.status, 200);
   assert.equal((await json(renamed)).data.id, "room-main", "id is stable");
 
-  const after = await json(await app.request(`/api/events/${EVENT_ID}/schedule`));
+  const after = await json(await app.request(`/api/events/${EVENT_ID}/schedule`, { headers: org }));
   const room = after.rooms.find((r: any) => r.id === "room-main");
   assert.equal(room.name, "Room 2A");
   assert.ok(!after.rooms.some((r: any) => r.name === "Main Hall"), "old name is gone");
@@ -66,7 +66,7 @@ test("room rename accepts capacity and rejects blank, duplicate, unknown and bad
 test("track rename persists canonically and validates like rooms", async () => {
   const repo = new MemoryRepository();
   const app = createApp({ repo });
-  const before = await json(await app.request(`/api/events/${EVENT_ID}/schedule`));
+  const before = await json(await app.request(`/api/events/${EVENT_ID}/schedule`, { headers: org }));
   const track = before.tracks[0];
   const sessionsOnTrack = before.sessions.filter((s: any) => s.trackIds?.includes(track.id)).map((s: any) => s.id);
 
@@ -74,7 +74,7 @@ test("track rename persists canonically and validates like rooms", async () => {
   assert.equal(renamed.status, 200);
   assert.equal((await json(renamed)).data.id, track.id, "track id is stable");
 
-  const after = await json(await app.request(`/api/events/${EVENT_ID}/schedule`));
+  const after = await json(await app.request(`/api/events/${EVENT_ID}/schedule`, { headers: org }));
   assert.equal(after.tracks.find((t: any) => t.id === track.id).name, "Platform & Infra");
   assert.deepEqual(
     after.sessions.filter((s: any) => s.trackIds?.includes(track.id)).map((s: any) => s.id),
@@ -99,7 +99,7 @@ test("structure mutations require an organizer persona", async () => {
   const speaker = { "content-type": "application/json", "x-demo-persona": "spk-ada" };
   assert.equal((await send(app, "PATCH", `/api/events/${EVENT_ID}/agenda/rooms/room-main`, { name: "Nope" }, speaker)).status, 403);
   assert.equal((await send(app, "PATCH", `/api/events/${EVENT_ID}/agenda/tracks/track-eng`, { name: "Nope" }, speaker)).status, 403);
-  const after = await json(await app.request(`/api/events/${EVENT_ID}/schedule`));
+  const after = await json(await app.request(`/api/events/${EVENT_ID}/schedule`, { headers: org }));
   assert.equal(after.rooms.find((r: any) => r.id === "room-main").name, "Main Hall", "nothing changed");
 });
 
@@ -113,7 +113,7 @@ test("room creation stays instant and accepts an optional positive capacity", as
   assert.equal(without.data.capacity, undefined, "capacity stays optional");
 
   // A capacity-bearing runtime room now participates in the advisory warning.
-  const sched = await json(await app.request(`/api/events/${EVENT_ID}/schedule`));
+  const sched = await json(await app.request(`/api/events/${EVENT_ID}/schedule`, { headers: org }));
   const session = sched.sessions.find((s: any) => (s.capacity || 0) > 120);
   assert.ok(session, "fixture needs a session bigger than the new room");
   const conflicts = validateSlot(sched, {

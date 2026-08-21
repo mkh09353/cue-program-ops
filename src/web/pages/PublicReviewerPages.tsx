@@ -276,6 +276,13 @@ export function PublicCfpPage() {
     setAnswers((current)=>{const next={...current};for(const field of data.form.fields||[]){if(next[field.key]==null&&field.type==="select"&&field.options?.length)next[field.key]=field.options[0]}return next});
   },[data]);
 
+  /** Required visible fields still blocking submit. The review step used to disable
+   * “Submit proposal” with no explanation when a conditional field became required
+   * after the step-1 check, leaving a dead control and no way to tell what was wrong. */
+  const blockingRequired = visibleFields.filter(
+    (f: any) => f.required && !String(answers[f.key] ?? "").trim(),
+  );
+
   if (!data && !loadErr) return <Spinner />;
   if (!data) return <Notice tone="danger">{loadErr}</Notice>;
 
@@ -589,19 +596,27 @@ export function PublicCfpPage() {
                   </dd>
                 </div>
               </dl>
+              {blockingRequired.length ? (
+                <Notice tone="warn">
+                  <span className="block font-semibold">
+                    Submit is blocked by {blockingRequired.length} required field
+                    {blockingRequired.length === 1 ? "" : "s"}.
+                  </span>
+                  <ul className="mt-1 list-disc pl-5 text-sm" data-testid="cfp-review-blocking-fields">
+                    {blockingRequired.map((f: any) => (
+                      <li key={f.key}>{f.label} is required</li>
+                    ))}
+                  </ul>
+                  <Button type="button" size="sm" variant="outline" className="mt-2" onClick={() => setStep(1)}>
+                    Back to the form
+                  </Button>
+                </Notice>
+              ) : null}
               <div className="mt-4 flex gap-2">
                 <Button type="button" variant="outline" onClick={() => setStep(1)}>
                   Back
                 </Button>
-                <Button
-                  type="submit"
-                  disabled={
-                    result?.editable === false ||
-                    visibleFields.some(
-                      (f: any) => f.required && !(String(answers[f.key] ?? "").trim()),
-                    )
-                  }
-                >
+                <Button type="submit" disabled={result?.editable === false || blockingRequired.length > 0}>
                   Submit proposal
                 </Button>
               </div>

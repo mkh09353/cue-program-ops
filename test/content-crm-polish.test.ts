@@ -39,7 +39,7 @@ test("approved title edit appears in the public agenda HTML as well as the sessi
 test("agenda day tabs advertise per-day counts and default to a populated day", async () => {
   const repo = new MemoryRepository();
   const app = createApp({ repo });
-  const sched = await json(await app.request(`/api/events/${EVENT_ID}/schedule`));
+  const sched = await json(await app.request(`/api/events/${EVENT_ID}/schedule`, { headers: H }));
   // Place + rename a session on Wednesday, which is not the default agenda day.
   await post(app, `/api/events/${EVENT_ID}/schedule/move`, {
     slot: { id: "slot-ses-sam", sessionId: "ses-sam", roomId: "room-main", startsAt: "2026-10-14T18:00:00.000Z", endsAt: "2026-10-14T19:00:00.000Z" },
@@ -70,7 +70,7 @@ test("agenda day tabs advertise per-day counts and default to a populated day", 
 /** The Content saved banner deep-links to the agenda tab holding the edited session. */
 test("content editor exposes the session day so the saved banner can deep-link the agenda", async () => {
   const app = createApp({ repo: new MemoryRepository() });
-  const sched = await json(await app.request(`/api/events/${EVENT_ID}/schedule`));
+  const sched = await json(await app.request(`/api/events/${EVENT_ID}/schedule`, { headers: H }));
   await post(app, `/api/events/${EVENT_ID}/schedule/move`, {
     slot: { id: "slot-ses-sam", sessionId: "ses-sam", roomId: "room-lab", startsAt: "2026-10-13T18:00:00.000Z", endsAt: "2026-10-13T19:00:00.000Z" },
     version: sched.version,

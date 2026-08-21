@@ -568,7 +568,7 @@ export function OrganizerShell() {
     <div className="min-h-screen bg-canvas text-ink">
       <SkipLink />
       <div className="flex min-h-screen">
-        <aside className="sticky top-0 hidden h-screen w-60 shrink-0 border-r border-line bg-soft md:block">
+        <aside data-print="hide" className="sticky top-0 hidden h-screen w-60 shrink-0 border-r border-line bg-soft md:block">
           <div className="flex h-16 items-center border-b border-line px-4">
             <Brand />
           </div>
@@ -578,7 +578,7 @@ export function OrganizerShell() {
           </div>
         </aside>
         <div className="flex min-w-0 flex-1 flex-col">
-          <header className="sticky top-0 z-20 flex h-16 items-center justify-between gap-3 border-b border-line bg-white/85 px-4 backdrop-blur">
+          <header data-print="hide" className="sticky top-0 z-20 flex h-16 items-center justify-between gap-3 border-b border-line bg-white/85 px-4 backdrop-blur">
             <div className="flex items-center gap-2">
               <Button
                 variant="ghost"
@@ -604,7 +604,7 @@ export function OrganizerShell() {
               <SessionBadge />
             </div>
           </header>
-          <main id="main" className="flex-1 p-4 sm:p-6"><div className="mx-auto w-full max-w-[1400px]">
+          <main id="main" data-print="main" className="flex-1 p-4 sm:p-6"><div className="mx-auto w-full max-w-[1400px]">
             <Outlet />
           </div></main>
         </div>

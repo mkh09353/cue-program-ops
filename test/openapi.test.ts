@@ -55,7 +55,7 @@ function documentedOperations(yaml: string) {
 
 test("the exported string and docs/openapi.yaml are byte identical", () => {
   assert.equal(OPENAPI_YAML, doc(), "src/openapi.ts drifted from docs/openapi.yaml");
-  assert.equal(OPENAPI_CONTENT_TYPE, "application/yaml; charset=utf-8");
+  assert.equal(OPENAPI_CONTENT_TYPE, "text/yaml; charset=utf-8");
   assert.equal(OPENAPI_PATH, "/api/openapi.yaml");
 });
 
@@ -193,7 +193,7 @@ test("the document describes its own endpoint under meta", () => {
 
   const block = yaml.slice(yaml.indexOf("  /api/openapi.yaml:"), yaml.indexOf('  "/api/public/events/{slug}/cfp"'));
   assert.match(block, /tags: \[meta\]/, "tagged meta");
-  assert.match(block, /application\/yaml:/, "declares an application/yaml response");
+  assert.match(block, /text\/yaml:/, "declares a text/yaml response so browsers render the spec inline");
   assert.ok(!block.includes("requestBody"), "a GET of the document takes no request body");
   assert.ok(!/\bparameters:/.test(block), "no path or query parameters");
   assert.match(block, /'200':/, "documents the success response");

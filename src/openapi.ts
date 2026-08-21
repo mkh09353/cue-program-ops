@@ -5229,7 +5229,7 @@ paths:
         '200':
           description: Successful response.
           content:
-            application/yaml:
+            text/yaml:
               schema:
                 type: string
                 description: OpenAPI 3.1 document describing this API.
@@ -8088,7 +8088,7 @@ components:
 `;
 
 /** Content type to use when serving OPENAPI_YAML over HTTP. */
-export const OPENAPI_CONTENT_TYPE = "application/yaml; charset=utf-8";
+export const OPENAPI_CONTENT_TYPE = "text/yaml; charset=utf-8";
 
 /** Path the document is intended to be served from. */
 export const OPENAPI_PATH = "/api/openapi.yaml";

@@ -5214,7 +5214,7 @@ paths:
         '200':
           description: Successful response.
           content:
-            application/yaml:
+            text/yaml:
               schema:
                 type: string
                 description: OpenAPI 3.1 document describing this API.

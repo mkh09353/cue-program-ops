@@ -60,8 +60,8 @@ test("configured mailer uses Resend-compatible request with ICS attachment", asy
   let request: any; const fetcher=(async (url:any,init:RequestInit={})=>{request={url:String(url),init};return new Response(JSON.stringify({id:"mail-1"}),{status:200});}) as typeof fetch;
   const mailer=configuredMailer({MAILER_API_KEY:"resend-secret",MAILER_FROM:"Ruckus <ops@example.test>"},fetcher);
   assert.ok(mailer instanceof HttpMailer);
-  const result=await mailer.send({to:"speaker@example.test",subject:"Schedule",text:"Attached",attachments:[{filename:"invite.ics",content:"BEGIN:VCALENDAR",contentType:"text/calendar"}]});
+  const result=await mailer.send({to:"speaker@example.test",subject:"Schedule",text:"Attached",html:"<p>Attached</p>",attachments:[{filename:"invite.ics",content:"BEGIN:VCALENDAR",contentType:"text/calendar"}]});
   const body=JSON.parse(request.init.body);
   assert.equal(request.url,"https://api.resend.com/emails"); assert.equal(request.init.headers.Authorization,"Bearer resend-secret");
-  assert.deepEqual(body.to,["speaker@example.test"]); assert.equal(body.attachments[0].content_type,"text/calendar"); assert.equal(result.status,"sent");
+  assert.deepEqual(body.to,["speaker@example.test"]); assert.equal(body.text,"Attached"); assert.equal(body.html,"<p>Attached</p>"); assert.equal(body.attachments[0].content_type,"text/calendar"); assert.equal(result.status,"sent");
 });

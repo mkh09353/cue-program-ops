@@ -93,6 +93,19 @@ test("profile edit propagates to organizer roster and public schedule projection
   assert.notEqual(store.profiles.find((p) => p.speakerId === "spk-ada")!.bio, "Sam should not overwrite Ada");
 });
 
+test("speaker profile PUT is served by speakerRoutes (travelPreference is a speakerRoutes-only field)", async () => {
+  const app = createApp({ repo: new MemoryRepository() });
+  const travelPreference = `speakerRoutes-${crypto.randomUUID().slice(0, 8)}`;
+  const put = await app.request(`/api/speaker/events/${EVENT_ID}/profile`, {
+    method: "PUT",
+    headers: speakerAda,
+    body: JSON.stringify({ travelPreference }),
+  });
+  assert.equal(put.status, 200);
+  const body = await put.json() as any;
+  assert.equal(body.data.profile.travelPreference, travelPreference);
+});
+
 test("single profile save atomically persists bio, socials, logistics, and headshot", async () => {
   const app = createApp({ repo: new MemoryRepository() });
   const bio = `SBEK-PORTAL-BIO-01 ${crypto.randomUUID()} full speaker biography`;
@@ -701,7 +714,7 @@ test("portal home exposes canonical organizer-linked session titles, not the man
   const speakerId = created.data.speakerId;
   const persona = store.personas.find((p) => p.speakerId === speakerId)!;
   const speakerHeaders = { "x-demo-persona": persona.id, "content-type": "application/json" };
-  await app.request(`/api/events/${EVENT_ID}/schedule`); // mirror accepted submissions
+  await app.request(`/api/events/${EVENT_ID}/schedule`, { headers: org }); // mirror accepted submissions
 
   const first = (await (await app.request(`/api/speaker/events/${EVENT_ID}/home`, { headers: speakerHeaders })).json()) as any;
   const draft = first.data.sessions[0];
@@ -726,7 +739,7 @@ test("portal home exposes canonical organizer-linked session titles, not the man
   assert.equal(afterRename.data.sessions.length, 1, "no duplicate session cards");
 
   // Placing it surfaces the slot and room through the same payload.
-  const sched = (await (await app.request(`/api/events/${EVENT_ID}/schedule`)).json()) as any;
+  const sched = (await (await app.request(`/api/events/${EVENT_ID}/schedule`, { headers: org })).json()) as any;
   const placed = await app.request(`/api/events/${EVENT_ID}/schedule/move`, {
     method: "POST",
     headers: org,

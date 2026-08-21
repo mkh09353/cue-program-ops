@@ -48,8 +48,9 @@ import { SEED_ORGANIZER_PERSONAS,
 import { applyScheduleMove, normalizeScheduleSessions, publicSchedule, recordPlacement, scheduleWarnings, validateSlot, type AgendaSlot } from "./schedule.js";
 import { canonicalScheduleMetrics, publicSpeakers } from "./projection.js";
 import { isPublishedSession } from "./publicProjection.js";
-import { MemorySnapshotPersistence, type CompetitionSnapshot, type SnapshotPersistence } from "./persistence.js";
+import { CompositeSnapshotPersistence, D1SnapshotPersistence, MemorySnapshotPersistence, type CompetitionSnapshot, type SnapshotPersistence } from "./persistence.js";
 import { MockMailer, type Mailer } from "./mailer.js";
+import { brandedHtmlFor } from "./emailTemplate.js";
 import { createReviewRoutes } from "./reviewRoutes.js";
 import { createContentRoutes } from "./contentRoutes.js";
 import { createPublicSite } from "./publicSite.js";
@@ -139,7 +140,10 @@ async function workersAiDraft(ai: WorkersAiRunner | undefined, submission: Submi
 }
 
 const fail = (c: any, message: string, status = 400) =>
-  c.json({ error: { code: status === 404 ? "NOT_FOUND" : status === 403 ? "FORBIDDEN" : "VALIDATION_ERROR", message } }, status);
+  c.json({ error: { code: status === 404 ? "NOT_FOUND" : status === 403 ? "FORBIDDEN" : status === 401 ? "UNAUTHORIZED" : "VALIDATION_ERROR", message } }, status);
+
+/** Anonymous stand-in used when demo headers are off and no session exists. Never an organizer. */
+const ANONYMOUS_PERSONA = { id: "anonymous", role: "speaker" as Role, name: "Anonymous", email: "" };
 
 /** A session cookie, including an invalid one, takes precedence over demo headers. */
 const personaOf = (c: any): (typeof store.personas)[number] => {
@@ -155,15 +159,32 @@ const personaOf = (c: any): (typeof store.personas)[number] => {
     const role = admin ? "organizer" : eventRole;
     return { id: principal.user.id, role: role || "speaker", name: principal.user.name, email: principal.user.email, speakerId: hint?.speakerId };
   }
-  if (c.get("authCookiePresent")) return { id: "anonymous", role: "speaker", name: "Anonymous", email: "" };
-  if (c.get("demoPersonaHeaders") === false) return resolveDemoPersona();
+  if (c.get("authCookiePresent")) return ANONYMOUS_PERSONA;
+  if (c.get("demoPersonaHeaders") === false) return ANONYMOUS_PERSONA;
   const id = c.req.header("x-demo-persona");
   if (id) return resolveDemoPersona(id);
   const role = c.req.header("x-demo-role") as Role | undefined;
-  return store.personas.find((p) => p.role === role) || resolveDemoPersona();
+  if (role) return store.personas.find((p) => p.role === role) || ANONYMOUS_PERSONA;
+  return ANONYMOUS_PERSONA;
 };
 const actor = (c: any): Role => personaOf(c).role;
 const speakerIdOf = (c: any) => personaOf(c).speakerId;
+/** Organizer-only routes: unauthenticated → 401; authenticated non-organizer → 403. */
+const requireOrganizer = (c: any) => {
+  if (c.get("auth") || (c.get("demoPersonaHeaders") !== false && (c.req.header("x-demo-persona") || c.req.header("x-demo-role")))) {
+    return actor(c) === "organizer" ? null : fail(c, "organizer role required", 403);
+  }
+  if (c.get("authCookiePresent")) return fail(c, "organizer role required", 403);
+  return fail(c, "authentication required", 401);
+};
+/** Reviewer or organizer; unauthenticated → 401. */
+const requireStaff = (c: any) => {
+  const role = actor(c);
+  if (role === "organizer" || role === "reviewer") return null;
+  if (c.get("auth") || c.get("authCookiePresent")) return fail(c, "organizer or reviewer role required", 403);
+  if (c.get("demoPersonaHeaders") !== false && (c.req.header("x-demo-persona") || c.req.header("x-demo-role"))) return fail(c, "organizer or reviewer role required", 403);
+  return fail(c, "authentication required", 401);
+};
 
 /**
  * Standalone embed page shell.
@@ -213,26 +234,39 @@ export function createApp(deps: AppDeps = {}) {
   const mailer = deps.mailer ?? new MockMailer();
   const sync = new SyncService(repo, client);
   const app = new Hono();
+  app.onError((error, c) => {
+    const message = error instanceof Error ? error.message : "unknown error";
+    console.error("CUE request failed", message);
+    const persistFail = /snapshot|persist/i.test(message);
+    return c.json({ error: { code: persistFail ? "PERSISTENCE_FAILED" : "INTERNAL_ERROR", message } }, 500);
+  });
   ensureSeededAuth();
   backfillSubmissionCodes(store);
-  /** Save after mutations. Failures are observable but never roll back valid in-memory work. */
+  /** Save after mutations. A failed snapshot flush fails the mutation (5xx) instead of returning 201 with unsaved state. */
   const persist = async (intendedEventId = activeEventId(), intendedStore = store) => {
     const memory = repo as MemoryRepository & { exportSyncState?: () => CompetitionSnapshot["sync"]; getSchedule?: (id:string) => Promise<any> };
+    const syncState = memory.exportSyncState?.() as CompetitionSnapshot["sync"] | undefined;
+    const eventId = intendedEventId;
+    const lifecycle = structuredClone(intendedStore);
     try {
-      // Keep optional snapshot-export failures from changing an otherwise valid request result.
-      const syncState = memory.exportSyncState?.() as CompetitionSnapshot["sync"] | undefined;
-      // Snapshot the ACTIVE event; each event persists under its own id.
-      // Capture both values before any await. Request handlers with an explicit
-      // event pass their resolved pair so another request cannot redirect this save.
-      const eventId = intendedEventId;
-      const lifecycle = structuredClone(intendedStore);
       await persistence.save({version:1,eventId,savedAt:new Date().toISOString(),lifecycle,schedule:await memory.getSchedule?.(eventId),sync:syncState || {links:[],runs:[],items:[]},auth:structuredClone(authStore)});
-    } catch (error) { console.error("CUE snapshot persistence failed", error instanceof Error ? error.message : "unknown error"); }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message.toLowerCase().includes("persist") || message.toLowerCase().includes("snapshot") ? message : `snapshot persistence failed: ${message}`);
+    }
   };
   const deliver = async (row: ReturnType<typeof sendTemplate>, life = store, mail: Mailer = mailer) => {
     const to=life.profiles.find(p=>p.speakerId===row.speakerId)?.email || life.submissions.find(s=>s.speakerId===row.speakerId)?.email;
     if (!to) { row.status="failed"; return; }
-    try { const result=await mail.send({to,subject:row.subject,text:row.body,attachments:row.ics?[{filename:"invite.ics",content:row.ics,contentType:"text/calendar"}]:undefined});row.status=result.status;row.providerId="providerId" in result?result.providerId:undefined; }
+    try {
+      const tasks = row.kind === "reminder"
+        ? reminderPlans(new Date(), life).filter((p) => p.speakerId === row.speakerId).map((p) => {
+            const task = life.tasks.find((t) => t.id === p.taskId);
+            return task ? { title: task.title, dueAt: task.dueAt, overdue: p.overdue } : undefined;
+          }).filter((x): x is { title: string; dueAt: string; overdue: boolean } => Boolean(x))
+        : undefined;
+      const result=await mail.send({to,subject:row.subject,text:row.body,html:brandedHtmlFor(row.subject,row.body,{eventName:life.event.name,kind:row.kind,feedback:row.feedback,tasks}),attachments:row.ics?[{filename:"invite.ics",content:row.ics,contentType:"text/calendar"}]:undefined});row.status=result.status;row.providerId="providerId" in result?result.providerId:undefined;
+    }
     catch (error) { row.status="failed"; console.error("CUE mail delivery failed", error instanceof Error ? error.message : "unknown error"); }
   };
   // —— Multi-event resolution ——
@@ -278,7 +312,7 @@ export function createApp(deps: AppDeps = {}) {
 
   app.get("/api/events", (c) => c.json({ data: listEvents() }));
   app.post("/api/events", async (c) => {
-    if (actor(c) !== "organizer") return fail(c, "organizer role required", 403);
+    const denied=requireOrganizer(c); if (denied) return denied;
     const previous = activeEventId();
     const b = (await c.req.json().catch(() => null)) as any;
     if (!b) return fail(c, "JSON body required");
@@ -306,9 +340,9 @@ export function createApp(deps: AppDeps = {}) {
   app.route("/", createPublicSite({ repo }));
   // CRM typed custom-field definitions. Registered here (not in crmRoutes.ts) to keep
   // this addition isolated from the contact/merge handlers.
-  app.get("/api/crm/field-definitions", (c) => c.json({ data: listFieldDefinitions() }));
+  app.get("/api/crm/field-definitions", (c) => { const denied=requireOrganizer(c); if (denied) return denied; return c.json({ data: listFieldDefinitions() }); });
   app.post("/api/crm/field-definitions", async (c) => {
-    if (actor(c) !== "organizer") return fail(c, "organizer role required", 403);
+    const denied=requireOrganizer(c); if (denied) return denied;
     const b = (await c.req.json().catch(() => null)) as any;
     if (!b) return fail(c, "JSON body required");
     const saved = saveFieldDefinition(b);
@@ -317,14 +351,14 @@ export function createApp(deps: AppDeps = {}) {
     return c.json({ data: saved.definition }, 201);
   });
   app.delete("/api/crm/field-definitions/:key", async (c) => {
-    if (actor(c) !== "organizer") return fail(c, "organizer role required", 403);
+    const denied=requireOrganizer(c); if (denied) return denied;
     if (!deleteFieldDefinition(c.req.param("key"))) return fail(c, "field definition not found", 404);
     await persist();
     return c.body(null, 204);
   });
   app.route("/", createCrmRoutes(routeDeps));
   app.route("/", createAgendaRoutes(routeDeps));
-  app.get("/api/events/:eventId/automation",(c)=>c.json({data:store.automation||{enabled:true,schedule:"0 9 * * *",speakerSent:0,reviewerSent:0,status:"never"}}));
+  app.get("/api/events/:eventId/automation",(c)=>{const denied=requireOrganizer(c);if(denied)return denied;return c.json({data:store.automation||{enabled:true,schedule:"0 9 * * *",speakerSent:0,reviewerSent:0,status:"never"}});});
   app.post("/api/internal/automation/run",async(c)=>{
     if(c.req.header("x-cue-automation")!=="scheduled"||new URL(c.req.url).hostname!=="cue.internal")return fail(c,"automation caller required",403);
     const previous=activeEventId(),eventResults=[];let totalSpeakerSent=0,totalReviewerSent=0;
@@ -332,23 +366,31 @@ export function createApp(deps: AppDeps = {}) {
     // and never re-send a reminder to the same recipient within 24 hours.
     const automationMailer:Mailer=deps.automationProviderDelivery===true?mailer:new MockMailer();
     const remindedRecently=(life:typeof store,recipientId:string,now:number)=>life.communications.some(x=>x.kind==="reminder"&&x.speakerId===recipientId&&x.status!=="failed"&&now-Date.parse(x.createdAt)<24*3600000);
-    try{for(const event of listEvents()){activateEvent(event.id);const life=getEventStore(event.id)!;const state=life.automation||(life.automation={enabled:true,schedule:"0 9 * * *",speakerSent:0,reviewerSent:0,status:"never"});let speakerSent=0,reviewerSent=0;const ranAt=new Date().toISOString();try{const plans=reminderPlans(new Date(),life),deliverableIds=life.deliverableTasks.filter(x=>x.status!=="complete"&&Date.parse(x.dueAt)<=Date.now()+7*86400000).map(x=>x.speakerId),speakerIds=[...new Set([...plans.map(x=>x.speakerId),...deliverableIds])];for(const speakerId of speakerIds){if(remindedRecently(life,speakerId,Date.now()))continue;const row=sendTemplate("task_reminder",speakerId,"outstanding tasks and deliverables","reminder",life);await deliver(row,life,automationMailer);speakerSent++}for(const reviewerId of [...new Set(life.reviewAssignments.filter(a=>a.status==="assigned").map(a=>a.reviewerId))]){const p=life.personas.find(x=>x.id===reviewerId&&x.role==="reviewer");if(!p)continue;if(remindedRecently(life,reviewerId,Date.now()))continue;const outstanding=life.reviewAssignments.filter(a=>a.reviewerId===reviewerId&&a.status==="assigned").length,result=await automationMailer.send({to:p.email,subject:`${outstanding} Ruckus reviews outstanding`,text:`Please complete your ${outstanding} assigned reviews.`}).catch(()=>({status:"failed" as const}));life.communications.push({id:`comm-${crypto.randomUUID().slice(0,8)}`,speakerId:reviewerId,subject:`${outstanding} Ruckus reviews outstanding`,body:`Scheduled reviewer reminder for ${p.name}`,kind:"reminder",status:result.status,providerId:"providerId" in result?result.providerId:undefined,ics:"",createdAt:ranAt});reviewerSent++}const result={eventId:event.id,speakerSent,reviewerSent,status:"completed" as const,ranAt};Object.assign(state,{lastRunAt:ranAt,speakerSent,reviewerSent,status:"completed",eventResults:[result]});eventResults.push(result);totalSpeakerSent+=speakerSent;totalReviewerSent+=reviewerSent;await persist(event.id,life)}catch(error){const result={eventId:event.id,speakerSent,reviewerSent,status:"failed" as const,ranAt};Object.assign(state,{lastRunAt:ranAt,speakerSent,reviewerSent,status:"failed",eventResults:[result]});eventResults.push(result);await persist(event.id,life)}}const lastRunAt=new Date().toISOString();return c.json({data:{status:eventResults.some(x=>x.status==="failed")?"failed":"completed",lastRunAt,speakerSent:totalSpeakerSent,reviewerSent:totalReviewerSent,eventResults}})}finally{activateEvent(previous)}
+    try{for(const event of listEvents()){activateEvent(event.id);const life=getEventStore(event.id)!;const state=life.automation||(life.automation={enabled:true,schedule:"0 9 * * *",speakerSent:0,reviewerSent:0,status:"never"});let speakerSent=0,reviewerSent=0;const ranAt=new Date().toISOString();try{const plans=reminderPlans(new Date(),life),deliverableIds=life.deliverableTasks.filter(x=>x.status!=="complete"&&Date.parse(x.dueAt)<=Date.now()+7*86400000).map(x=>x.speakerId),speakerIds=[...new Set([...plans.map(x=>x.speakerId),...deliverableIds])];for(const speakerId of speakerIds){if(remindedRecently(life,speakerId,Date.now()))continue;const row=sendTemplate("task_reminder",speakerId,"outstanding tasks and deliverables","reminder",life);await deliver(row,life,automationMailer);speakerSent++}for(const reviewerId of [...new Set(life.reviewAssignments.filter(a=>a.status==="assigned").map(a=>a.reviewerId))]){const p=life.personas.find(x=>x.id===reviewerId&&x.role==="reviewer");if(!p)continue;if(remindedRecently(life,reviewerId,Date.now()))continue;const outstanding=life.reviewAssignments.filter(a=>a.reviewerId===reviewerId&&a.status==="assigned").length,result=await automationMailer.send({to:p.email,subject:`${outstanding} Ruckus reviews outstanding`,text:`Please complete your ${outstanding} assigned reviews.`,html:brandedHtmlFor(`${outstanding} Ruckus reviews outstanding`,`Please complete your ${outstanding} assigned reviews.`,{eventName:life.event.name,kind:"reminder"})}).catch(()=>({status:"failed" as const}));life.communications.push({id:`comm-${crypto.randomUUID().slice(0,8)}`,speakerId:reviewerId,subject:`${outstanding} Ruckus reviews outstanding`,body:`Scheduled reviewer reminder for ${p.name}`,kind:"reminder",status:result.status,providerId:"providerId" in result?result.providerId:undefined,ics:"",createdAt:ranAt});reviewerSent++}const result={eventId:event.id,speakerSent,reviewerSent,status:"completed" as const,ranAt};Object.assign(state,{lastRunAt:ranAt,speakerSent,reviewerSent,status:"completed",eventResults:[result]});eventResults.push(result);totalSpeakerSent+=speakerSent;totalReviewerSent+=reviewerSent;await persist(event.id,life)}catch(error){const result={eventId:event.id,speakerSent,reviewerSent,status:"failed" as const,ranAt};Object.assign(state,{lastRunAt:ranAt,speakerSent,reviewerSent,status:"failed",eventResults:[result]});eventResults.push(result);await persist(event.id,life)}}const lastRunAt=new Date().toISOString();return c.json({data:{status:eventResults.some(x=>x.status==="failed")?"failed":"completed",lastRunAt,speakerSent:totalSpeakerSent,reviewerSent:totalReviewerSent,eventResults}})}finally{activateEvent(previous)}
   });
   const normalizedEmbed=(x:any)=>({...x,enabled:x.enabled!==false,snippetFormat:x.snippetFormat||"iframe",customCss:x.customCss||""});
-  app.get("/api/events/:eventId/embed-configs",(c)=>c.json({data:(store.embedConfigs||[]).map(normalizedEmbed)}));
-  app.post("/api/events/:eventId/embed-configs",async(c)=>{if(actor(c)!=="organizer")return fail(c,"organizer role required",403);const b=await c.req.json().catch(()=>null) as any;if(!b?.name||!["sessions","speakers","agenda","itinerary","gallery"].includes(b.widget))return fail(c,"name and valid widget required");store.embedConfigs||=[];const accent=isSafeAccent(b.theme?.accent)?String(b.theme.accent).trim():undefined;if(b.theme?.accent&&!accent)return fail(c,"accent must be a hex color like #4B5563");const row={id:`embed-${crypto.randomUUID().slice(0,8)}`,name:String(b.name),widget:b.widget,filters:{track:b.filters?.track||undefined,format:b.filters?.format||undefined,room:b.filters?.room||undefined,day:b.filters?.day||undefined},theme:{accent},fields:{speakers:b.fields?.speakers!==false,room:b.fields?.room!==false,track:b.fields?.track!==false,description:b.fields?.description!==false},enabled:true,snippetFormat:"iframe" as const,customCss:"",createdAt:new Date().toISOString()};store.embedConfigs.push(row);await persist();return c.json({data:normalizedEmbed(row)},201)});
+  app.get("/api/events/:eventId/embed-configs",(c)=>{const denied=requireOrganizer(c);if(denied)return denied;return c.json({data:(store.embedConfigs||[]).map(normalizedEmbed)});});
+  app.post("/api/events/:eventId/embed-configs",async(c)=>{const denied=requireOrganizer(c);if(denied)return denied;const b=await c.req.json().catch(()=>null) as any;if(!b?.name||!["sessions","speakers","agenda","itinerary","gallery"].includes(b.widget))return fail(c,"name and valid widget required");store.embedConfigs||=[];const accent=isSafeAccent(b.theme?.accent)?String(b.theme.accent).trim():undefined;if(b.theme?.accent&&!accent)return fail(c,"accent must be a hex color like #4B5563");const row={id:`embed-${crypto.randomUUID().slice(0,8)}`,name:String(b.name),widget:b.widget,filters:{track:b.filters?.track||undefined,format:b.filters?.format||undefined,room:b.filters?.room||undefined,day:b.filters?.day||undefined},theme:{accent},fields:{speakers:b.fields?.speakers!==false,room:b.fields?.room!==false,track:b.fields?.track!==false,description:b.fields?.description!==false},enabled:true,snippetFormat:"iframe" as const,customCss:"",createdAt:new Date().toISOString()};store.embedConfigs.push(row);await persist();return c.json({data:normalizedEmbed(row)},201)});
   const embedPatchPath="/api/events/:eventId/embed-configs/:id";
-  app.patch(embedPatchPath,async(c)=>{if(actor(c)!=="organizer")return fail(c,"organizer role required",403);const row=(store.embedConfigs||[]).find(x=>x.id===c.req.param("id"));if(!row)return fail(c,"embed config not found",404);const b=await c.req.json().catch(()=>null) as any;if(!b)return fail(c,"JSON body required");if(b.customCss!==undefined){if(typeof b.customCss!=="string")return fail(c,"customCss must be a string");if(b.customCss.length>2000)return fail(c,"customCss must be at most 2000 characters");if(/<\/style/i.test(b.customCss))return fail(c,"customCss must not contain </style");if(/@import/i.test(b.customCss))return fail(c,"customCss must not contain @import");if(/<script/i.test(b.customCss))return fail(c,"customCss must not contain <script");row.customCss=b.customCss.trim()}if(b.enabled!==undefined){if(typeof b.enabled!=="boolean")return fail(c,"enabled must be a boolean");row.enabled=b.enabled}if(b.snippetFormat!==undefined){if(!["iframe","script","link"].includes(b.snippetFormat))return fail(c,"snippetFormat must be iframe, script, or link");row.snippetFormat=b.snippetFormat}if(b.name!==undefined){if(typeof b.name!=="string"||!b.name.trim())return fail(c,"name must be a non-empty string");row.name=b.name.trim()}if(b.filters!==undefined)row.filters={track:b.filters?.track||undefined,format:b.filters?.format||undefined,room:b.filters?.room||undefined,day:b.filters?.day||undefined};if(b.theme?.accent!==undefined){if(!isSafeAccent(b.theme.accent))return fail(c,"accent must be a hex color like #4B5563");row.theme={...row.theme,accent:String(b.theme.accent).trim()}}if(b.fields!==undefined)row.fields={speakers:b.fields?.speakers!==false,room:b.fields?.room!==false,track:b.fields?.track!==false,description:b.fields?.description!==false};await persist();return c.json({data:normalizedEmbed(row)})});
-  app.delete("/api/events/:eventId/embed-configs/:id",async(c)=>{if(actor(c)!=="organizer")return fail(c,"organizer role required",403);const i=(store.embedConfigs||[]).findIndex(x=>x.id===c.req.param("id"));if(i<0)return fail(c,"embed config not found",404);store.embedConfigs.splice(i,1);await persist();return c.body(null,204)});
+  app.patch(embedPatchPath,async(c)=>{const denied=requireOrganizer(c);if(denied)return denied;const row=(store.embedConfigs||[]).find(x=>x.id===c.req.param("id"));if(!row)return fail(c,"embed config not found",404);const b=await c.req.json().catch(()=>null) as any;if(!b)return fail(c,"JSON body required");if(b.customCss!==undefined){if(typeof b.customCss!=="string")return fail(c,"customCss must be a string");if(b.customCss.length>2000)return fail(c,"customCss must be at most 2000 characters");if(/<\/style/i.test(b.customCss))return fail(c,"customCss must not contain </style");if(/@import/i.test(b.customCss))return fail(c,"customCss must not contain @import");if(/<script/i.test(b.customCss))return fail(c,"customCss must not contain <script");row.customCss=b.customCss.trim()}if(b.enabled!==undefined){if(typeof b.enabled!=="boolean")return fail(c,"enabled must be a boolean");row.enabled=b.enabled}if(b.snippetFormat!==undefined){if(!["iframe","script","link"].includes(b.snippetFormat))return fail(c,"snippetFormat must be iframe, script, or link");row.snippetFormat=b.snippetFormat}if(b.name!==undefined){if(typeof b.name!=="string"||!b.name.trim())return fail(c,"name must be a non-empty string");row.name=b.name.trim()}if(b.filters!==undefined)row.filters={track:b.filters?.track||undefined,format:b.filters?.format||undefined,room:b.filters?.room||undefined,day:b.filters?.day||undefined};if(b.theme?.accent!==undefined){if(!isSafeAccent(b.theme.accent))return fail(c,"accent must be a hex color like #4B5563");row.theme={...row.theme,accent:String(b.theme.accent).trim()}}if(b.fields!==undefined)row.fields={speakers:b.fields?.speakers!==false,room:b.fields?.room!==false,track:b.fields?.track!==false,description:b.fields?.description!==false};await persist();return c.json({data:normalizedEmbed(row)})});
+  app.delete("/api/events/:eventId/embed-configs/:id",async(c)=>{const denied=requireOrganizer(c);if(denied)return denied;const i=(store.embedConfigs||[]).findIndex(x=>x.id===c.req.param("id"));if(i<0)return fail(c,"embed config not found",404);store.embedConfigs.splice(i,1);await persist();return c.body(null,204)});
 
+  const persistenceKind = (layer: SnapshotPersistence): "d1" | "memory" => {
+    if (layer instanceof D1SnapshotPersistence) return "d1";
+    if (layer instanceof CompositeSnapshotPersistence) {
+      return persistenceKind(layer.primary) === "d1" || persistenceKind(layer.secondary) === "d1" ? "d1" : "memory";
+    }
+    return "memory";
+  };
   app.get("/health", (c) =>
-    c.json({ ok: true, mode: client instanceof MockAcceleventsClient ? "mock" : "configured", product: "Ruckus" }),
+    c.json({ ok: true, mode: client instanceof MockAcceleventsClient ? "mock" : "configured", product: "Ruckus", persistence: persistenceKind(persistence) }),
   );
-  app.get(OPENAPI_PATH, (c) => c.body(OPENAPI_YAML, 200, { "content-type": OPENAPI_CONTENT_TYPE }));
+  app.get(OPENAPI_PATH, (c) => c.body(OPENAPI_YAML, 200, { "content-type": OPENAPI_CONTENT_TYPE, "x-content-type-options": "nosniff" }));
   app.get("/api/demo", async (c) => c.json(await repo.getData("evt-ai-summit-2026")));
 
   // —— Bootstrap / command ——
   app.get("/api/events/:eventId/bootstrap", (c) => {
+    const denied=requireOrganizer(c);if(denied)return denied;
     // Compatibility projection for old snapshots without speaker personas. Keep GET
     // pure: current mutations register personas at write time, while legacy profiles
     // are projected into this response without changing the lifecycle singleton.
@@ -385,7 +427,7 @@ export function createApp(deps: AppDeps = {}) {
   // Demo-only reviewer persona links. These select an existing reviewer persona and
   // deliberately do not claim to create a password, session, or production login.
   app.post("/api/events/:eventId/reviewers/:reviewerId/invite-link", async (c) => {
-    if (actor(c) !== "organizer") return fail(c, "organizer role required", 403);
+    const denied=requireOrganizer(c); if (denied) return denied;
     const b = await c.req.json().catch(() => null) as { roundId?: string } | null;
     const reviewer = store.personas.find((p) => p.id === c.req.param("reviewerId") && p.role === "reviewer");
     const round = store.reviewRounds.find((r) => r.id === b?.roundId);
@@ -437,6 +479,7 @@ export function createApp(deps: AppDeps = {}) {
   });
 
   app.get("/api/events/:eventId/command", async (c) => {
+    const denied=requireOrganizer(c);if(denied)return denied;
     // Schedule projection is the canonical source for the command-center schedule KPI.
     const metrics = await canonicalScheduleMetrics(repo as any, activeEventId());
     const snapshot = commandSnapshot();
@@ -449,7 +492,7 @@ export function createApp(deps: AppDeps = {}) {
   });
 
   app.put("/api/events/:eventId/settings", async (c) => {
-    if (actor(c) !== "organizer") return fail(c, "organizer role required", 403);
+    const denied=requireOrganizer(c); if (denied) return denied;
     const b = (await c.req.json().catch(() => null)) as Partial<typeof store.event> | null;
     if (!b) return fail(c, "JSON body required");
     Object.assign(store.event, {
@@ -464,9 +507,9 @@ export function createApp(deps: AppDeps = {}) {
   });
 
   // —— Forms ——
-  app.get("/api/events/:eventId/forms", (c) => c.json({ data: formsOf(store) }));
+  app.get("/api/events/:eventId/forms", (c) => { const denied=requireOrganizer(c);if(denied)return denied; return c.json({ data: formsOf(store) }); });
   app.post("/api/events/:eventId/forms", async (c) => {
-    if (actor(c) !== "organizer") return fail(c, "organizer role required", 403);
+    const denied=requireOrganizer(c); if (denied) return denied;
     const b = (await c.req.json().catch(() => null)) as { name?: string; slug?: string } | null;
     if (!b) return fail(c, "JSON body required");
     const made = createEventForm(b, store);
@@ -475,12 +518,13 @@ export function createApp(deps: AppDeps = {}) {
     return c.json({ data: made.form }, 201);
   });
   app.get("/api/events/:eventId/forms/:id", (c) => {
+    const denied=requireOrganizer(c);if(denied)return denied;
     const form = findForm(c.req.param("id"), store);
     if (!form) return fail(c, "form not found", 404);
     return c.json({ data: form });
   });
   app.put("/api/events/:eventId/forms/:id", async (c) => {
-    if (actor(c) !== "organizer") return fail(c, "organizer role required", 403);
+    const denied=requireOrganizer(c); if (denied) return denied;
     const target = findForm(c.req.param("id"), store);
     if (!target) return fail(c, "form not found", 404);
     const b = (await c.req.json().catch(() => null)) as Partial<typeof target> | null;
@@ -597,6 +641,22 @@ export function createApp(deps: AppDeps = {}) {
     const normalizedEmail = String(b.email || "").trim().toLowerCase();
     if (!normalizedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) return fail(c, "valid email is required");
     if (!String(answers.title || "").trim()) return fail(c, "Session title is required");
+    const normalizedTitle = String(answers.title || "").trim().toLowerCase();
+    const duplicate = store.submissions.find((row) => row.email.trim().toLowerCase() === normalizedEmail && row.title.trim().toLowerCase() === normalizedTitle);
+    if (duplicate) {
+      const portalInvite = issueSpeakerInvite(duplicate.speakerId);
+      const portalPath = portalInvite ? speakerInvitePath(portalInvite.token) : "/p";
+      const portalUrl = `${new URL(c.req.url).origin}${portalPath}`;
+      return c.json({
+        data: {
+          id: duplicate.id, code: duplicate.code, status: duplicate.status, reviewBoard: duplicate.reviewBoard, speakerId: duplicate.speakerId,
+          editToken: duplicate.editToken,
+          editUrl: `/e/${store.event.slug || EVENT_SLUG}/cfp?submission=${duplicate.id}&token=${duplicate.editToken}`,
+          portalPath, portalUrl, portalToken: portalInvite?.token,
+          duplicate: true,
+        },
+      }, 200);
+    }
     const check = requestedStatus === "submitted" ? validateCfpSubmission(answers, normalizedEmail) : null;
     if (check && !check.ok) return fail(c, check.error);
     const route = requestedStatus === "submitted" ? cfpRouteForCategory(category) : { boardId: "draft", boardLabel: "Draft" };
@@ -697,9 +757,20 @@ export function createApp(deps: AppDeps = {}) {
 
   // —— Submissions / review ——
   app.get("/api/events/:eventId/submissions", (c) => {
-    const filter = c.req.query("filter");
     const persona = personaOf(c);
-    let rows = persona.role === "reviewer" ? store.submissions.filter((s) => store.reviewAssignments.some((a) => a.submissionId === s.id && a.reviewerId === persona.id && a.status !== "recused")) : [...store.submissions];
+    if (persona.role === "organizer") { /* ok */ }
+    else if (persona.role === "reviewer") { /* scoped below */ }
+    else if (persona.role === "speaker" && persona.speakerId) { /* scoped below */ }
+    else {
+      const denied = requireStaff(c);
+      if (denied) return denied;
+    }
+    const filter = c.req.query("filter");
+    let rows = persona.role === "reviewer"
+      ? store.submissions.filter((s) => store.reviewAssignments.some((a) => a.submissionId === s.id && a.reviewerId === persona.id && a.status !== "recused"))
+      : persona.role === "speaker"
+        ? store.submissions.filter((s) => s.speakerId === persona.speakerId)
+        : [...store.submissions];
     if (filter === "pending") rows = rows.filter((s) => ["submitted", "under_review"].includes(s.status));
     if (filter === "accepted") rows = rows.filter((s) => s.status === "accepted");
     if (filter === "rejected") rows = rows.filter((s) => s.status === "rejected");
@@ -719,9 +790,13 @@ export function createApp(deps: AppDeps = {}) {
   });
 
   app.get("/api/events/:eventId/submissions/:id", (c) => {
+    const persona = personaOf(c);
+    if (persona.role !== "organizer" && persona.role !== "reviewer" && !(persona.role === "speaker" && persona.speakerId)) {
+      const denied = requireStaff(c);
+      if (denied) return denied;
+    }
     const s = store.submissions.find((x) => x.id === c.req.param("id"));
     if (!s) return fail(c, "submission not found", 404);
-    const persona = personaOf(c);
     if (persona.role === "reviewer" && !store.reviewAssignments.some((a) => a.submissionId === s.id && a.reviewerId === persona.id && a.status !== "recused")) return fail(c, "submission not assigned", 404);
     if (persona.role === "speaker" && persona.speakerId !== s.speakerId) return fail(c, "submission not found", 404);
     const assignment = store.reviewAssignments.find((a) => a.submissionId === s.id && a.reviewerId === persona.id && a.status !== "recused");
@@ -738,6 +813,7 @@ export function createApp(deps: AppDeps = {}) {
   });
 
   app.get("/api/events/:eventId/reviews", (c) => {
+    const denied = requireStaff(c); if (denied) return denied;
     const persona = personaOf(c);
     const rows =
       persona.role === "organizer"
@@ -831,7 +907,7 @@ export function createApp(deps: AppDeps = {}) {
   });
 
   app.post("/api/events/:eventId/submissions/:id/decision", async (c) => {
-    if (actor(c) !== "organizer") return fail(c, "organizer role required", 403);
+    const denied=requireOrganizer(c); if (denied) return denied;
     const s = store.submissions.find((x) => x.id === c.req.param("id"));
     if (!s) return fail(c, "submission not found", 404);
     const b = (await c.req.json()) as {
@@ -869,6 +945,7 @@ export function createApp(deps: AppDeps = {}) {
 
   // —— Speakers / portal ——
   app.get("/api/events/:eventId/speakers", (c) => {
+    const denied=requireOrganizer(c);if(denied)return denied;
     const accepted = store.submissions.filter((s) => s.status === "accepted");
     return c.json({
       data: accepted.map((s) => {
@@ -955,36 +1032,10 @@ export function createApp(deps: AppDeps = {}) {
   app.patch("/api/speaker/events/:eventId/tasks/:id", async (c) => {
     const speakerId=speakerIdOf(c); if(!speakerId) return fail(c,"speaker persona required",403);
     const b = (await c.req.json().catch(() => ({}))) as { status?: string };
-    const result=b.status === "not_started" ? (()=>{const t=store.tasks.find(x=>x.id===c.req.param("id"));if(!t||t.speakerId!==speakerId)return {ok:false as const,error:"cannot modify another speaker's task"};t.status="not_started";return {ok:true as const,task:t}})() : completeTaskForSpeaker(c.req.param("id"),speakerId);
+    const result=b.status === "not_started" ? (()=>{const t=store.tasks.find(x=>x.id===c.req.param("id"));if(!t||t.speakerId!==speakerId)return {ok:false as const,error:"cannot modify another speaker's task"};t.status="not_started";delete t.completedVia;return {ok:true as const,task:t}})() : completeTaskForSpeaker(c.req.param("id"),speakerId);
     if(!result.ok)return fail(c,result.error,result.error.includes("not found")?404:403);
     await persist();
     return c.json({ data: { task: result.task, readiness: readiness(speakerId) } });
-  });
-
-  app.put("/api/speaker/events/:eventId/profile", async (c) => {
-    const speakerId = speakerIdOf(c);
-    if (!speakerId) return fail(c, "speaker persona required", 403);
-    const b = (await c.req.json().catch(() => null)) as Partial<(typeof store.profiles)[0]> | null;
-    if (!b) return fail(c, "JSON body required");
-    let p = store.profiles.find((x) => x.speakerId === speakerId);
-    if (!p) {
-      p = { speakerId, name: String(b.name || ""), email: String(b.email || ""), bio: "" };
-      store.profiles.push(p);
-    }
-    Object.assign(p, {
-      name: b.name ?? p.name,
-      email: b.email ?? p.email,
-      bio: b.bio ?? p.bio,
-      company: b.company ?? p.company,
-      title: b.title ?? p.title,
-      linkedin: b.linkedin ?? p.linkedin,
-      x: b.x ?? p.x,
-      website: b.website ?? p.website,
-    });
-    const profileTask = store.tasks.find((t) => t.speakerId === speakerId && t.type === "profile");
-    if (profileTask && p.bio.trim().length > 20) profileTask.status = "completed";
-    await persist();
-    return c.json({ data: { profile: p, readiness: readiness(speakerId) } });
   });
 
   app.post("/api/speaker/events/:eventId/files", async (c) => {
@@ -1019,7 +1070,10 @@ export function createApp(deps: AppDeps = {}) {
     }
     const typeMap = { headshot: "headshot", slides: "slides", supporting_document: "supporting_doc" } as const;
     const task = store.tasks.find((t) => t.speakerId === speakerId && t.type === typeMap[b.kind!]);
-    if (task) task.status = "completed";
+    if (task) {
+      task.status = "completed";
+      task.completedVia = b.kind === "headshot" ? "headshot_upload" : "file_upload";
+    }
     await persist();
     return c.json({ data: { file: f, readiness: readiness(speakerId) } }, 201);
   });
@@ -1037,25 +1091,25 @@ export function createApp(deps: AppDeps = {}) {
   });
 
   // Organizer-managed wiki resources. Raw script HTML is never accepted as an embed: only safeEmbed URLs survive.
-  app.get("/api/events/:eventId/resources", (c) => c.json({ data: store.resources }));
+  app.get("/api/events/:eventId/resources", (c) => { const denied=requireOrganizer(c);if(denied)return denied; return c.json({ data: store.resources }); });
   app.post("/api/events/:eventId/resources", async (c) => {
-    if (actor(c) !== "organizer") return fail(c, "organizer role required", 403);
+    const denied=requireOrganizer(c); if (denied) return denied;
     const b = await c.req.json().catch(() => null) as Partial<typeof store.resources[number]> | null;
     if (!b?.slug || !b.title || b.body == null) return fail(c, "slug, title, and body required");
     const resource=upsertResource({ slug: b.slug, title: b.title, body: b.body, published: !!b.published, embedUrl: b.embedUrl }); await persist(); return c.json({ data: resource }, 201);
   });
   app.put("/api/events/:eventId/resources/:id", async (c) => {
-    if (actor(c) !== "organizer") return fail(c, "organizer role required", 403);
+    const denied=requireOrganizer(c); if (denied) return denied;
     const old=store.resources.find((r)=>r.id===c.req.param("id")); if(!old)return fail(c,"resource not found",404);
     const b=await c.req.json().catch(()=>null) as Partial<typeof old>|null;if(!b)return fail(c,"JSON body required");
     const resource=upsertResource({id:old.id,slug:b.slug??old.slug,title:b.title??old.title,body:b.body??old.body,published:b.published??old.published,embedUrl:b.embedUrl}); await persist(); return c.json({data:resource});
   });
-  app.delete("/api/events/:eventId/resources/:id", async (c) => { if(actor(c)!=="organizer")return fail(c,"organizer role required",403);if(!deleteResource(c.req.param("id")))return fail(c,"resource not found",404);await persist();return c.body(null,204) });
+  app.delete("/api/events/:eventId/resources/:id", async (c) => { const denied=requireOrganizer(c);if(denied)return denied;if(!deleteResource(c.req.param("id")))return fail(c,"resource not found",404);await persist();return c.body(null,204) });
 
   // —— Comms ——
-  app.get("/api/events/:eventId/comms/templates", (c) => c.json({ data: store.templates }));
+  app.get("/api/events/:eventId/comms/templates", (c) => { const denied=requireOrganizer(c);if(denied)return denied; return c.json({ data: store.templates }); });
   app.put("/api/events/:eventId/comms/templates/:id", async (c) => {
-    if (actor(c) !== "organizer") return fail(c, "organizer role required", 403);
+    const denied=requireOrganizer(c); if (denied) return denied;
     const t = store.templates.find((x) => x.id === c.req.param("id"));
     if (!t) return fail(c, "template not found", 404);
     const b = (await c.req.json().catch(() => null)) as Partial<typeof t> | null;
@@ -1066,24 +1120,24 @@ export function createApp(deps: AppDeps = {}) {
     await persist();
     return c.json({ data: t });
   });
-  app.get("/api/events/:eventId/comms/log", (c) => c.json({ data: store.communications }));
+  app.get("/api/events/:eventId/comms/log", (c) => { const denied=requireOrganizer(c);if(denied)return denied; return c.json({ data: store.communications }); });
   app.post("/api/events/:eventId/comms/decisions/preview", async (c) => {
-    if (actor(c) !== "organizer") return fail(c, "organizer role required", 403);
+    const denied=requireOrganizer(c); if (denied) return denied;
     const b=await c.req.json();const sub=store.submissions.find(s=>s.id===b.submissionId&&["accepted","rejected"].includes(s.status));if(!sub)return fail(c,"decided submission not found",404);
     const merge=(text:string)=>appendFeedback(text.replaceAll("{{name}}",sub.name).replaceAll("{{talk_title}}",sub.title).replaceAll("{{decision}}",sub.status),sub.decisionFeedback);
     return c.json({data:{submissionId:sub.id,to:sub.email,subject:merge(String(b.subject||"Decision for {{talk_title}}")),body:merge(String(b.body||"Hi {{name}}, your proposal {{talk_title}} was {{decision}}."))}});
   });
   app.post("/api/events/:eventId/comms/decisions/send", async (c) => {
-    if (actor(c) !== "organizer") return fail(c, "organizer role required", 403);
+    const denied=requireOrganizer(c); if (denied) return denied;
     const life=store,eventId=life.event.id,b=await c.req.json(),cohorts=Array.isArray(b.cohorts)?b.cohorts:["accepted","rejected"],targets=life.submissions.filter(s=>cohorts.includes(s.status));const rows=[];
-    for(const sub of targets){const merge=(text:string)=>appendFeedback(text.replaceAll("{{name}}",sub.name).replaceAll("{{talk_title}}",sub.title).replaceAll("{{decision}}",sub.status),sub.decisionFeedback);const subject=merge(String(b.subject||"Decision for {{talk_title}}")),body=merge(String(b.body||"Hi {{name}}, your proposal {{talk_title}} was {{decision}}."));const result=await mailer.send({to:sub.email,subject,text:body}).catch(()=>({status:"failed" as const}));const row={id:`comm-${crypto.randomUUID()}`,speakerId:sub.speakerId,submissionId:sub.id,subject,body,feedback:sub.decisionFeedback||undefined,kind:(sub.status==="accepted"?"acceptance":"rejection") as "acceptance"|"rejection",status:result.status,providerId:"providerId" in result?result.providerId:undefined,ics:"",createdAt:new Date().toISOString()};life.communications.unshift(row);rows.push(row)}await persist(eventId,life);return c.json({data:rows},201);
+    for(const sub of targets){const merge=(text:string)=>appendFeedback(text.replaceAll("{{name}}",sub.name).replaceAll("{{talk_title}}",sub.title).replaceAll("{{decision}}",sub.status),sub.decisionFeedback);const subject=merge(String(b.subject||"Decision for {{talk_title}}")),body=merge(String(b.body||"Hi {{name}}, your proposal {{talk_title}} was {{decision}}."));const result=await mailer.send({to:sub.email,subject,text:body,html:brandedHtmlFor(subject,body,{eventName:life.event.name,kind:sub.status==="accepted"?"acceptance":"rejection",feedback:sub.decisionFeedback})}).catch(()=>({status:"failed" as const}));const row={id:`comm-${crypto.randomUUID()}`,speakerId:sub.speakerId,submissionId:sub.id,subject,body,feedback:sub.decisionFeedback||undefined,kind:(sub.status==="accepted"?"acceptance":"rejection") as "acceptance"|"rejection",status:result.status,providerId:"providerId" in result?result.providerId:undefined,ics:"",createdAt:new Date().toISOString()};life.communications.unshift(row);rows.push(row)}await persist(eventId,life);return c.json({data:rows},201);
   });
   app.post("/api/events/:eventId/comms/reminders/plan", (c) => {
-    if (actor(c) !== "organizer") return fail(c, "organizer role required", 403);
+    const denied=requireOrganizer(c); if (denied) return denied;
     return c.json({ data: reminderPlans() });
   });
   app.post("/api/events/:eventId/comms/send", async (c) => {
-    if (actor(c) !== "organizer") return fail(c, "organizer role required", 403);
+    const denied=requireOrganizer(c); if (denied) return denied;
     const b = (await c.req.json().catch(() => null)) as {
       templateKey?: string;
       speakerId?: string;
@@ -1153,12 +1207,14 @@ export function createApp(deps: AppDeps = {}) {
   });
 
   app.get("/api/events/:eventId/dashboard", async (c) => {
+    const denied=requireOrganizer(c);if(denied)return denied;
     const metrics=await canonicalScheduleMetrics(repo as any,c.req.param("eventId"));
     return c.json({data:{speakers:store.submissions.filter((s)=>s.status==="accepted").map((s)=>({speakerId:s.speakerId,name:s.name,...readiness(s.speakerId)})),metrics}});
   });
 
   // —— Schedule (preserve engines) ——
   app.get("/api/events/:eventId/schedule", async (c) => {
+    const denied=requireOrganizer(c);if(denied)return denied;
     // Compatibility repair for accepted lifecycle submissions created by older
     // snapshots. If the read materializes/repairs canonical rows, immediately
     // snapshot the result rather than leaving an unsaved read-side mutation.
@@ -1171,27 +1227,27 @@ export function createApp(deps: AppDeps = {}) {
     return s ? c.json({ ...s, warnings: scheduleWarnings(s), meta:{publication:{approved:s.sessions.filter((x:any)=>x.publicationState==="approved").length,draft:s.sessions.filter((x:any)=>x.publicationState==="draft").length},cancelled:s.sessions.filter((x:any)=>x.cancelled).length} }) : c.json({ error: "event not found" }, 404);
   });
   const organizerSessionsPath="/api/events/:eventId/sessions";
-  app.get(organizerSessionsPath,async(c)=>{if(actor(c)!=="organizer")return fail(c,"organizer role required",403);const eventId=c.req.param("eventId"),schedule=await (repo as Repository&{getSchedule?:(id:string)=>Promise<any>}).getSchedule?.(eventId);if(!schedule)return fail(c,"event not found",404);normalizeScheduleSessions(schedule);const rows=schedule.sessions.map((session:any)=>{const submission=session.acceptedSubmissionId?store.submissions.find(x=>x.id===session.acceptedSubmissionId):undefined,slot=schedule.slots.find((x:any)=>x.sessionId===session.id);return {id:session.id,code:submission?.code||null,title:session.title,speakers:session.speakerIds.map((id:string)=>{const speaker=schedule.speakers.find((x:any)=>x.id===id);return {id,name:speaker?.name||id}}),schedule:slot?{roomId:slot.roomId,startsAt:slot.startsAt,endsAt:slot.endsAt}:null,publishStatus:session.publishStatus,status:session.status,source:session.acceptedSubmissionId?"cfp":"manual",trackIds:session.trackIds}});return c.json({data:rows,summary:{total:rows.length,scheduled:rows.filter((x:any)=>x.schedule).length,published:rows.filter((x:any)=>x.publishStatus==="published").length}})});
+  app.get(organizerSessionsPath,async(c)=>{const denied=requireOrganizer(c);if(denied)return denied;const eventId=c.req.param("eventId"),schedule=await (repo as Repository&{getSchedule?:(id:string)=>Promise<any>}).getSchedule?.(eventId);if(!schedule)return fail(c,"event not found",404);normalizeScheduleSessions(schedule);const rows=schedule.sessions.map((session:any)=>{const submission=session.acceptedSubmissionId?store.submissions.find(x=>x.id===session.acceptedSubmissionId):undefined,slot=schedule.slots.find((x:any)=>x.sessionId===session.id);return {id:session.id,code:submission?.code||null,title:session.title,speakers:session.speakerIds.map((id:string)=>{const speaker=schedule.speakers.find((x:any)=>x.id===id);return {id,name:speaker?.name||id}}),schedule:slot?{roomId:slot.roomId,startsAt:slot.startsAt,endsAt:slot.endsAt}:null,publishStatus:session.publishStatus,status:session.status,source:session.acceptedSubmissionId?"cfp":"manual",trackIds:session.trackIds}});return c.json({data:rows,summary:{total:rows.length,scheduled:rows.filter((x:any)=>x.schedule).length,published:rows.filter((x:any)=>x.publishStatus==="published").length}})});
   const sessionsListPath="/api/events/:eventId/sessions-list";
-  app.get(sessionsListPath,async(c)=>{if(actor(c)!=="organizer")return fail(c,"organizer role required",403);const schedule=await (repo as Repository&{getSchedule?:(id:string)=>Promise<any>}).getSchedule?.(c.req.param("eventId"));if(!schedule)return fail(c,"event not found",404);normalizeScheduleSessions(schedule);const data=schedule.sessions.map((session:any)=>{const submission=session.acceptedSubmissionId?store.submissions.find(x=>x.id===session.acceptedSubmissionId):undefined,slot=schedule.slots.find((x:any)=>x.sessionId===session.id),room=slot&&schedule.rooms.find((x:any)=>x.id===slot.roomId);return {id:session.id,code:submission?.code||null,title:session.title,speakers:session.speakerIds.map((id:string)=>{const speaker=schedule.speakers.find((x:any)=>x.id===id);return {id,name:speaker?.name||id}}),schedule:slot?{roomId:slot.roomId,room:room?.name||slot.roomId,trackIds:session.trackIds,startsAt:slot.startsAt,endsAt:slot.endsAt}:null,publicationState:session.publicationState,cancelled:session.cancelled===true,cancellationReason:session.cancellationReason,source:session.acceptedSubmissionId?"cfp":"manual"}}),approved=data.filter((x:any)=>x.publicationState==="approved").length,draft=data.filter((x:any)=>x.publicationState==="draft").length,cancelled=data.filter((x:any)=>x.cancelled).length;return c.json({data,meta:{approved,draft,cancelled}})});
+  app.get(sessionsListPath,async(c)=>{const denied=requireOrganizer(c);if(denied)return denied;const schedule=await (repo as Repository&{getSchedule?:(id:string)=>Promise<any>}).getSchedule?.(c.req.param("eventId"));if(!schedule)return fail(c,"event not found",404);normalizeScheduleSessions(schedule);const data=schedule.sessions.map((session:any)=>{const submission=session.acceptedSubmissionId?store.submissions.find(x=>x.id===session.acceptedSubmissionId):undefined,slot=schedule.slots.find((x:any)=>x.sessionId===session.id),room=slot&&schedule.rooms.find((x:any)=>x.id===slot.roomId);return {id:session.id,code:submission?.code||null,title:session.title,speakers:session.speakerIds.map((id:string)=>{const speaker=schedule.speakers.find((x:any)=>x.id===id);return {id,name:speaker?.name||id}}),schedule:slot?{roomId:slot.roomId,room:room?.name||slot.roomId,trackIds:session.trackIds,startsAt:slot.startsAt,endsAt:slot.endsAt}:null,publicationState:session.publicationState,cancelled:session.cancelled===true,cancellationReason:session.cancellationReason,source:session.acceptedSubmissionId?"cfp":"manual"}}),approved=data.filter((x:any)=>x.publicationState==="approved").length,draft=data.filter((x:any)=>x.publicationState==="draft").length,cancelled=data.filter((x:any)=>x.cancelled).length;return c.json({data,meta:{approved,draft,cancelled}})});
   const lifecyclePath="/api/events/:eventId/lifecycle";
-  app.get(lifecyclePath,async(c)=>{if(actor(c)!=="organizer")return fail(c,"organizer role required",403);const schedule=await (repo as Repository&{getSchedule?:(id:string)=>Promise<any>}).getSchedule?.(c.req.param("eventId"));if(!schedule)return fail(c,"event not found",404);normalizeScheduleSessions(schedule);const assignments=store.reviewAssignments,complete=assignments.filter(x=>x.status==="completed").length,submitted=store.submissions.filter(x=>x.status!=="draft"),decided=store.submissions.filter(x=>["accepted","rejected","waitlisted"].includes(x.status)),acceptedIds=new Set(store.submissions.filter(x=>x.status==="accepted").map(x=>x.speakerId)),required=store.tasks.filter(x=>x.required&&acceptedIds.has(x.speakerId)),tasksDone=required.filter(x=>x.status==="completed").length,publicSessions=schedule.sessions.filter(isPublishedSession).length;const data=[{id:"setup",title:"Set up rooms and tracks",done:schedule.rooms.length>0&&schedule.tracks.length>0,detail:`${schedule.rooms.length} rooms, ${schedule.tracks.length} tracks`,href:"/app/schedule"},{id:"cfp_open",title:"Open and publish CFP",done:store.form.status==="open",detail:`CFP is ${store.form.status}`,href:"/app/forms"},{id:"submissions",title:"Collect submissions",done:submitted.length>0,detail:`${submitted.length} submissions`,href:"/app/submissions"},{id:"evaluate",title:"Evaluate submissions",done:store.reviewRounds.length>0&&assignments.length>0,detail:`${store.reviewRounds.length} rounds, ${assignments.length} assignments (${complete} complete)`,href:"/app/review-progress"},{id:"decisions",title:"Send decisions",done:decided.length>0,detail:`${decided.length} decisions`,href:"/app/submissions"},{id:"onboarding",title:"Onboard speakers",done:acceptedIds.size>0&&required.every(x=>x.status==="completed"),detail:`${tasksDone}/${required.length} required tasks complete`,href:"/app/speakers"},{id:"publish",title:"Publish program",done:publicSessions>0,detail:`${publicSessions} published sessions`,href:"/app/schedule"}];return c.json({data})});
+  app.get(lifecyclePath,async(c)=>{const denied=requireOrganizer(c);if(denied)return denied;const schedule=await (repo as Repository&{getSchedule?:(id:string)=>Promise<any>}).getSchedule?.(c.req.param("eventId"));if(!schedule)return fail(c,"event not found",404);normalizeScheduleSessions(schedule);const assignments=store.reviewAssignments,complete=assignments.filter(x=>x.status==="completed").length,submitted=store.submissions.filter(x=>x.status!=="draft"),decided=store.submissions.filter(x=>["accepted","rejected","waitlisted"].includes(x.status)),acceptedIds=new Set(store.submissions.filter(x=>x.status==="accepted").map(x=>x.speakerId)),required=store.tasks.filter(x=>x.required&&acceptedIds.has(x.speakerId)),tasksDone=required.filter(x=>x.status==="completed").length,publicSessions=schedule.sessions.filter(isPublishedSession).length;const data=[{id:"setup",title:"Set up rooms and tracks",done:schedule.rooms.length>0&&schedule.tracks.length>0,detail:`${schedule.rooms.length} rooms, ${schedule.tracks.length} tracks`,href:"/app/schedule"},{id:"cfp_open",title:"Open and publish CFP",done:store.form.status==="open",detail:`CFP is ${store.form.status}`,href:"/app/forms"},{id:"submissions",title:"Collect submissions",done:submitted.length>0,detail:`${submitted.length} submissions`,href:"/app/submissions"},{id:"evaluate",title:"Evaluate submissions",done:store.reviewRounds.length>0&&assignments.length>0,detail:`${store.reviewRounds.length} rounds, ${assignments.length} assignments (${complete} complete)`,href:"/app/review-progress"},{id:"decisions",title:"Send decisions",done:decided.length>0,detail:`${decided.length} decisions`,href:"/app/submissions"},{id:"onboarding",title:"Onboard speakers",done:acceptedIds.size>0&&required.every(x=>x.status==="completed"),detail:`${tasksDone}/${required.length} required tasks complete`,href:"/app/speakers"},{id:"publish",title:"Publish program",done:publicSessions>0,detail:`${publicSessions} published sessions`,href:"/app/schedule"}];return c.json({data})});
   app.post("/api/events/:eventId/schedule/validate", async (c) => {
-    if (actor(c) !== "organizer") return fail(c, "organizer role required", 403);
+    const denied=requireOrganizer(c); if (denied) return denied;
     const r = repo as Repository & { getSchedule?: (id: string) => Promise<any> };
     const s = await r.getSchedule?.(c.req.param("eventId"));
     const slot = await c.req.json<AgendaSlot>().catch(() => null);
     if (!s || !slot) return c.json({ error: "schedule and slot are required" }, 400);
     return c.json(validateSlot(s, slot));
   });
-  app.post("/api/events/:eventId/schedule/sessions",async(c)=>{if(actor(c)!=="organizer")return fail(c,"organizer role required",403);const r=repo as Repository&{getSchedule?:(id:string)=>Promise<any>;putSchedule?:(id:string,s:any)=>Promise<void>},s=await r.getSchedule?.(c.req.param("eventId")),b=await c.req.json();if(!s||!String(b.title||"").trim()||!Array.isArray(b.speakerIds)||!b.speakerIds.length)return fail(c,"title and speakers are required");const row={id:`session-${crypto.randomUUID().slice(0,8)}`,title:String(b.title),abstract:String(b.abstract||""),speakerIds:b.speakerIds.filter((id:string)=>s.speakers.some((x:any)=>x.id===id)),trackIds:b.trackId?[b.trackId]:[],durationMinutes:Number(b.durationMinutes||45),status:"accepted",publishStatus:"draft",publicationState:"draft",slug:`session-${Date.now()}`};if(!row.speakerIds.length)return fail(c,"valid speakers are required");s.sessions.push(row);s.version++;await r.putSchedule?.(c.req.param("eventId"),s);await persist();return c.json({data:row},201)});
-  const setSessionOperationalState=async(c:any,action:"cancel"|"uncancel"|"approve"|"unapprove")=>{if(actor(c)!=="organizer")return fail(c,"organizer role required",403);const r=repo as Repository&{getSchedule?:(id:string)=>Promise<any>;putSchedule?:(id:string,s:any)=>Promise<void>},eventId=c.req.param("eventId"),schedule=await r.getSchedule?.(eventId);if(!schedule)return fail(c,"event not found",404);normalizeScheduleSessions(schedule);const session=schedule.sessions.find((x:any)=>x.id===c.req.param("sessionId"));if(!session)return fail(c,"session not found",404);const draft=linkSessions(store,schedule).links.get(session.id);if(action==="cancel"){const b=await c.req.json().catch(()=>({})) as any;session.cancelled=true;session.cancellationReason=String(b?.reason||"").trim()||undefined;if(draft){draft.cancelled=true;draft.cancellationReason=session.cancellationReason}}else if(action==="uncancel"){session.cancelled=false;delete session.cancellationReason;if(draft){draft.cancelled=false;delete draft.cancellationReason}}else {const state=action==="approve"?"approved":"draft";session.publicationState=state;if(draft)draft.publicationState=state}schedule.version++;await r.putSchedule?.(eventId,schedule);await persist();return c.json({data:session})};
+  app.post("/api/events/:eventId/schedule/sessions",async(c)=>{const denied=requireOrganizer(c);if(denied)return denied;const r=repo as Repository&{getSchedule?:(id:string)=>Promise<any>;putSchedule?:(id:string,s:any)=>Promise<void>},s=await r.getSchedule?.(c.req.param("eventId")),b=await c.req.json();if(!s||!String(b.title||"").trim()||!Array.isArray(b.speakerIds)||!b.speakerIds.length)return fail(c,"title and speakers are required");const row={id:`session-${crypto.randomUUID().slice(0,8)}`,title:String(b.title),abstract:String(b.abstract||""),speakerIds:b.speakerIds.filter((id:string)=>s.speakers.some((x:any)=>x.id===id)),trackIds:b.trackId?[b.trackId]:[],durationMinutes:Number(b.durationMinutes||45),status:"accepted",publishStatus:"draft",publicationState:"draft",slug:`session-${Date.now()}`};if(!row.speakerIds.length)return fail(c,"valid speakers are required");s.sessions.push(row);s.version++;await r.putSchedule?.(c.req.param("eventId"),s);await persist();return c.json({data:row},201)});
+  const setSessionOperationalState=async(c:any,action:"cancel"|"uncancel"|"approve"|"unapprove")=>{const denied=requireOrganizer(c);if(denied)return denied;const r=repo as Repository&{getSchedule?:(id:string)=>Promise<any>;putSchedule?:(id:string,s:any)=>Promise<void>},eventId=c.req.param("eventId"),schedule=await r.getSchedule?.(eventId);if(!schedule)return fail(c,"event not found",404);normalizeScheduleSessions(schedule);const session=schedule.sessions.find((x:any)=>x.id===c.req.param("sessionId"));if(!session)return fail(c,"session not found",404);const draft=linkSessions(store,schedule).links.get(session.id);if(action==="cancel"){const b=await c.req.json().catch(()=>({})) as any;session.cancelled=true;session.cancellationReason=String(b?.reason||"").trim()||undefined;if(draft){draft.cancelled=true;draft.cancellationReason=session.cancellationReason}}else if(action==="uncancel"){session.cancelled=false;delete session.cancellationReason;if(draft){draft.cancelled=false;delete draft.cancellationReason}}else {const state=action==="approve"?"approved":"draft";session.publicationState=state;if(draft)draft.publicationState=state}schedule.version++;await r.putSchedule?.(eventId,schedule);await persist();return c.json({data:session})};
   // Register as one compact family. The repository's checked-in OpenAPI operation
   // count is intentionally fixed; these lifecycle controls remain runtime routes
   // without silently rewriting that unrelated generated contract in this brief.
   for(const action of ["cancel","uncancel","approve","unapprove"] as const)app.post(`/api/events/:eventId/sessions/:sessionId/${action}`,c=>setSessionOperationalState(c,action));
   app.patch("/api/events/:eventId/schedule/sessions/:sessionId",async(c)=>{
-    if(actor(c)!=="organizer")return fail(c,"organizer role required",403);
+    const denied=requireOrganizer(c);if(denied)return denied;
     const r=repo as Repository&{getSchedule?:(id:string)=>Promise<any>;putSchedule?:(id:string,s:any)=>Promise<void>};
     const sched=await r.getSchedule?.(c.req.param("eventId"));
     const b=await c.req.json().catch(()=>null) as any;if(!b)return fail(c,"JSON body required");
@@ -1204,7 +1260,7 @@ export function createApp(deps: AppDeps = {}) {
     return c.json({data:result.session||result.draft});
   });
   app.post("/api/events/:eventId/schedule/move", async (c) => {
-    if (actor(c) !== "organizer") return fail(c, "organizer role required", 403);
+    const denied=requireOrganizer(c); if (denied) return denied;
     const r = repo as Repository & {
       getSchedule?: (id: string) => Promise<any>;
       putSchedule?: (id: string, s: any) => Promise<void>;

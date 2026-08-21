@@ -433,7 +433,10 @@ export function applyHeadshot(
   // Mirror into schedule speakers for public gallery
   void syncProfileToSchedule(speakerId, life);
   const headshotTask = life.tasks.find((t) => t.speakerId === speakerId && t.type === "headshot");
-  if (headshotTask) headshotTask.status = "completed";
+  if (headshotTask) {
+    headshotTask.status = "completed";
+    headshotTask.completedVia = "headshot_upload";
+  }
   // File receipt
   const existing = life.files.find((f) => f.speakerId === speakerId && f.kind === "headshot");
   if (existing) {
@@ -712,6 +715,7 @@ export function submitFormTask(
   task.formAnswers = { ...(task.formAnswers || {}), ...answers };
   task.formSchema = schema;
   task.status = "completed";
+  task.completedVia = "manual";
   return { ok: true, task };
 }
 

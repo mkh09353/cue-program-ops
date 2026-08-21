@@ -26,9 +26,10 @@ import {
 import { ensureSpeakerPersona } from "./speakerMgmt.js";
 import type { LifecycleStore } from "./lifecycle.js";
 import type { Mailer } from "./mailer.js";
+import { brandedHtmlFor } from "./emailTemplate.js";
 
 const fail = (c: any, message: string, status = 400) =>
-  c.json({ error: { code: status === 404 ? "NOT_FOUND" : status === 403 ? "FORBIDDEN" : "VALIDATION_ERROR", message } }, status);
+  c.json({ error: { code: status === 404 ? "NOT_FOUND" : status === 403 ? "FORBIDDEN" : status === 401 ? "UNAUTHORIZED" : "VALIDATION_ERROR", message } }, status);
 
 export function createCrmRoutes(deps: {
   store: LifecycleStore;
@@ -39,8 +40,12 @@ export function createCrmRoutes(deps: {
   const app = new Hono();
   const org = (c: any) => deps.persona(c).role === "organizer";
   const requireOrg = (c: any) => {
-    if (!org(c)) return fail(c, "organizer role required", 403);
-    return null;
+    if (org(c)) return null;
+    const hasAuth = c.get("auth") || c.get("authCookiePresent");
+    const demoOn = c.get("demoPersonaHeaders") !== false;
+    const hasDemo = demoOn && (c.req.header("x-demo-persona") || c.req.header("x-demo-role"));
+    if (hasAuth || hasDemo) return fail(c, "organizer role required", 403);
+    return fail(c, "authentication required", 401);
   };
 
   // Ensure seed present for organizer demo surfaces
@@ -269,7 +274,12 @@ export function createCrmRoutes(deps: {
       const subject = renderCrmTemplate(subjectTpl, contact);
       const text = renderCrmTemplate(bodyTpl, contact);
       try {
-        const result = await deps.mailer.send({ to: contact.email, subject, text });
+        const result = await deps.mailer.send({
+          to: contact.email,
+          subject,
+          text,
+          html: brandedHtmlFor(subject, text, { eventName: deps.store.event.name, kind: "custom" }),
+        });
         sends.push({ contactId, email: contact.email, status: result.status });
         addNote(contactId, `Email sent: ${subject} (${result.status})`, {
           id: deps.persona(c).id,

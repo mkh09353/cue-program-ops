@@ -11,7 +11,7 @@ const H = { "content-type": "application/json", "x-demo-persona": "org-swyx" };
 const post = (app: any, path: string, body: unknown) =>
   app.request(path, { method: "POST", headers: H, body: JSON.stringify(body) });
 const json = async (res: Response) => (await res.json()) as any;
-const schedule = async (app: any) => await json(await app.request(`/api/events/${EVENT_ID}/schedule`));
+const schedule = async (app: any) => await json(await app.request(`/api/events/${EVENT_ID}/schedule`, { headers: H }));
 const placeBody = (sched: any, sessionId: string, day: string, time: string, roomId: string) => {
   const startsAt = zonedWallTimeToIso(day, time);
   const duration = sched.sessions.find((s: any) => s.id === sessionId)?.durationMinutes || 45;

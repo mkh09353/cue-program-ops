@@ -75,7 +75,7 @@ function StageBadge({ stage }: { stage: string }) {
 
 export const toggleCrmSelection = (selected: string[], id: string) =>
   selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id];
-export const canBulkCommunicate = (selected: string[]) => selected.length >= 2;
+export const canBulkCommunicate = (selected: string[]) => selected.length >= 1;
 
 export function CrmDirectoryPage() {
   const [rows, setRows] = useState<any[]>([]);
@@ -150,13 +150,27 @@ export function CrmDirectoryPage() {
             <Button variant="secondary" onClick={() => api.crmSyncSpeakers().then(load).then(() => toast("Synced event speakers"))}>
               Sync event speakers
             </Button>
-            <Button
-              variant="secondary"
-              disabled={!canBulkCommunicate(selected)}
-              onClick={() => setComposeOpen(true)}
-            >
-              Communicate ({selected.length})
-            </Button>
+            <div className="flex flex-col items-start">
+              <Button
+                variant="secondary"
+                disabled={!canBulkCommunicate(selected)}
+                title={
+                  canBulkCommunicate(selected)
+                    ? undefined
+                    : "Select at least one contact to compose a bulk message"
+                }
+                onClick={() => setComposeOpen(true)}
+              >
+                Communicate ({selected.length})
+              </Button>
+              {/* The disabled state used to be silent: the threshold is now stated where
+                  the control is, so a reader knows what to do next. */}
+              {!canBulkCommunicate(selected) ? (
+                <span className="mt-1 text-xs text-mid" data-testid="bulk-communicate-hint">
+                  Select at least one contact to compose a bulk message.
+                </span>
+              ) : null}
+            </div>
           </div>
         }
       />
@@ -580,7 +594,12 @@ export function CrmContactPage() {
               variant="secondary"
               onClick={async () => {
                 if (!tagInput.trim()) return;
-                await api.crmUpdateContact(contact.id, { tags: [...(contact.tags || []), tagInput.trim()] });
+                // Tags are REPLACED server-side, so append to the freshest copy we can
+                // get rather than to a contact record that may be minutes stale —
+                // otherwise a tag added elsewhere is dropped by this save.
+                const fresh: any = await api.crmContact(contact.id).catch(() => null);
+                const current = (fresh?.data?.tags ?? contact.tags) || [];
+                await api.crmUpdateContact(contact.id, { tags: [...current, tagInput.trim()] });
                 setTagInput("");
                 toast("Tag added");
                 load();
@@ -718,7 +737,10 @@ export function CrmContactPage() {
                           setEditFields(next);
                           setCfErr("");
                           try {
-                            await api.crmUpdateContact(contact.id, { customFields: next });
+                            // Send ONLY this field. Posting the whole map also persisted
+                            // every other field's unsaved draft (the server merges, so a
+                            // single-key patch is all that is needed).
+                            await api.crmUpdateContact(contact.id, { customFields: { [def.key]: e.target.value } });
                             toast(`${def.label}: ${e.target.value || "cleared"}`);
                             load();
                           } catch (err: any) {
@@ -746,7 +768,7 @@ export function CrmContactPage() {
                           variant="secondary"
                           onClick={async () => {
                             try {
-                              await api.crmUpdateContact(contact.id, { customFields: editFields });
+                              await api.crmUpdateContact(contact.id, { customFields: { [def.key]: editFields[def.key] ?? "" } });
                               toast(`${def.label} saved`);
                               load();
                             } catch (err: any) {
@@ -764,7 +786,7 @@ export function CrmContactPage() {
             ) : null}
             <dl className="mt-2 space-y-2 text-sm">
               {Object.entries(editFields)
-                .filter(([k]) => !fieldDefs.some((d: any) => d.key === k))
+                .filter(([k, v]) => !fieldDefs.some((d: any) => d.key === k) && String(v ?? "").trim())
                 .map(([k, v]) => (
                 <div key={k} className="grid gap-1">
                   <dt className="text-xs text-mid">{k}</dt>
@@ -777,9 +799,12 @@ export function CrmContactPage() {
                       size="sm"
                       variant="secondary"
                       onClick={async () => {
+                        // The server MERGES customFields, so a key cannot be deleted by
+                        // omission (it used to reappear on the next load). Clear it
+                        // explicitly; blank ad-hoc fields are filtered out of this list.
                         const next = { ...editFields };
                         delete next[k];
-                        await api.crmUpdateContact(contact.id, { customFields: next });
+                        await api.crmUpdateContact(contact.id, { customFields: { [k]: "" } });
                         setEditFields(next);
                         toast("Field removed");
                         load();
@@ -802,7 +827,7 @@ export function CrmContactPage() {
                 onClick={async () => {
                   if (!cfKey.trim()) return;
                   const next = { ...editFields, [cfKey.trim()]: cfVal };
-                  await api.crmUpdateContact(contact.id, { customFields: next });
+                  await api.crmUpdateContact(contact.id, { customFields: { [cfKey.trim()]: cfVal } });
                   setEditFields(next);
                   setCfKey("");
                   setCfVal("");

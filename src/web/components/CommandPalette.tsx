@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { Search } from "lucide-react";
-import { api } from "../lib/api";
+import { api, getActiveEvent, setActiveEventId } from "../lib/api";
+import { toast } from "./ui";
 import { cn } from "../lib/utils";
 
 /**
@@ -23,6 +24,8 @@ export type PaletteItem = {
   group: string;
   to: string;
   keywords?: string;
+  /** Non-navigation commands (e.g. Publish agenda) run this instead of routing. */
+  run?: () => void | Promise<void>;
 };
 
 /** Every organizer destination, in the order the sidebar presents them. */
@@ -55,6 +58,111 @@ export function filterPaletteItems(items: PaletteItem[], query: string): Palette
   });
 }
 
+/** Ids of every action command, so tests can assert the registry stays complete. */
+export const PALETTE_ACTION_IDS = [
+  "action-new-event",
+  "action-new-session",
+  "action-add-speaker",
+  "action-invite-reviewer",
+  "action-run-of-show",
+  "action-publish-agenda",
+  "action-export-results",
+] as const;
+
+/**
+ * Actions are static, so they are searchable the instant the palette opens.
+ * Publish is the only one with a side effect; everything else is a deep link.
+ */
+export function paletteActions(): PaletteItem[] {
+  return [
+    { id: "action-new-event", label: "New event", sublabel: "Create an event with rooms and tracks", group: "Actions", to: "/app/settings?new=event", keywords: "create add conference" },
+    { id: "action-new-session", label: "New session", sublabel: "Add a session to the schedule", group: "Actions", to: "/app/schedule#new-session", keywords: "create add talk" },
+    { id: "action-add-speaker", label: "Add speaker", sublabel: "Add someone to the roster", group: "Actions", to: "/app/speakers?add=1", keywords: "create invite person roster" },
+    { id: "action-invite-reviewer", label: "Invite reviewer", sublabel: "Add a reviewer to a round", group: "Actions", to: "/app/evaluation-plan#invite", keywords: "review board judge" },
+    { id: "action-run-of-show", label: "Print run-of-show", sublabel: "Printable schedule", group: "Actions", to: "/app/schedule/run-of-show", keywords: "print pdf paper agenda" },
+    {
+      id: "action-publish-agenda",
+      label: "Publish agenda",
+      sublabel: "Push the schedule public",
+      group: "Actions",
+      to: "/app/schedule",
+      keywords: "public release live",
+      run: async () => {
+        try {
+          const r = await api.publishAgendaDetailed();
+          if (r.status === 409) {
+            toast(r.error || "Hard conflicts block publishing", "danger");
+            return;
+          }
+          if (r.status === 422) {
+            toast("Schedule warnings require acknowledgement — open Schedule to confirm", "danger");
+            return;
+          }
+          if (!r.ok) {
+            toast(r.error || "Could not publish the agenda", "danger");
+            return;
+          }
+          toast("Agenda published");
+        } catch (e: any) {
+          toast(e?.message || "Could not publish the agenda", "danger");
+        }
+      },
+    },
+    { id: "action-export-results", label: "Export results CSV", sublabel: "Download review results", group: "Actions", to: "/app/results?export=csv", keywords: "download csv scores export" },
+  ];
+}
+
+const RECENTS_KEY = "ruckus-palette-recents";
+/** Recently run command ids, most recent first (max 5). */
+export function readPaletteRecents(): string[] {
+  try {
+    const raw = JSON.parse(localStorage.getItem(RECENTS_KEY) || "[]");
+    return Array.isArray(raw) ? raw.filter((x) => typeof x === "string").slice(0, 5) : [];
+  } catch {
+    return [];
+  }
+}
+export function rememberPaletteRecent(id: string) {
+  try {
+    localStorage.setItem(RECENTS_KEY, JSON.stringify([id, ...readPaletteRecents().filter((x) => x !== id)].slice(0, 5)));
+  } catch {
+    /* storage unavailable */
+  }
+}
+
+/** Character positions of a subsequence match, for highlighting. */
+export function matchPositions(text: string, query: string): number[] {
+  const haystack = text.toLowerCase();
+  const needle = query.toLowerCase().trim();
+  if (!needle) return [];
+  const direct = haystack.indexOf(needle);
+  if (direct >= 0) return Array.from({ length: needle.length }, (_, i) => direct + i);
+  const hits: number[] = [];
+  let cursor = 0;
+  for (const char of needle.replace(/\s+/g, "")) {
+    const found = haystack.indexOf(char, cursor);
+    if (found < 0) return [];
+    hits.push(found);
+    cursor = found + 1;
+  }
+  return hits;
+}
+
+/** Bold the characters the query matched. */
+function Highlight({ text, query }: { text: string; query: string }) {
+  const hits = new Set(matchPositions(text, query));
+  if (!hits.size) return <>{text}</>;
+  return (
+    <>
+      {Array.from(text).map((char, i) => (
+        <span key={i} className={hits.has(i) ? "font-bold" : undefined}>
+          {char}
+        </span>
+      ))}
+    </>
+  );
+}
+
 export function CommandPalette({ open, onClose }: { open: boolean; onClose: () => void }) {
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
@@ -73,8 +181,11 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
     Promise.all([
       api.submissions().then((r) => r.data || []).catch(() => [] as any[]),
       api.speakers().then((r) => r.data || []).catch(() => [] as any[]),
+      api.schedule().then((r: any) => r?.sessions || []).catch(() => [] as any[]),
+      api.crmContacts().then((r: any) => r.data || []).catch(() => [] as any[]),
+      api.events().then((r: any) => r.data || []).catch(() => [] as any[]),
     ])
-      .then(([subs, speakers]) => {
+      .then(([subs, speakers, sessions, contacts, events]) => {
         const subItems: PaletteItem[] = (subs as any[]).map((s: any) => ({
           id: `submission-${s.id}`,
           label: s.title || s.id,
@@ -91,7 +202,36 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
           to: `/app/speakers/${s.speakerId || s.id}`,
           keywords: `${s.email || ""} ${s.company || ""} ${s.title || ""}`,
         }));
-        setRecords([...subItems, ...speakerItems]);
+        const sessionItems: PaletteItem[] = (sessions as any[]).map((x: any) => ({
+          id: `session-${x.id}`,
+          label: x.title || x.id,
+          sublabel: [x.format, x.status].filter(Boolean).join(" · ") || "Open on the schedule",
+          group: "Sessions",
+          // The schedule highlights the session named in the query string.
+          to: `/app/schedule?session=${encodeURIComponent(x.id)}`,
+          keywords: `${x.id} ${x.format || ""} session agenda`,
+        }));
+        const contactItems: PaletteItem[] = (contacts as any[]).map((c: any) => ({
+          id: `contact-${c.id}`,
+          label: c.name || c.email || c.id,
+          sublabel: [c.company, c.stage].filter(Boolean).join(" · "),
+          group: "CRM contacts",
+          to: `/app/crm/contacts/${c.id}`,
+          keywords: `${c.email || ""} ${c.stage || ""} crm contact`,
+        }));
+        const eventItems: PaletteItem[] = (events as any[]).map((e: any) => ({
+          id: `event-${e.id}`,
+          label: e.name || e.id,
+          sublabel: e.id === getActiveEvent().id ? "Current event" : "Switch to this event",
+          group: "Events",
+          to: "/app",
+          keywords: `${e.slug || ""} switch event`,
+          run: () => {
+            setActiveEventId(e.id);
+            toast(`Now working in ${e.name}`);
+          },
+        }));
+        setRecords([...subItems, ...speakerItems, ...sessionItems, ...contactItems, ...eventItems]);
       })
       .finally(() => setLoading(false));
   }, [open]);
@@ -105,10 +245,27 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
     return () => cancelAnimationFrame(id);
   }, [open]);
 
-  const items = useMemo(
-    () => filterPaletteItems([...ORGANIZER_PAGES, ...records], query).slice(0, 40),
-    [records, query],
-  );
+  const items = useMemo(() => {
+    const all = [...ORGANIZER_PAGES, ...paletteActions(), ...records];
+    const matched = filterPaletteItems(all, query);
+    if (query.trim()) return matched.slice(0, 40);
+    // No query: lead with what this organizer ran most recently.
+    const recent = readPaletteRecents()
+      .map((id) => all.find((i) => i.id === id))
+      .filter(Boolean)
+      .map((i) => ({ ...(i as PaletteItem), group: "Recent" }));
+    // With no query, show a representative sample of EVERY group rather than the
+    // first 40 items, which hid whole groups (Events) behind long lists.
+    const perGroup = new Map<string, number>();
+    const sample = matched.filter((i) => {
+      if (recent.some((r) => r.id === i.id)) return false;
+      const seen = perGroup.get(i.group) || 0;
+      if (seen >= 5) return false;
+      perGroup.set(i.group, seen + 1);
+      return true;
+    });
+    return [...recent, ...sample];
+  }, [records, query]);
 
   useEffect(() => setActive(0), [query]);
 
@@ -122,8 +279,11 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
 
   const go = (item?: PaletteItem) => {
     if (!item) return;
+    rememberPaletteRecent(item.id);
     onClose();
-    navigate(item.to);
+    // A command with run() performs its side effect, then still routes somewhere useful.
+    if (item.run) void Promise.resolve(item.run()).then(() => navigate(item.to));
+    else navigate(item.to);
   };
 
   const onKeyDown = (e: React.KeyboardEvent) => {
@@ -170,8 +330,8 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
             aria-expanded="true"
             aria-controls="command-palette-list"
             aria-autocomplete="list"
-            aria-label="Search organizer pages, submissions and speakers"
-            placeholder="Search pages, submissions, speakers…"
+            aria-label="Search organizer pages, actions, submissions, sessions, contacts and events"
+            placeholder="Search pages, actions, people, sessions…"
             data-testid="command-palette-input"
             className="h-12 w-full bg-transparent text-sm text-ink outline-none placeholder:text-mid"
             value={query}
@@ -187,12 +347,18 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
               return (
                 <div key={item.id}>
                   {header ? (
-                    <div className="px-3 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wide text-mid">{header}</div>
+                    <div
+                      className="px-3 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wide text-mid"
+                      data-testid={`command-group-${header.toLowerCase().replace(/\s+/g, "-")}`}
+                    >
+                      {header}
+                    </div>
                   ) : null}
                   <div
                     role="option"
                     aria-selected={index === active}
                     data-active={index === active}
+                    data-testid={`command-item-${item.id}`}
                     tabIndex={-1}
                     className={cn(
                       "cursor-pointer rounded-2xl px-3 py-2 text-sm text-ink",
@@ -201,7 +367,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
                     onMouseEnter={() => setActive(index)}
                     onClick={() => go(item)}
                   >
-                    <div className="font-medium">{item.label}</div>
+                    <div className="font-medium"><Highlight text={item.label} query={query} /></div>
                     {item.sublabel ? (
                       <div className={cn("truncate text-xs", index === active ? "text-soft/80" : "text-mid")}>{item.sublabel}</div>
                     ) : null}
@@ -211,7 +377,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
             })
           ) : (
             <p className="px-3 py-6 text-center text-sm text-mid">
-              {loading ? "Loading submissions and speakers…" : "No matches"}
+              {loading ? "Loading records…" : `No matches for “${query}”`}
             </p>
           )}
         </div>

@@ -76,22 +76,18 @@ export function LifecycleChecklistCard({ steps }: { steps: any[] }) {
 export function CommandPage() {
   const [data, setData] = useState<any>(null);
   const [err, setErr] = useState("");
-  const [scheduleUnscheduled, setScheduleUnscheduled] = useState<number | null>(null);
   const [lifecycle, setLifecycle] = useState<any[] | null>(null);
   const nav = useNavigate();
 
+  // Accepted-unscheduled is read STRAIGHT from /command. This page used to recompute it
+  // from the schedule board and prefer its own number, which disagreed with the API
+  // whenever a session was cancelled (the local filter ignored `cancelled`) — the tile
+  // and the schedule warnings card then showed two different counts for one concept.
   const load = () =>
-    Promise.all([api.command(), api.schedule().catch(() => null), api.lifecycle().catch(() => null)])
-      .then(([cmd, sched, life]) => {
+    Promise.all([api.command(), api.lifecycle().catch(() => null)])
+      .then(([cmd, life]) => {
         setData(cmd.data);
         if (life) setLifecycle(life.data || []);
-        if (sched) {
-          const scheduled = new Set((sched.slots || []).map((x: any) => x.sessionId));
-          const n = (sched.sessions || []).filter(
-            (x: any) => x.status === "accepted" && !scheduled.has(x.id),
-          ).length;
-          setScheduleUnscheduled(n);
-        }
       })
       .catch((e) => setErr(e.message));
 
@@ -109,18 +105,11 @@ export function CommandPage() {
   if (err) return <Notice tone="danger">{err}</Notice>;
 
   const tMinus = daysUntil(data.event.startsAt);
-  const unscheduled =
-    scheduleUnscheduled != null ? scheduleUnscheduled : data.kpis.acceptedUnscheduled;
+  const unscheduled = data.kpis.acceptedUnscheduled;
 
-  const blockers = (data.blockers || []).map((b: any) => {
-    if (b.id === "unscheduled" || /unscheduled/i.test(b.label || "")) {
-      return {
-        ...b,
-        label: `${unscheduled} accepted session${unscheduled === 1 ? "" : "s"} still unscheduled`,
-      };
-    }
-    return b;
-  });
+  // The server already labels this blocker from the same canonical metric, so it is
+  // passed through untouched rather than relabelled with a second local count.
+  const blockers = data.blockers || [];
 
   return (
     <div>
@@ -146,11 +135,7 @@ export function CommandPage() {
           label="Accepted unscheduled"
           value={unscheduled}
           onClick={() => nav("/app/schedule")}
-          hint={
-            scheduleUnscheduled != null && scheduleUnscheduled !== data.kpis.acceptedUnscheduled
-              ? "From live schedule board"
-              : undefined
-          }
+          hint="Accepted, not cancelled, no room yet"
         />
         <KpiTile
           label="Speakers blocked"

@@ -49,7 +49,7 @@ test("all route-mutated lifecycle, content, review, CRM, and canonical schedule 
   const moved = await request(appA, "POST", `/api/events/${EVENT_ID}/schedule/move`, { slot: finalSlot, version: placed.body.version, acknowledge: [] });
   assert.equal(moved.response.status, 200);
 
-  const published = await request(appA, "POST", `/api/events/${EVENT_ID}/agenda/publish`, {});
+  const published = await request(appA, "POST", `/api/events/${EVENT_ID}/agenda/publish`, { acknowledge: true });
   assert.equal(published.response.status, 200);
   const generated = await request(appA, "POST", `/api/events/${EVENT_ID}/agenda/proposals/generate`, { dayStartHour: 9, dayEndHour: 17, slotMinutes: 30 });
   assert.equal(generated.response.status, 201);
@@ -144,7 +144,7 @@ test("all route-mutated lifecycle, content, review, CRM, and canonical schedule 
   assert.equal((restoredSchedule as any)?.lastAgendaPublish?.status, "published");
 
   const appB = createApp({ repo: repoB, persistence });
-  const scheduleRead = await json(appB.request(`/api/events/${EVENT_ID}/schedule`));
+  const scheduleRead = await json(appB.request(`/api/events/${EVENT_ID}/schedule`, { headers: org }));
   assert.equal(scheduleRead.body.version, savedScheduleVersion);
   const proposalsRead = await json(appB.request(`/api/events/${EVENT_ID}/agenda/proposals`, { headers: org }));
   assert.ok(proposalsRead.body.data.some((p: any) => p.id === generated.body.data.id && p.placements.some((x: any) => x.id === placement.id && x.status === "accepted")));

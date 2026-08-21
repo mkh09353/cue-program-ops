@@ -1,14 +1,45 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { demoSchedule } from "../src/repository.js";
-import { overlaps, scheduleWarnings, validateSlot } from "../src/schedule.js";
-import { canonicalFromSchedule, publicSpeakers } from "../src/projection.js";
+import { applyScheduleMove, isAcceptedUnscheduled, overlaps, scheduleWarnings, validateSlot } from "../src/schedule.js";
+import { canonicalFromSchedule, canonicalScheduleMetrics, publicSpeakers } from "../src/projection.js";
 import { isoToZonedWallTime } from "../src/timezone.js";
 
 test("half-open ranges allow adjacent sessions",()=>assert.equal(overlaps({startsAt:"2026-10-12T17:00:00.000Z",endsAt:"2026-10-12T17:45:00.000Z"},{startsAt:"2026-10-12T17:45:00.000Z",endsAt:"2026-10-12T18:00:00.000Z"}),false));
 test("speaker and room conflicts are hard and deterministic",()=>{const candidate={id:"preview",sessionId:"ses-reliable-agents",roomId:"room-main",startsAt:"2026-10-12T17:00:00.000Z",endsAt:"2026-10-12T17:45:00.000Z"};const one=validateSlot(structuredClone(demoSchedule),candidate);const shuffled={...structuredClone(demoSchedule),slots:[...demoSchedule.slots].reverse(),sessions:[...demoSchedule.sessions].reverse()};const two=validateSlot(shuffled,candidate);assert.deepEqual(one.conflicts,two.conflicts);assert.deepEqual(one.conflicts.map(x=>x.code),["ROOM_OVERLAP","SPEAKER_OVERLAP"]);assert.ok(one.conflicts.every(x=>x.severity==="hard"))});
 test("capacity is warning and accepted unscheduled sessions are visible",()=>{const candidate={id:"preview",sessionId:"ses-product",roomId:"room-community",startsAt:"2026-10-12T19:00:00.000Z",endsAt:"2026-10-12T19:45:00.000Z"};assert.equal(validateSlot(demoSchedule,candidate).conflicts[0]?.code,"CAPACITY");assert.equal(scheduleWarnings(demoSchedule).map(x=>x.relatedIds[0]).join(","),"ses-reliable-agents,ses-sam")});
 test("canonical projection only exposes eligible public speakers",()=>{assert.deepEqual(publicSpeakers(demoSchedule).map(x=>x.id),["spk-ada","spk-lin","spk-margaret"]);const out=canonicalFromSchedule("evt-ai-summit-2026",demoSchedule);assert.ok(out.sessions.some(x=>x.id==="ses-analytical"));assert.ok(out.sessions.every(x=>x.startsAt.startsWith("2026-10-1")))});
+test("cancelled sessions cannot be placed via applyScheduleMove",()=>{
+  const data=structuredClone(demoSchedule);
+  const session=data.sessions.find(s=>s.id==="ses-analytical")!;
+  session.cancelled=true;
+  const slot=data.slots.find(s=>s.sessionId==="ses-analytical")!;
+  const version=data.version;
+  const result=applyScheduleMove(data,{...slot,roomId:"room-lab",startsAt:"2026-10-14T21:00:00.000Z",endsAt:"2026-10-14T21:45:00.000Z"},version);
+  assert.equal(result.ok,false);
+  assert.equal(result.status,400);
+  assert.match(result.error||"",/cancelled/i);
+  assert.equal(result.conflicts[0]?.code,"SESSION_CANCELLED");
+  assert.equal(data.version,version);
+  assert.equal(data.slots.find(s=>s.sessionId==="ses-analytical")?.roomId,slot.roomId);
+});
+
+test("accepted-unscheduled predicate agrees for cancelled and published-unslotted sessions",async()=>{
+  const data=structuredClone(demoSchedule);
+  data.sessions.find(s=>s.id==="ses-analytical")!.cancelled=true;
+  data.slots=data.slots.filter(s=>s.sessionId!=="ses-product");
+  data.sessions.find(s=>s.id==="ses-sam")!.cancelled=true;
+  const slotted=new Set(data.slots.map(s=>s.sessionId));
+  const fromPredicate=data.sessions.filter(s=>isAcceptedUnscheduled(s,slotted)).map(s=>s.id).sort();
+  const fromWarnings=scheduleWarnings(data).map(w=>w.relatedIds[0]).sort();
+  const metrics=await canonicalScheduleMetrics({getSchedule:async()=>data},"evt-ai-summit-2026");
+  assert.deepEqual(fromPredicate,fromWarnings);
+  assert.equal(metrics.acceptedUnscheduled,fromWarnings.length);
+  assert.deepEqual(fromWarnings,["ses-product","ses-reliable-agents"]);
+  assert.equal(fromWarnings.includes("ses-analytical"),false);
+  assert.equal(fromWarnings.includes("ses-sam"),false);
+});
+
 test("repository seed slots render within 08:00-18:00 America/Los_Angeles",()=>{
  for(const slot of demoSchedule.slots){
   for(const key of ["startsAt","endsAt"] as const){

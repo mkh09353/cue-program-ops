@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test, { beforeEach } from "node:test";
 import { createApp, restoreSnapshot } from "../src/app.js";
-import { authStore, emptyAuthState, hydrateAuthState } from "../src/auth.js";
+import { authStore, emptyAuthState, hashPassword, hydrateAuthState, PBKDF2_ITERATIONS, verifyPassword } from "../src/auth.js";
 import { EVENT_ID } from "../src/lifecycle.js";
 import { MockMailer } from "../src/mailer.js";
 import { InMemorySnapshotStore } from "../src/persistence.js";
@@ -18,6 +18,33 @@ const post = (app: ReturnType<typeof createApp>, path: string, body?: unknown, c
   app.request(path, { method: "POST", headers: { ...jsonHeaders, ...(cookie ? { cookie } : {}), ...headers }, body: body === undefined ? undefined : JSON.stringify(body) });
 
 beforeEach(() => hydrateAuthState(emptyAuthState()));
+
+test("signup hashes with at most 100000 PBKDF2 iterations and login roundtrips the real hash path", async () => {
+  assert.ok(PBKDF2_ITERATIONS <= 100_000, "Cloudflare Workers WebCrypto rejects PBKDF2 above 100000 iterations");
+  const password = "workers-safe-password";
+  const hashed = await hashPassword(password);
+  const parts = hashed.split("$");
+  assert.equal(parts[0], "pbkdf2-sha256");
+  assert.equal(Number(parts[1]), PBKDF2_ITERATIONS);
+  assert.ok(Number(parts[1]) <= 100_000);
+  assert.equal(await verifyPassword(password, hashed), true);
+  assert.equal(await verifyPassword("wrong-password", hashed), false);
+
+  const app = createApp();
+  const email = uniqueEmail("pbkdf2");
+  const signup = await post(app, "/api/auth/signup", { name: "Pbkdf User", email, password });
+  assert.equal(signup.status, 201);
+  const stored = authStore.users.find((user) => user.email === email);
+  assert.ok(stored?.passwordHash);
+  const storedIterations = Number(stored.passwordHash.split("$")[1]);
+  assert.equal(storedIterations, PBKDF2_ITERATIONS);
+  assert.ok(storedIterations <= 100_000);
+  assert.equal(await verifyPassword(password, stored.passwordHash), true);
+
+  const login = await post(app, "/api/auth/login", { email, password });
+  assert.equal(login.status, 200);
+  cookieFrom(login);
+});
 
 test("signup, logout, and login complete a cookie-backed roundtrip", async () => {
   const app = createApp();

@@ -169,3 +169,211 @@ a {
     transition: none;
   }
 }
+
+/* —— Run of show (/app/schedule/run-of-show) ——
+   Paper-like sheets on screen; a real printed pack in print. Scoped to .ros-*
+   hooks plus [data-print] attributes on the shell so no other page is affected. */
+
+.ros-sheet {
+  background: #fff;
+  color: #000;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+  padding: 24px;
+  margin: 0 auto 24px;
+  max-width: 900px;
+}
+
+.ros-sheet-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 2px solid #000;
+  padding-bottom: 12px;
+  /* A sheet may span pages, but its header must never split off its first rows. */
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+.ros-eyebrow {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--mid);
+}
+
+.ros-title {
+  margin: 2px 0 0;
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.ros-room {
+  margin: 2px 0 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.ros-meta {
+  text-align: right;
+  font-size: 11px;
+  color: var(--mid);
+}
+
+.ros-meta p {
+  margin: 0;
+}
+
+.ros-kicker {
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: #000;
+}
+
+.ros-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  margin-top: 12px;
+}
+
+.ros-table thead {
+  /* Repeat the column headings on every printed page of a long sheet. */
+  display: table-header-group;
+}
+
+.ros-table th {
+  text-align: left;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--mid);
+  border-bottom: 1px solid #000;
+  padding: 6px 8px;
+}
+
+.ros-table td {
+  border-bottom: 1px solid var(--line);
+  padding: 8px;
+  vertical-align: top;
+}
+
+.ros-row {
+  /* Never split a single cue across two pages. */
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+.ros-strong {
+  font-weight: 600;
+}
+
+.ros-col-time {
+  width: 16%;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.ros-col-notes {
+  width: 26%;
+}
+
+/* Blank, writable cell when no notes exist in the payload. */
+.ros-blank {
+  display: block;
+  min-height: 22px;
+  border-bottom: 1px dotted #9ca3af;
+}
+
+.ros-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+  font-size: 11px;
+  color: var(--mid);
+}
+
+@media print {
+  @page {
+    /* Portrait only: naming A4 would force that sheet size on a Letter-loaded
+       printer. The layout is fluid, so it sets cleanly on either stock. */
+    size: portrait;
+    margin: 12mm;
+  }
+
+  html,
+  body {
+    background: #fff !important;
+    color: #000 !important;
+    font-size: 11px;
+  }
+
+  /* Shell chrome and every screen-only control disappear. */
+  [data-print="hide"],
+  .ros-screen-only {
+    display: none !important;
+  }
+
+  /* Reset the shell/main canvas so a sheet owns the full page box. */
+  [data-print="main"] {
+    padding: 0 !important;
+  }
+
+  [data-print="main"] > div {
+    max-width: none !important;
+    margin: 0 !important;
+  }
+
+  .ros-sheet {
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    max-width: none !important;
+    /* Each day+room combination starts a fresh page. */
+    break-after: page;
+    page-break-after: always;
+  }
+
+  /* No trailing blank page. Anchored to the real last sheet in the page wrapper —
+     :last-of-type matches the last <section> sibling, so any future section added
+     after the sheets would silently re-enable the break on the final sheet. */
+  .ros-page > .ros-sheet:last-child {
+    break-after: auto;
+    page-break-after: auto;
+  }
+
+  .ros-table th,
+  .ros-table td {
+    color: #000 !important;
+    background: #fff !important;
+  }
+
+  .ros-table td {
+    border-bottom: 1px solid #000 !important;
+  }
+
+  .ros-eyebrow,
+  .ros-meta,
+  .ros-foot,
+  .ros-table th {
+    color: #000 !important;
+  }
+
+  /* No link URL noise on paper. */
+  a[href]::after {
+    content: "" !important;
+  }
+}

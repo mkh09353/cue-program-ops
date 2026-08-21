@@ -46,7 +46,7 @@ test("organizer can create a new event with arbitrary rooms, and it appears in t
   assert.ok(list.some((e: any) => e.id === record.id), "new event listed");
 
   // Room 2A must be establishable at creation time.
-  const sched = await json(await app.request(`/api/events/${record.id}/schedule`));
+  const sched = await json(await app.request(`/api/events/${record.id}/schedule`, { headers: ORG }));
   assert.deepEqual(sched.rooms.map((r: any) => r.name), ["Room 2A", "Room 2B", "Main Stage"]);
   assert.deepEqual(sched.tracks.map((t: any) => t.name), ["Platform", "Developer Experience"]);
   assert.equal(sched.sessions.length, 0);
@@ -99,12 +99,12 @@ test("event scoping: a new event's lifecycle data is empty and isolated from the
 test("schedule writes are isolated per event", async () => {
   const { app } = await freshApp();
   const record = (await json(await post(app, "/api/events", DEVFLOW))).data;
-  const before = await json(await app.request(`/api/events/${EVENT_ID}/schedule`));
+  const before = await json(await app.request(`/api/events/${EVENT_ID}/schedule`, { headers: ORG }));
 
   const room = await post(app, `/api/events/${record.id}/agenda/rooms`, { name: "Room 3C" });
   assert.equal(room.status, 201);
-  const newSched = await json(await app.request(`/api/events/${record.id}/schedule`));
-  const seeded = await json(await app.request(`/api/events/${EVENT_ID}/schedule`));
+  const newSched = await json(await app.request(`/api/events/${record.id}/schedule`, { headers: ORG }));
+  const seeded = await json(await app.request(`/api/events/${EVENT_ID}/schedule`, { headers: ORG }));
   assert.ok(newSched.rooms.some((r: any) => r.name === "Room 3C"));
   assert.ok(!seeded.rooms.some((r: any) => r.name === "Room 3C"), "seeded schedule untouched");
   assert.equal(seeded.rooms.length, before.rooms.length);
@@ -188,7 +188,7 @@ test("snapshot round-trip restores a second event's lifecycle data and schedule"
   const subs = (await json(await app2.request(`/api/events/${record.id}/submissions`, { headers: ORG }))).data;
   assert.equal(subs.length, 1);
   assert.equal(subs[0].title, "Restored Talk");
-  const sched = await json(await app2.request(`/api/events/${record.id}/schedule`));
+  const sched = await json(await app2.request(`/api/events/${record.id}/schedule`, { headers: ORG }));
   assert.ok(sched.rooms.some((r: any) => r.name === "Room 2A"), "restored schedule keeps Room 2A");
   // The seeded event is untouched and remains the active default after boot.
   const seededSubs = (await json(await app2.request(`/api/events/${EVENT_ID}/submissions`, { headers: ORG }))).data;

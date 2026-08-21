@@ -2,6 +2,7 @@ import type { ScheduleProjection } from "./domain.js";
 import type { ScheduleData, ScheduleSession, ScheduleSpeaker } from "./schedule.js";
 import { EVENT_ID, EVENT_SLUG, store } from "./lifecycle.js";
 import { listEvents } from "./events.js";
+import { buildCalendarDocument, toIcsUtc } from "./ics.js";
 
 /** Published-only gate used by every public widget and feed. */
 export function isPublishedSession(session: ScheduleSession | undefined | null): boolean {
@@ -478,49 +479,24 @@ export function agendaByDay(program: PublicProgram, dayKey?: string) {
 }
 
 export function toIcsDate(iso: string): string {
-  const d = new Date(iso);
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${d.getUTCFullYear()}${p(d.getUTCMonth() + 1)}${p(d.getUTCDate())}T${p(d.getUTCHours())}${p(d.getUTCMinutes())}${p(d.getUTCSeconds())}Z`;
+  return toIcsUtc(iso);
 }
 
 export function buildIcs(program: PublicProgram, sessionIds?: string[]): string {
   const want = sessionIds?.length ? new Set(sessionIds) : null;
   const rows = program.sessions.filter((s) => !want || want.has(s.id));
-  const escape = (value: string) =>
-    String(value || "")
-      .replace(/\\/g, "\\\\")
-      .replace(/\n/g, "\\n")
-      .replace(/,/g, "\\,")
-      .replace(/;/g, "\\;");
-  const events = rows
-    .map((s) => {
-      const desc = [s.abstract, `Track: ${s.trackNames.join(" · ") || "General"}`, `Speakers: ${s.speakers.map((x) => x.name).join(", ")}`]
-        .filter(Boolean)
-        .join("\\n");
-      return [
-        "BEGIN:VEVENT",
-        `UID:${s.id}@${program.event.slug}.cue.local`,
-        `DTSTAMP:${toIcsDate(new Date().toISOString())}`,
-        `DTSTART:${toIcsDate(s.startsAt)}`,
-        `DTEND:${toIcsDate(s.endsAt)}`,
-        `SUMMARY:${escape(s.title)}`,
-        `DESCRIPTION:${escape(desc)}`,
-        `LOCATION:${escape([s.room, program.event.location].filter(Boolean).join(", "))}`,
-        "END:VEVENT",
-      ].join("\r\n");
-    })
-    .join("\r\n");
-  return [
-    "BEGIN:VCALENDAR",
-    "VERSION:2.0",
-    "CALSCALE:GREGORIAN",
-    "METHOD:PUBLISH",
-    `PRODID:-//Ruckus//${escape(program.event.name)}//EN`,
-    `X-WR-CALNAME:${escape(program.event.name)}`,
-    events,
-    "END:VCALENDAR",
-    "",
-  ].join("\r\n");
+  return buildCalendarDocument({
+    name: program.event.name,
+    timeZone: program.event.timezone,
+    events: rows.map((s) => ({
+      uid: `${s.id}@${program.event.slug}.cue.local`,
+      title: s.title,
+      description: [s.abstract, `Track: ${s.trackNames.join(" · ") || "General"}`, `Speakers: ${s.speakers.map((x) => x.name).join(", ")}`].filter(Boolean).join("\n"),
+      location: [s.room, program.event.location].filter(Boolean).join(", "),
+      startsAt: s.startsAt,
+      endsAt: s.endsAt,
+    })),
+  });
 }
 
 /** Resolve demo event id/slug aliases to the schedule event id. */

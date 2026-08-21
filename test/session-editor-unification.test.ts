@@ -15,7 +15,7 @@ const patch = (app: any, path: string, body: unknown) =>
 const post = (app: any, path: string, body: unknown) =>
   app.request(path, { method: "POST", headers: H, body: JSON.stringify(body) });
 const content = async (app: any) => (await json(await app.request(`/api/events/${EVENT_ID}/content`, { headers: H }))).data;
-const schedule = async (app: any) => await json(await app.request(`/api/events/${EVENT_ID}/schedule`));
+const schedule = async (app: any) => await json(await app.request(`/api/events/${EVENT_ID}/schedule`, { headers: H }));
 const feed = async (app: any) => await json(await app.request(`/e/ai-engineer-summit/public/feed.json`));
 const html = async (app: any) => await (await app.request(`/e/ai-engineer-summit/public/sessions`)).text();
 

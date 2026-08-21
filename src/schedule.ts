@@ -1,5 +1,5 @@
 export type ConflictSeverity = "hard" | "warning";
-export type ConflictCode = "INVALID_RANGE" | "ROOM_OVERLAP" | "SPEAKER_OVERLAP" | "TRACK_CONCURRENCY" | "CAPACITY" | "UNSCHEDULED_ACCEPTED" | "MISSING_PUBLIC_CONTENT";
+export type ConflictCode = "INVALID_RANGE" | "ROOM_OVERLAP" | "SPEAKER_OVERLAP" | "TRACK_CONCURRENCY" | "CAPACITY" | "UNSCHEDULED_ACCEPTED" | "MISSING_PUBLIC_CONTENT" | "SESSION_CANCELLED";
 export interface ScheduleRoom { id:string; name:string; capacity?:number; color?:string }
 export interface ScheduleTrack { id:string; name:string; color:string; maxConcurrent?:number }
 export interface ScheduleSpeaker { id:string; name:string; email?:string; bio:string; company?:string; title?:string; headshotUrl?:string; isPublic?:boolean; acceptedSubmissionId?:string }
@@ -11,7 +11,7 @@ export interface ScheduleData { event?:{startsAt:string;endsAt:string;timezone:s
 export interface ScheduleConflict { id:string; severity:ConflictSeverity; code:ConflictCode; message:string; relatedIds:string[] }
 export interface SuggestedSlot { roomId:string; startsAt:string; endsAt:string; label:string }
 export interface Validation { conflicts:ScheduleConflict[]; alternatives:SuggestedSlot[] }
-export interface ScheduleMoveResult { ok:boolean; status:200|409|422; error?:string; conflicts:ScheduleConflict[]; warnings:ScheduleConflict[]; slot?:AgendaSlot; version:number }
+export interface ScheduleMoveResult { ok:boolean; status:200|400|409|422; error?:string; conflicts:ScheduleConflict[]; warnings:ScheduleConflict[]; slot?:AgendaSlot; version:number }
 import { EVENT_TIME_ZONE, zonedDayKey } from "./timezone.js";
 
 const ms=(v:string)=>Date.parse(v);
@@ -25,6 +25,14 @@ export function capacityWarningMessage(expected:number,roomName:string,capacity:
 }
 
 const conflict=(severity:ConflictSeverity,code:ConflictCode,relatedIds:string[],message:string):ScheduleConflict=>({id:`${code}:${[...relatedIds].sort().join(":")}`,severity,code,relatedIds:[...relatedIds].sort(),message});
+/** Accepted or published, not cancelled — the sessions that belong on the agenda / unscheduled KPI. */
+export function isAcceptedOrPublishedSession(session:{cancelled?:boolean;status?:string}):boolean{
+ return !session.cancelled && (session.status==="accepted"||session.status==="published");
+}
+/** Shared unscheduled predicate: KPI, warnings, and command blockers must agree. */
+export function isAcceptedUnscheduled(session:{id:string;cancelled?:boolean;status?:string},slottedIds:Set<string>):boolean{
+ return isAcceptedOrPublishedSession(session) && !slottedIds.has(session.id);
+}
 export function validateSlot(data:ScheduleData, candidate:AgendaSlot):Validation {
  const s=data.sessions.find(x=>x.id===candidate.sessionId); const room=data.rooms.find(x=>x.id===candidate.roomId); const cs:ScheduleConflict[]=[];
  // INVALID_RANGE must only fire for genuinely invalid input, and must say WHICH part
@@ -59,10 +67,28 @@ export function validateSlot(data:ScheduleData, candidate:AgendaSlot):Validation
  return {conflicts:cs.sort((a,b)=>a.severity.localeCompare(b.severity)||a.code.localeCompare(b.code)||a.id.localeCompare(b.id)),alternatives};
 }
 function validateCore(data:ScheduleData,candidate:AgendaSlot){ const s=data.sessions.find(x=>x.id===candidate.sessionId); const room=data.rooms.find(x=>x.id===candidate.roomId); const cs:ScheduleConflict[]=[]; if(!s||!room||ms(candidate.endsAt)<=ms(candidate.startsAt))return [conflict("hard","INVALID_RANGE",[candidate.sessionId],"Invalid")]; for(const o of data.slots.filter(x=>x.sessionId!==candidate.sessionId&&!data.sessions.find(s=>s.id===x.sessionId)?.cancelled&&overlaps(x,candidate))){if(o.roomId===candidate.roomId)cs.push(conflict("hard","ROOM_OVERLAP",[o.sessionId,candidate.sessionId],"Room"));const os=data.sessions.find(x=>x.id===o.sessionId);if(s.speakerIds.some(id=>os?.speakerIds.includes(id)))cs.push(conflict("hard","SPEAKER_OVERLAP",[o.sessionId,candidate.sessionId],"Speaker"));}return cs }
-export function scheduleWarnings(data:ScheduleData):ScheduleConflict[]{return data.sessions.filter(s=>!s.cancelled&&s.status==="accepted"&&!data.slots.some(x=>x.sessionId===s.id)).map(s=>conflict("warning","UNSCHEDULED_ACCEPTED",[s.id],`${s.title} is accepted but unscheduled.`)).sort((a,b)=>a.id.localeCompare(b.id))}
+export function scheduleWarnings(data:ScheduleData):ScheduleConflict[]{
+ const slotted=new Set(data.slots.map(x=>x.sessionId));
+ return data.sessions.filter(s=>isAcceptedUnscheduled(s,slotted)).map(s=>conflict("warning","UNSCHEDULED_ACCEPTED",[s.id],`${s.title} is accepted but unscheduled.`)).sort((a,b)=>a.id.localeCompare(b.id));
+}
+/** Union of unscheduled-accepted warnings and every placed-slot validation conflict. */
+export function collectScheduleIssues(data:ScheduleData):ScheduleConflict[]{
+ const byId=new Map<string,ScheduleConflict>();
+ for(const row of scheduleWarnings(data)) byId.set(row.id,row);
+ for(const slot of data.slots){
+  if(data.sessions.find(s=>s.id===slot.sessionId)?.cancelled) continue;
+  for(const row of validateSlot(data,slot).conflicts) byId.set(row.id,row);
+ }
+ return [...byId.values()].sort((a,b)=>a.severity.localeCompare(b.severity)||a.code.localeCompare(b.code)||a.id.localeCompare(b.id));
+}
 /** The single canonical mutation used by manual moves and accepted agenda suggestions. */
 export function applyScheduleMove(data:ScheduleData, slot:AgendaSlot, version:number, acknowledge:string[]=[]):ScheduleMoveResult {
  if(version!==data.version)return {ok:false,status:409,error:"stale schedule",conflicts:[],warnings:[],version:data.version};
+ const target=data.sessions.find(x=>x.id===slot.sessionId);
+ if(target?.cancelled){
+  const cancelled=conflict("hard","SESSION_CANCELLED",[slot.sessionId],`${target.title} is cancelled and cannot be placed on the schedule.`);
+  return {ok:false,status:400,error:"cancelled sessions cannot be placed",conflicts:[cancelled],warnings:[],version:data.version};
+ }
  const result=validateSlot(data,slot),hard=result.conflicts.filter(x=>x.severity==="hard"),warnings=result.conflicts.filter(x=>x.severity==="warning");
  if(hard.length)return {ok:false,status:409,error:"hard conflicts block this move",conflicts:result.conflicts,warnings,version:data.version};
  if(warnings.some(x=>!acknowledge.includes(x.id)))return {ok:false,status:422,error:"warnings require acknowledgement",conflicts:result.conflicts,warnings,version:data.version};

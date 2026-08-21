@@ -227,6 +227,96 @@ export function taskTypeLabel(type: string): string {
   return TASK_TYPE_LABELS[type] || formatStatus(type);
 }
 
+/** Task types the SERVER completes as a side effect of saving the speaker profile
+ * (bio over 20 characters) or attaching a headshot — the speaker never presses a
+ * “mark complete” button for these, so a Done badge otherwise appears unexplained. */
+const AUTO_COMPLETED_TASK_TYPES: Record<string, string> = {
+  profile: "Completed automatically via profile save",
+  headshot: "Completed automatically via headshot upload",
+};
+const COMPLETED_VIA_NOTES: Record<string, string> = {
+  profile_save: "Completed automatically via profile save",
+  headshot_upload: "Completed automatically via headshot upload",
+  file_upload: "Completed automatically via file upload",
+};
+
+/**
+ * Annotation for a completed task that the profile/headshot save closed on the
+ * speaker's behalf, or null when the task carries no such rule.
+ *
+ * Prefers the server `completedVia` provenance field when present; falls back to
+ * the task TYPE for records that predate the field. {@link autoCompletionRule}
+ * states the rule itself for the not-yet-completed case.
+ */
+export function autoCompletionNote(task: { type?: string; status?: string; completedVia?: string } | null | undefined): string | null {
+  if (!task || task.status !== "completed") return null;
+  if (task.completedVia === "manual") return null;
+  if (task.completedVia) return COMPLETED_VIA_NOTES[task.completedVia] || null;
+  return AUTO_COMPLETED_TASK_TYPES[String(task.type)] || null;
+}
+
+export interface SubmissionParticipant {
+  id?: string;
+  name: string;
+  email?: string;
+  /** Raw role from the record (lead / co-author / co-presenter). */
+  role?: string;
+  /** Explicit organizer-facing label: “Author” or “Co-author”. */
+  roleLabel: string;
+  /** Set when the raw role adds detail beyond the label (e.g. co-presenter). */
+  roleDetail?: string;
+}
+
+/** Author vs co-author, stated in words rather than a raw enum. */
+export function participantRoleLabel(role?: string): string {
+  const raw = String(role || "").toLowerCase();
+  return !raw || raw === "lead" || raw === "author" || raw === "speaker" ? "Author" : "Co-author";
+}
+
+/**
+ * Canonical participant list for a submission, for every organizer-facing surface.
+ *
+ * Co-authors were stored (submission.participants, or additionalSpeakers on older
+ * records) but surfaced as a bare joined string, so a reader could not tell WHO was the
+ * author and who was a co-author. Ordering puts the author first.
+ */
+export function submissionParticipants(record: any): SubmissionParticipant[] {
+  if (!record) return [];
+  const raw: any[] = Array.isArray(record.participants) && record.participants.length
+    ? record.participants
+    : [
+        { id: record.speakerId, name: record.name, email: record.email, role: "lead" },
+        ...(record.additionalSpeakers || []),
+      ];
+  const mapped = raw
+    .filter((p) => p && (p.name || p.email))
+    .map((p) => {
+      const roleLabel = participantRoleLabel(p.role);
+      const detail = String(p.role || "").toLowerCase();
+      return {
+        id: p.id,
+        name: p.name || p.email,
+        email: p.email,
+        role: p.role,
+        roleLabel,
+        roleDetail: detail && detail !== "lead" && detail !== "co-author" ? detail.replace(/[_-]/g, " ") : undefined,
+      } as SubmissionParticipant;
+    });
+  // Author first, co-authors in declaration order.
+  return [
+    ...mapped.filter((p) => p.roleLabel === "Author"),
+    ...mapped.filter((p) => p.roleLabel !== "Author"),
+  ];
+}
+
+/** The standing rule, shown before completion so the automatic flip is not a surprise. */
+export function autoCompletionRule(task: { type?: string } | null | undefined): string | null {
+  if (!task) return null;
+  if (task.type === "profile") return "Completes automatically when the speaker profile is saved with a bio";
+  if (task.type === "headshot") return "Completes automatically when a headshot is uploaded";
+  return null;
+}
+
 /** Safe, minimal markdown: bold, italic, newlines, bullets. No raw HTML. */
 export function renderSimpleMarkdown(md: string): string {
   const escaped = String(md || "")

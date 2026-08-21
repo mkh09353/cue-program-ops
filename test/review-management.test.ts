@@ -40,10 +40,23 @@ test("CFP close date and schedule mutation role are enforced",async()=>{
 
 test("results CSV contains score columns and reviewer recusal removes assignment",async()=>{
   const app=createApp();
-  const csv=await app.request(`/api/events/${EVENT_ID}/review-results.csv`,{headers:headers("org-swyx")}); assert.equal(csv.status,200); assert.match(csv.headers.get("content-type")||"",/text\/csv/); const text=await csv.text(); assert.match(text,/Average score/); assert.match(text,/Submission/);
-  const assignment=store.reviewAssignments.find(a=>a.reviewerId==="rev-linus"&&a.status==="assigned")!;
-  const recused=await app.request(`/api/events/${EVENT_ID}/reviewer-queue/${assignment.id}/recuse`,{method:"POST",headers:headers("rev-linus"),body:JSON.stringify({reason:"Co-author relationship"})}); assert.equal(recused.status,200); assert.equal(assignment.status,"recused"); assert.ok(store.reviewConflicts.some(c=>c.assignmentId===assignment.id&&c.reason==="Co-author relationship"));
-  const queue=await parse(await app.request(`/api/events/${EVENT_ID}/reviewer-queue`,{headers:headers("rev-linus")})); assert.ok(!queue.body.data.some((x:any)=>x.id===assignment.id));
+  const assignment=store.reviewAssignments.find(a=>a.reviewerId==="rev-ada"&&a.submissionId==="sub-grace"&&a.status==="assigned")!;
+  const submitted=await app.request(`/api/events/${EVENT_ID}/reviewer-queue/${assignment.id}/submit`,{method:"POST",headers:headers("rev-ada"),body:JSON.stringify({responses:{overall:5,relevance:4,novelty:3,recommendation:"Accept",comments:"Strong fit"}})});
+  assert.equal(submitted.status,200);
+  const csv=await app.request(`/api/events/${EVENT_ID}/review-results.csv`,{headers:headers("org-swyx")}); assert.equal(csv.status,200); assert.match(csv.headers.get("content-type")||"",/text\/csv/); const text=await csv.text(); const header=text.split("\n")[0]||"";
+  for (const col of ["Submission","Title","Speaker","Status","Recommendation","Overall rating","Program relevance","Novelty","Weighted total","Reviewer count"]) assert.match(header,new RegExp(`"${col}"`));
+  const grace=text.split("\n").find(line=>line.includes("sub-grace"))||"";
+  assert.match(grace,/Compilers for Humans/);
+  assert.match(grace,/Grace Hopper/);
+  assert.match(grace,/"5"/);
+  assert.match(grace,/"4"/);
+  assert.match(grace,/"3"/);
+  assert.match(grace,/"4\.33"/);
+  assert.match(grace,/Accept/);
+
+  const recusal=store.reviewAssignments.find(a=>a.reviewerId==="rev-linus"&&a.status==="assigned")!;
+  const recused=await app.request(`/api/events/${EVENT_ID}/reviewer-queue/${recusal.id}/recuse`,{method:"POST",headers:headers("rev-linus"),body:JSON.stringify({reason:"Co-author relationship"})}); assert.equal(recused.status,200); assert.equal(recusal.status,"recused"); assert.ok(store.reviewConflicts.some(c=>c.assignmentId===recusal.id&&c.reason==="Co-author relationship"));
+  const queue=await parse(await app.request(`/api/events/${EVENT_ID}/reviewer-queue`,{headers:headers("rev-linus")})); assert.ok(!queue.body.data.some((x:any)=>x.id===recusal.id));
 });
 
 test("round editing, duplicate prevention, reviewer invite, and selected assignment persist",async()=>{const app=createApp();const h=headers("org-swyx"),name=`Editable ${Date.now()}`;const made=await parse(await app.request(`/api/events/${EVENT_ID}/review-rounds`,{method:"POST",headers:h,body:JSON.stringify({name,opensAt:"2027-01-01T00:00:00Z",closesAt:"2027-01-02T00:00:00Z",criteria:[],reviewerIds:[]})}));assert.equal(made.res.status,201);assert.equal((await app.request(`/api/events/${EVENT_ID}/review-rounds`,{method:"POST",headers:h,body:JSON.stringify({name})})).status,409);const id=made.body.data.id;const invited=await parse(await app.request(`/api/events/${EVENT_ID}/review-rounds/${id}/reviewers`,{method:"POST",headers:h,body:JSON.stringify({name:"New Judge",email:`judge-${Date.now()}@example.test`})}));assert.equal(invited.res.status,201);const reviewerId=invited.body.data.reviewer.id;const updated=await parse(await app.request(`/api/events/${EVENT_ID}/review-rounds/${id}`,{method:"PUT",headers:h,body:JSON.stringify({blind:true,opensAt:"2027-02-01T00:00:00Z",closesAt:"2027-02-10T00:00:00Z",reviewerIds:[reviewerId],criteria:[{id:"impact",label:"Impact",type:"rating",weight:3}]})}));assert.equal(updated.body.data.blind,true);assert.equal(updated.body.data.criteria[0].weight,3);const assigned=await parse(await app.request(`/api/events/${EVENT_ID}/review-assignments`,{method:"POST",headers:h,body:JSON.stringify({roundId:id,reviewerId,submissionIds:["sub-sam"],method:"specific",cap:5})}));assert.deepEqual(assigned.body.data.map((x:any)=>x.submissionId),["sub-sam"]);assert.ok(store.personas.some(p=>p.id===reviewerId&&p.role==="reviewer"))});

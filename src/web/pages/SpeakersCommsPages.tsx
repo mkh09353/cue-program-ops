@@ -1,7 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, getActiveEvent, subscribeData } from "../lib/api";
-import { cn, EVENT_SLUG, formatStatus, humanizeMissing, taskTypeLabel } from "../lib/utils";
+import {
+  autoCompletionNote,
+  autoCompletionRule,
+  cn,
+  EVENT_SLUG,
+  formatStatus,
+  humanizeMissing,
+  taskTypeLabel,
+} from "../lib/utils";
 import { csvFilename, downloadCsv, toCsv } from "../lib/csv";
 import {
   Badge,
@@ -59,6 +67,51 @@ export const taskTemplateDueDate = (from: Date = new Date()) =>
   new Date(from.getTime() + TASK_TEMPLATE_DUE_DAYS * 86400000).toISOString().slice(0, 10);
 
 const normalizedName = (value: string) => String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
+
+/** One column of the onboarding-progress table after de-duplication. */
+export interface ProgressColumn {
+  /** React key + the label shown in the header. */
+  key: string;
+  label: string;
+  /** Every raw server column title that collapsed into this one; cells are looked up
+   * across all of them so no speaker's task cell is lost by the merge. */
+  sources: string[];
+}
+
+/**
+ * Collapse progress columns that are the SAME task by identity.
+ *
+ * The roster table rendered one `<Th>` per raw column title, so titles that differ only
+ * by case or spacing ("Upload headshot" / "Upload Headshot") appeared as two identical
+ * headers. Columns whose titles are genuinely different are KEPT — dropping them would
+ * hide a real deliverable — and are disambiguated by their task type in the header.
+ */
+export function dedupeProgressColumns(columns: string[]): ProgressColumn[] {
+  const out: ProgressColumn[] = [];
+  const seen = new Map<string, ProgressColumn>();
+  for (const raw of columns || []) {
+    const identity = normalizedName(raw);
+    if (!identity) continue;
+    const existing = seen.get(identity);
+    if (existing) {
+      if (!existing.sources.includes(raw)) existing.sources.push(raw);
+      continue;
+    }
+    const column: ProgressColumn = { key: identity, label: raw, sources: [raw] };
+    seen.set(identity, column);
+    out.push(column);
+  }
+  return out;
+}
+
+/** First defined cell for a (possibly merged) column. */
+export function progressCell(row: any, column: ProgressColumn) {
+  for (const source of column.sources) {
+    const cell = row?.cells?.[source];
+    if (cell) return cell;
+  }
+  return null;
+}
 
 /** Mirrors speakerMgmt.speakerRecordScore so the UI proposes the same primary as the API. */
 const RICH_FIELDS = ["bio", "title", "company", "linkedin", "website", "travelPreference", "dietary", "headshotUrl"] as const;
@@ -239,6 +292,15 @@ export function SpeakersPage() {
   const progressRows = ((progress?.rows || []) as any[]).filter((r) =>
     progressFilter === "complete" ? r.complete : progressFilter === "incomplete" ? !r.complete : true,
   );
+  const progressColumns = dedupeProgressColumns(progress?.columns || []);
+  /** Task type behind a column, used to tell two same-family columns apart. */
+  const columnTypeLabel = (column: ProgressColumn) => {
+    for (const row of (progress?.rows || []) as any[]) {
+      const cell = progressCell(row, column);
+      if (cell?.type) return taskTypeLabel(cell.type);
+    }
+    return "";
+  };
 
   return (
     <div>
@@ -308,9 +370,14 @@ export function SpeakersPage() {
                 <Th className="py-2 pr-3">Speaker</Th>
                 <Th className="py-2 pr-3">Status</Th>
                 <Th className="py-2 pr-3">%</Th>
-                {(progress.columns || []).map((c: string) => (
-                  <Th key={c} className="py-2 pr-3">
-                    {c}
+                {progressColumns.map((c) => (
+                  <Th key={c.key} className="py-2 pr-3">
+                    <span className="block">{c.label}</span>
+                    {columnTypeLabel(c) ? (
+                      <span className="block text-[10px] font-normal uppercase tracking-wide text-mid">
+                        {columnTypeLabel(c)}
+                      </span>
+                    ) : null}
                   </Th>
                 ))}
               </tr>
@@ -327,12 +394,23 @@ export function SpeakersPage() {
                     <Badge>{r.workflowStatus}</Badge>
                   </td>
                   <td className="py-2 pr-3" data-testid={`progress-pct-${r.speakerId}`}>{r.percent ?? r.readiness?.pct ?? 0}%</td>
-                  {(progress.columns || []).map((c: string) => {
-                    const cell = r.cells?.[c];
+                  {progressColumns.map((c) => {
+                    const cell = progressCell(r, c);
+                    const auto = autoCompletionNote(cell);
                     return (
-                      <td key={c} className="py-2 pr-3">
+                      <td key={c.key} className="py-2 pr-3">
                         {cell ? (
-                          <Badge tone={cell.status === "completed" ? "ok" : "warn"}>{cell.status === "completed" ? "done" : "open"}</Badge>
+                          <>
+                            <Badge tone={cell.status === "completed" ? "ok" : "warn"}>{cell.status === "completed" ? "done" : "open"}</Badge>
+                            {auto ? (
+                              <span
+                                className="mt-1 block text-[10px] leading-tight text-mid"
+                                data-testid={`progress-auto-${r.speakerId}-${c.key.replace(/\s+/g, "-")}`}
+                              >
+                                {auto}
+                              </span>
+                            ) : null}
+                          </>
                         ) : (
                           "—"
                         )}
@@ -877,6 +955,88 @@ export function SpeakerDetailPage() {
         </Notice>
       ) : null}
 
+      {/* Workflow status is the first thing on the page: the badge states the SAVED
+          value before any change, the labeled select drives the change, and the badge
+          plus the saved stamp reflect the stored value after Update status + reload. */}
+      <Card className="mb-4 p-4" data-testid="workflow-status-card">
+        <div className="flex flex-wrap items-center gap-3">
+          <div>
+            <h3 className="text-xs font-bold uppercase tracking-wide text-mid">Workflow status</h3>
+            <div className="mt-1 flex flex-wrap items-center gap-2">
+              <span className="text-sm text-mid">Current:</span>
+              <Badge tone="primary" data-testid="workflow-status-badge">
+                {formatStatus(row.workflowStatus || "accepted")}
+              </Badge>
+              {statusSavedAt ? (
+                <span className="text-xs text-mid" data-testid="workflow-status-saved-at">saved {statusSavedAt}</span>
+              ) : null}
+            </div>
+          </div>
+          {edit ? (
+            <div className="ml-auto flex flex-wrap items-end gap-2">
+              <Field label="Change workflow status">
+                <select
+                  aria-label="Change workflow status"
+                  data-testid="workflow-status-select"
+                  className="h-10 min-w-48 rounded-full bg-white px-3 text-sm ring-1 ring-line focus:outline-none focus:ring-2 focus:ring-brand-400"
+                  value={edit.workflowStatus}
+                  onChange={(e) => {
+                    setEdit({ ...edit, workflowStatus: e.target.value });
+                    setStatusConfirmation("");
+                  }}
+                >
+                  {["invited", "confirmed", "accepted", "declined", "withdrawn"].map((s) => (
+                    <option key={s} value={s}>
+                      {formatStatus(s)}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Button
+                type="button"
+                variant="secondary"
+                data-testid="workflow-status-save"
+                disabled={statusBusy || edit.workflowStatus === row.workflowStatus}
+                title={
+                  edit.workflowStatus === row.workflowStatus
+                    ? "Pick a different status to enable this"
+                    : undefined
+                }
+                onClick={async () => {
+                  setStatusBusy(true);
+                  try {
+                    const result = await api.setSpeakerStatus(row.speakerId, edit.workflowStatus);
+                    const saved = result.data.workflowStatus;
+                    setEdit((current: any) => ({ ...current, workflowStatus: saved }));
+                    const at = new Date().toLocaleTimeString();
+                    setStatusConfirmation(`Workflow status updated to ${formatStatus(saved)}.`);
+                    setStatusSavedAt(at);
+                    await load();
+                  } catch (e: any) {
+                    toast(e.message || "Status update failed", "danger");
+                  } finally {
+                    setStatusBusy(false);
+                  }
+                }}
+              >
+                {statusBusy ? "Updating…" : "Update status"}
+              </Button>
+            </div>
+          ) : null}
+        </div>
+        {edit && edit.workflowStatus !== row.workflowStatus ? (
+          <p className="mt-2 text-xs font-semibold text-mid" data-testid="workflow-status-pending">
+            Pending: {formatStatus(row.workflowStatus || "accepted")} → {formatStatus(edit.workflowStatus)} · click
+            Update status to save.
+          </p>
+        ) : null}
+        {statusConfirmation ? (
+          <Notice tone="ok" onClose={() => setStatusConfirmation("")}>
+            <span role="status">{statusConfirmation}</span>
+          </Notice>
+        ) : null}
+      </Card>
+
       <div className="grid gap-4 lg:grid-cols-2">
         <Card className="p-4">
           <h3 className="text-xs font-bold uppercase tracking-wide text-mid">Profile</h3>
@@ -898,59 +1058,26 @@ export function SpeakerDetailPage() {
                   ))}
                 </div>
               ))}
+              {/* The saved bio, in full. It used to be visible only inside the 4-row
+                  editor, so a reader saw a clipped “Leads the build-tooling…” and could
+                  not tell the whole record was stored. */}
               <Field label="Bio">
-                <Textarea rows={4} value={edit.bio} onChange={(e) => patchEdit({ bio: e.target.value })} />
-              </Field>
-              <Field label="Workflow status">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge tone="muted" data-testid="workflow-status-badge">{formatStatus(row.workflowStatus || "accepted")}</Badge>
-                  {statusSavedAt ? (
-                    <span className="text-xs text-mid" data-testid="workflow-status-saved-at">saved {statusSavedAt}</span>
-                  ) : null}
-                  <select
-                    className="h-10 min-w-48 flex-1 rounded-full bg-white px-3 text-sm ring-1 ring-line focus:outline-none focus:ring-2 focus:ring-brand-400"
-                    value={edit.workflowStatus}
-                    onChange={(e) => {
-                      setEdit({ ...edit, workflowStatus: e.target.value });
-                      setStatusConfirmation("");
-                    }}
-                  >
-                    {["invited", "confirmed", "accepted", "declined", "withdrawn"].map((s) => (
-                      <option key={s} value={s}>
-                        {s}
-                      </option>
-                    ))}
-                  </select>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    disabled={statusBusy || edit.workflowStatus === row.workflowStatus}
-                    onClick={async () => {
-                      setStatusBusy(true);
-                      try {
-                        const result = await api.setSpeakerStatus(row.speakerId, edit.workflowStatus);
-                        const saved = result.data.workflowStatus;
-                        setEdit((current: any) => ({ ...current, workflowStatus: saved }));
-                        const at = new Date().toLocaleTimeString();
-                        setStatusConfirmation(`Workflow status updated to ${formatStatus(saved)}.`);
-                        setStatusSavedAt(at);
-                        await load();
-                      } catch (e: any) {
-                        toast(e.message || "Status update failed", "danger");
-                      } finally {
-                        setStatusBusy(false);
-                      }
-                    }}
-                  >
-                    {statusBusy ? "Updating…" : "Update status"}
-                  </Button>
+                <div
+                  className="mb-2 rounded-2xl border border-line bg-soft p-3"
+                  data-testid="speaker-bio-saved"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-[11px] font-bold uppercase tracking-wide text-mid">Saved bio</span>
+                    <span className="text-[11px] text-mid" data-testid="speaker-bio-length">
+                      {String(row.bio || "").length} characters
+                    </span>
+                  </div>
+                  <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-ink">
+                    {row.bio || <span className="text-mid">No bio saved yet.</span>}
+                  </p>
                 </div>
+                <Textarea rows={8} aria-label="Bio" value={edit.bio} onChange={(e) => patchEdit({ bio: e.target.value })} />
               </Field>
-              {statusConfirmation ? (
-                <Notice tone="ok" onClose={() => setStatusConfirmation("")}>
-                  <span role="status">{statusConfirmation}</span>
-                </Notice>
-              ) : null}
               <Field label="Headshot">
                 <div className="space-y-2">
                   {(row.headshotUrl || row.profile?.headshotUrl) ? (
@@ -1055,6 +1182,15 @@ export function SpeakerDetailPage() {
                       {taskTypeLabel(t.type)} · due {t.dueAt?.slice(0, 10)}
                       {t.formAnswers && Object.keys(t.formAnswers).length ? ` · form submitted` : ""}
                     </div>
+                    {/* A Done badge on these types otherwise looks unexplained: the speaker
+                        never pressed anything, the profile/headshot save closed them. */}
+                    {autoCompletionNote(t) ? (
+                      <Badge tone="muted" data-testid={`task-auto-${t.id}`}>{autoCompletionNote(t)}</Badge>
+                    ) : autoCompletionRule(t) ? (
+                      <span className="block text-[11px] text-mid" data-testid={`task-auto-rule-${t.id}`}>
+                        {autoCompletionRule(t)}
+                      </span>
+                    ) : null}
                     {t.type === "form" ? <Badge tone="muted">Form to complete</Badge> : null}
                     {t.formAnswers && Object.keys(t.formAnswers).length ? <dl className="mt-2 text-xs">{Object.entries(t.formAnswers).map(([key,value])=><div key={key}><dt className="inline font-semibold">{t.formSchema?.find((f:any)=>f.key===key)?.label || key}: </dt><dd className="inline">{String(value)}</dd></div>)}</dl> : null}
                   </div>
@@ -1138,6 +1274,13 @@ export function CommsPage() {
   const [templates, setTemplates] = useState<any[]>([]);
   const [log, setLog] = useState<any[]>([]);
   const [active, setActive] = useState<any>(null);
+  /** True once the organizer has edited THIS template since the last save; reset on
+   * save and whenever a different template is selected. */
+  const [templateDirty, setTemplateDirty] = useState(false);
+  const patchActive = (patch: any) => {
+    setTemplateDirty(true);
+    setActive((prev: any) => ({ ...prev, ...patch }));
+  };
   const [speakers, setSpeakers] = useState<any[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
   const [preview, setPreview] = useState<any>(null);
@@ -1204,8 +1347,12 @@ export function CommsPage() {
     setLog(data.log);
     setSpeakers(data.speakers);
     setErr("");
+    // Adopt the server copy ONLY when the editor is clean. Sending decisions or running
+    // reminders both call bumpData() → reload, which used to replace an unsaved subject
+    // or body with the stored template mid-edit.
     setActive((prev: any) => {
       if (prev) {
+        if (templateDirty) return prev;
         const fresh = data.templates.find((x: any) => x.id === prev.id);
         return fresh || prev;
       }
@@ -1277,7 +1424,10 @@ export function CommsPage() {
               <button
                 key={t.id}
                 type="button"
-                onClick={() => setActive(t)}
+                onClick={() => {
+                  setTemplateDirty(false);
+                  setActive(t);
+                }}
                 className={`w-full rounded-xl px-3 py-2 text-left text-sm font-semibold ${active?.id === t.id ? "bg-brand-600 text-white" : "hover:bg-brand-50"}`}
               >
                 {t.name}
@@ -1290,16 +1440,16 @@ export function CommsPage() {
           {active ? (
             <>
               <Field label="Subject">
-                <Input value={active.subject} onChange={(e) => setActive({ ...active, subject: e.target.value })} />
+                <Input value={active.subject} onChange={(e) => patchActive({ subject: e.target.value })} />
               </Field>
               <Field label="Body" hint="Merge: {{first_name}} {{name}} {{talk_title}} {{portal_link}} {{calendar_links}} {{company}} {{event_name}}">
-                <Textarea rows={10} value={active.body} onChange={(e) => setActive({ ...active, body: e.target.value })} />
+                <Textarea rows={10} value={active.body} onChange={(e) => patchActive({ body: e.target.value })} />
               </Field>
               <label className="mb-3 flex items-center gap-2 text-sm">
                 <input
                   type="checkbox"
                   checked={!!active.includeCalendarLinks}
-                  onChange={(e) => setActive({ ...active, includeCalendarLinks: e.target.checked })}
+                  onChange={(e) => patchActive({ includeCalendarLinks: e.target.checked })}
                 />
                 Include calendar invitation language (downloadable ICS — not calendar push)
               </label>
@@ -1330,12 +1480,14 @@ export function CommsPage() {
               <div className="flex flex-wrap gap-2">
                 <Button
                   onClick={async () => {
-                    await api.saveTemplate(active.id, active);
+                    const saved: any = await api.saveTemplate(active.id, active);
+                    if (saved?.data) setActive((prev: any) => ({ ...prev, ...saved.data }));
+                    setTemplateDirty(false);
                     toast("Template saved");
                     load();
                   }}
                 >
-                  Save template
+                  {templateDirty ? "Save template *" : "Save template"}
                 </Button>
                 <Button
                   variant="secondary"

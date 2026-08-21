@@ -389,6 +389,13 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify({ status: "completed" }),
     }),
+  /** Undo an accidental completion. The task endpoint already accepts not_started for
+   * the speaker's OWN task; the portal simply had no control wired to it. */
+  reopenTask: (id: string) =>
+    mut(`/api/speaker/events/${EVENT_ID}/tasks/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ status: "not_started" }),
+    }),
   saveProfile: (body: any) =>
     mut(`/api/speaker/events/${EVENT_ID}/profile`, { method: "PUT", body: JSON.stringify(body) }),
   uploadFile: (body: any) =>
@@ -530,7 +537,22 @@ export const api = {
   decideAgenda: (proposalId:string,decision:"accept"|"reject") => mut(`/api/events/${EVENT_ID}/agenda/proposals/${proposalId}/${decision}`,{method:"POST",body:"{}"}),
   createAgendaRoom: (body:any) => mut(`/api/events/${EVENT_ID}/agenda/rooms`,{method:"POST",body:JSON.stringify(body)}),
   createAgendaTrack: (body:any) => mut(`/api/events/${EVENT_ID}/agenda/tracks`,{method:"POST",body:JSON.stringify(body)}),
-  publishAgenda: () => mut<{data:any}>(`/api/events/${EVENT_ID}/agenda/publish`,{method:"POST",body:"{}"}),
+  publishAgenda: (body: { acknowledge?: boolean } = {}) => mut<{data:any}>(`/api/events/${EVENT_ID}/agenda/publish`,{method:"POST",body:JSON.stringify(body)}),
+  publishAgendaDetailed: async (body: { acknowledge?: boolean } = {}) => {
+    const r = await fetch(`/api/events/${EVENT_ID}/agenda/publish`, { method: "POST", headers: headers(), body: JSON.stringify(body) });
+    const text = await r.text();
+    let data: any = null;
+    try { data = text ? JSON.parse(text) : null; } catch { data = { error: text }; }
+    if (r.ok) bumpData();
+    return {
+      ok: r.ok,
+      status: r.status,
+      error: typeof data?.error === "string" ? data.error : data?.error?.message || "",
+      data: data?.data,
+      conflicts: (data?.conflicts || data?.data?.conflicts || []) as any[],
+      warnings: (data?.warnings || data?.data?.warnings || []) as any[],
+    };
+  },
   saveSettings: (body: any) =>
     mut(`/api/events/${EVENT_ID}/settings`, { method: "PUT", body: JSON.stringify(body) }),
   embedConfigs:()=>req<{data:any[]}>(`/api/events/${EVENT_ID}/embed-configs`),

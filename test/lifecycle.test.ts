@@ -68,7 +68,7 @@ test("HTML gallery embed returns HTML not JSON", async () => {
 });
 
 test("command snapshot includes kpis", async () => {
-  const { res, body } = await json("/api/events/evt-ai-summit-2026/command");
+  const { res, body } = await json("/api/events/evt-ai-summit-2026/command", { headers: { "x-demo-persona": "org-swyx" } });
   assert.equal(res.status, 200);
   assert.ok(typeof body.data.kpis.submissions === "number");
 });

@@ -38,12 +38,12 @@ test("resource CRUD sanitizer keeps only allowlisted iframe URLs",()=>{
 });
 
 test("ICS derives its exact Oct schedule range with stable RFC5545 fields and is absent for drafts",()=>{
-  const scheduled=store.sessions.find(s=>s.slot)!;const ics=icsForSession(scheduled)!;assert.match(ics,/DTSTART:20261012T170000Z/);assert.match(ics,/DTEND:20261012T174500Z/);assert.match(ics,/UID:ses-analytical@cue\.local/);assert.match(ics,/DTSTAMP:20261001T000000Z/);assert.match(ics,/DESCRIPTION:Reliable systems patterns/);assert.match(ics,/LOCATION:Main Hall\\, New York\\, NY/);
+  const scheduled=store.sessions.find(s=>s.slot)!;const ics=icsForSession(scheduled)!;assert.match(ics,/X-WR-TIMEZONE:America\/Los_Angeles/);assert.match(ics,/BEGIN:VTIMEZONE/);assert.match(ics,/DTSTART;TZID=America\/Los_Angeles:20261012T100000/);assert.match(ics,/DTEND;TZID=America\/Los_Angeles:20261012T104500/);assert.match(ics,/UID:ses-analytical@cue\.local/);assert.match(ics,/DTSTAMP:20261001T000000Z/);assert.match(ics,/DESCRIPTION:Reliable systems patterns/);assert.match(ics,/LOCATION:Main Hall\\, New York\\, NY/);
   assert.equal(icsForSession({ ...scheduled, slot:undefined }),undefined);
 });
 
 test("mock acceptance comm has no localhost link and only attaches ICS when a session is scheduled",()=>{
-  const scheduled=store.sessions.find(s=>s.id==="ses-analytical")!;const sent=sendTemplate("schedule_locked",scheduled.speakerId,scheduled.title);assert.ok(!sent.body.includes("localhost"));assert.match(sent.ics,/DTSTART:20261012T170000Z/);
+  const scheduled=store.sessions.find(s=>s.id==="ses-analytical")!;const sent=sendTemplate("schedule_locked",scheduled.speakerId,scheduled.title);assert.ok(!sent.body.includes("localhost"));assert.match(sent.ics,/DTSTART;TZID=America\/Los_Angeles:20261012T100000/);
   const draft=store.sessions.find(s=>!s.slot)!;const none=sendTemplate("accepted",draft.speakerId,draft.title);assert.equal(none.ics,"");
 });
 
@@ -53,7 +53,7 @@ test("speaker endpoint rejects query impersonation under a known speaker persona
 });
 
 test("command endpoint takes accepted-unscheduled KPI from canonical schedule projection",async()=>{
-  const {res,body}=await json("/api/events/evt-ai-summit-2026/command");assert.equal(res.status,200);
+  const {res,body}=await json("/api/events/evt-ai-summit-2026/command",{headers:{"x-demo-persona":"org-swyx"}});assert.equal(res.status,200);
   assert.equal(body.data.kpis.acceptedUnscheduled,2);
 });
 
@@ -63,6 +63,6 @@ test("scheduled session calendar HTTP route returns downloadable October ICS",as
   assert.match(response.headers.get("content-type")??"",/^text\/calendar/);
   assert.match(response.headers.get("content-disposition")??"",/ses-analytical\.ics/);
   const body=await response.text();
-  assert.match(body,/DTSTART:20261012T170000Z/);
+  assert.match(body,/DTSTART;TZID=America\/Los_Angeles:20261012T100000/);
   assert.match(body,/UID:ses-analytical@cue\.local/);
 });

@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import type { Repository, ScheduleProjection } from "./domain.js";
 import type { AgendaProposal, LifecycleStore } from "./lifecycle.js";
-import { applyScheduleMove, recordPlacement, validateSlot, type AgendaSlot } from "./schedule.js";
+import { applyScheduleMove, collectScheduleIssues, recordPlacement, validateSlot, type AgendaSlot } from "./schedule.js";
 import { contentStateFor, findLinkedDraft } from "./sessionContent.js";
 import { EVENT_TIME_ZONE, zonedDayKey, zonedWallTimeToIso } from "./timezone.js";
 
@@ -66,7 +66,14 @@ function eventTimeZone(event: { timezone?: string }): string {
 
 export function createAgendaRoutes(deps:{store:LifecycleStore;repo:Repository;persist:()=>Promise<void>;persona:(c:any)=>{role:string}}){
  const app=new Hono(),org=(c:any)=>deps.persona(c).role==="organizer",schedule=()=> (deps.repo as ScheduleRepo).getSchedule?.(deps.store.event.id);
- const guard=(c:any)=>org(c)?null:fail(c,"organizer role required",403);
+ const guard=(c:any)=>{
+  if(org(c))return null;
+  const hasAuth=c.get("auth")||c.get("authCookiePresent");
+  const demoOn=c.get("demoPersonaHeaders")!==false;
+  const hasDemo=demoOn&&(c.req.header("x-demo-persona")||c.req.header("x-demo-role"));
+  if(hasAuth||hasDemo)return fail(c,"organizer role required",403);
+  return fail(c,"authentication required",401);
+ };
  app.get("/api/events/:eventId/agenda/proposals",async c=>{const denied=guard(c);if(denied)return denied;if(c.req.param("eventId")!==deps.store.event.id)return fail(c,"event not found",404);return c.json({data:deps.store.agendaProposals||[]})});
  app.post("/api/events/:eventId/agenda/rooms",async c=>{const denied=guard(c);if(denied)return denied;const data=await schedule(),b=await c.req.json().catch(()=>null) as any;if(!data||!b?.name?.trim())return fail(c,"room name is required");const room={id:b.id||`room-${crypto.randomUUID().slice(0,8)}`,name:String(b.name).trim(),capacity:b.capacity?Number(b.capacity):undefined,color:b.color||"#5B5CFF"};data.rooms.push(room);await (deps.repo as ScheduleRepo).putSchedule?.(deps.store.event.id,data);await deps.persist();return c.json({data:room},201)});
  app.post("/api/events/:eventId/agenda/tracks",async c=>{const denied=guard(c);if(denied)return denied;const data=await schedule(),b=await c.req.json().catch(()=>null) as any;if(!data||!b?.name?.trim())return fail(c,"track name is required");const track={id:b.id||`track-${crypto.randomUUID().slice(0,8)}`,name:String(b.name).trim(),color:b.color||"#5B5CFF",maxConcurrent:b.maxConcurrent?Number(b.maxConcurrent):undefined};data.tracks.push(track);await (deps.repo as ScheduleRepo).putSchedule?.(deps.store.event.id,data);await deps.persist();return c.json({data:track},201)});
@@ -124,6 +131,13 @@ export function createAgendaRoutes(deps:{store:LifecycleStore;repo:Repository;pe
   return c.json({data:track});
  });
  app.post("/api/events/:eventId/agenda/publish",async c=>{const denied=guard(c);if(denied)return denied;const data=await schedule();if(!data)return fail(c,"schedule not found",404);
+  const body=await c.req.json().catch(()=>({})) as {acknowledge?:boolean|string[]};
+  const issues=collectScheduleIssues(data);
+  const hard=issues.filter(x=>x.severity==="hard");
+  const warnings=issues.filter(x=>x.severity==="warning");
+  const acknowledged=body.acknowledge===true||(Array.isArray(body.acknowledge)&&body.acknowledge.length>0);
+  if(hard.length)return c.json({error:{code:"SCHEDULE_CONFLICTS",message:"hard conflicts block publishing"},conflicts:hard,warnings},409);
+  if(warnings.length&&!acknowledged)return c.json({error:{code:"SCHEDULE_WARNINGS",message:"warnings require acknowledgement"},conflicts:hard,warnings},422);
   // Publish EVERY currently slotted session, whatever its prior status (accepted/draft),
   // so freshly placed and AI-accepted placements reach the public agenda. Content
   // approval gates only exclude sessions explicitly marked changes_requested.
@@ -135,9 +149,10 @@ export function createAgendaRoutes(deps:{store:LifecycleStore;repo:Repository;pe
    if(blocked.has(session.id)){session.publishStatus="draft";held.push(session.title);continue}
    session.status="published";session.publishStatus="published";count++;published.push(session.title);
   }
-  data.version++;const publishedAt=new Date().toISOString();const publicUrl=`/public/events/${deps.store.event.id}/itinerary`;(data as any).lastAgendaPublish={status:"published",count,publishedAt,publicUrl,held:held.length};await (deps.repo as ScheduleRepo).putSchedule?.(deps.store.event.id,data);await deps.persist();
+  data.version++;const publishedAt=new Date().toISOString();const publicUrl=`/public/events/${deps.store.event.id}/itinerary`;(data as any).lastAgendaPublish={status:"published",count,publishedAt,publicUrl,held:held.length,conflicts:hard,warnings};await (deps.repo as ScheduleRepo).putSchedule?.(deps.store.event.id,data);await deps.persist();
   const heldNote=held.length?` · ${held.length} held for content changes (${held.join(", ")})`:"";
-  return c.json({data:{status:"published",count,published,held,publishedAt,publicUrl,message:`Published · ${count} session${count===1?"":"s"} · ${publishedAt}${heldNote}`}})});
+  return c.json({data:{status:"published",count,published,held,publishedAt,publicUrl,conflicts:hard,warnings,message:`Published · ${count} session${count===1?"":"s"} · ${publishedAt}${heldNote}`}});
+ });
  app.post("/api/events/:eventId/agenda/proposals/generate",async c=>{
   const denied=guard(c);if(denied)return denied;const data=await schedule();if(!data)return fail(c,"schedule not found",404);const body=await c.req.json().catch(()=>({})) as any;
   const constraints={dayStartHour:Number(body.dayStartHour??9),dayEndHour:Number(body.dayEndHour??17),slotMinutes:Number(body.slotMinutes??30),breakMinutes:Number(body.breakMinutes??0),speakerAvailability:body.speakerAvailability||{}};
